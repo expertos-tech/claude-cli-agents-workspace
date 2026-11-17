@@ -463,6 +463,16 @@ ok $? "already in the group: the old volume left behind is named (regression: it
 run list --json
 [ "$(field acme-store old_volumes)" = '["acme-store_data"]' ]; ok $? "list: the old volume next to the group's"
 
+# The only copy of the data: the old volume with no group volume and no container is never listed as kept.
+fresh unmoved
+touch "$fx/vol-acme-store_data"
+run list --json
+[ "$(field acme-store old_volumes)" = "[]" ]; ok $? "unmoved volume: not offered as kept (regression)"
+[ "$(field acme-store unmoved_volumes)" = '["acme-store_data"]' ]; ok $? "unmoved volume: listed as not moved yet"
+STORE_KEY=k run up acme-store
+logged "^docker run --rm --network none --entrypoint cp -v acme-store_data:/from:ro -v acme-tools_data:/to acme/store:2.0@sha256:abc -a /from/. /to/$"
+ok $? "unmoved volume: up copies it with the service image"
+
 # Compose up failing: exit 1 and the way back.
 fresh upfail
 FAKE_UP_RC=1 run up acme-metrics

@@ -21,8 +21,9 @@ compose file, never read or print a file of `custom/env/`, and never run `docker
 
    Each option: the label is the title; the description is the URL and the state in plain words: "already up",
    "stopped", "not installed: /run-tools installs it", "runs in its old project: starting moves it into the group",
-   each line of `missing` ("configuration missing: ...", "port ... busy: ...") and each of `old_volumes` ("old volume
-   kept: ..."). A question takes 2 to 4 options: a kind with one tool joins the other question when it fits; more than
+   each line of `missing` ("configuration missing: ...", "port ... busy: ..."), each of `old_volumes` ("old volume
+   kept: ...") and each of `unmoved_volumes` ("data not moved yet: starting copies it"). Never offer to delete a
+   volume of `unmoved_volumes`: it is the only copy of that data. A question takes 2 to 4 options: a kind with one tool joins the other question when it fits; more than
    4 tools of a kind split into more questions (at most 4 questions, 16 tools); a tool left out is named in the reply.
    No tool at all: say so and stop.
 3. Nothing ticked: say that nothing was started and stop. Unticking a tool that is up stops nothing.

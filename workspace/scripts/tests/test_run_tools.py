@@ -656,18 +656,29 @@ class ListTests(RunToolsTestCase):
         self.assertIn('| acme-web | compose | stopped |', out)
 
     def test_list_names_an_old_volume_only_once_the_tool_is_in_the_group(self):
-        """The old project's volume is data the group does not use: listed in the group, never while the tool still
-        runs in its old project (there it is the live volume)."""
+        """Next to the group's volume, the old one is data the group does not use (old_volumes); alone, it is the only
+        copy, not moved yet (unmoved_volumes, regression: it was offered as kept); while the tool still runs in its
+        old project it is the live volume, in neither list."""
         self.fake.volumes = {'acme-store_data'}
         _, out, _ = self.quiet(rt.cmd_list, self.root, True)
         tools = {tool['id']: tool for tool in json.loads(out)['tools']}
+        self.assertEqual(tools['acme-store']['old_volumes'], [])
+        self.assertEqual(tools['acme-store']['unmoved_volumes'], ['acme-store_data'])
+        _, out, _ = self.quiet(rt.cmd_list, self.root, False)
+        self.assertIn('volume acme-store_data not moved yet: up copies it', out)
+        self.assertNotIn('old volume kept', out)
+        self.fake.volumes = {'acme-store_data', 'acme-tools_data'}
+        _, out, _ = self.quiet(rt.cmd_list, self.root, True)
+        tools = {tool['id']: tool for tool in json.loads(out)['tools']}
         self.assertEqual(tools['acme-store']['old_volumes'], ['acme-store_data'])
+        self.assertEqual(tools['acme-store']['unmoved_volumes'], [])
         _, out, _ = self.quiet(rt.cmd_list, self.root, False)
         self.assertIn('old volume kept: acme-store_data', out)
         self.fake.containers = [container('o1', 'acme-store', 'store', port=STORE_PORT)]
         _, out, _ = self.quiet(rt.cmd_list, self.root, True)
         tools = {tool['id']: tool for tool in json.loads(out)['tools']}
         self.assertEqual(tools['acme-store']['old_volumes'], [])
+        self.assertEqual(tools['acme-store']['unmoved_volumes'], [])
 
     def test_pick(self):
         tools = [{'id': 'a'}, {'id': 'b'}]

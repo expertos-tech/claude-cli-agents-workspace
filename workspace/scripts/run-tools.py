@@ -459,14 +459,20 @@ def model(root):
 
 
 def add_old_volumes(root, tool, group):
-    """Adds the volumes of the tool's old project still on disk once the tool is in the group: data the group does
-    not use, which the person keeps or deletes."""
-    tool['old_volumes'] = []
+    """Adds the volumes of the tool's old project still on disk once the tool is in the group. Next to the group's
+    volume, an old one is data the group does not use, which the person keeps or deletes (old_volumes). Without the
+    group's volume it is the only copy of the data, never offered for deletion: the next up copies it
+    (unmoved_volumes)."""
+    tool['old_volumes'], tool['unmoved_volumes'] = [], []
     if tool['project'] != group:
         return
     for volume in tool['volumes']:
-        if run(['docker', 'volume', 'inspect', volume['old']], root)[0] == 0:
+        if run(['docker', 'volume', 'inspect', volume['old']], root)[0] != 0:
+            continue
+        if run(['docker', 'volume', 'inspect', volume['new']], root)[0] == 0:
             tool['old_volumes'].append(volume['old'])
+        else:
+            tool['unmoved_volumes'].append(volume['old'])
 
 
 def public(tool):
@@ -485,6 +491,7 @@ def public(tool):
         'ports': sorted(ports),
         'missing': tool['missing'],
         'old_volumes': tool.get('old_volumes', []),
+        'unmoved_volumes': tool.get('unmoved_volumes', []),
     }
 
 
@@ -507,6 +514,7 @@ def print_table(tools, group):
         if tool.get('project') and tool['project'] != group and tool['kind'] == 'compose':
             notes.insert(0, f'runs in the old project {tool["project"]}; up moves it to {group}')
         notes += [f'old volume kept: {name}' for name in tool.get('old_volumes', [])]
+        notes += [f'volume {name} not moved yet: up copies it' for name in tool.get('unmoved_volumes', [])]
         print(f'| {tool["id"]} | {tool["kind"]} | {tool["state"]} | {tool.get("url", "")} | {"; ".join(notes)} |')
 
 
