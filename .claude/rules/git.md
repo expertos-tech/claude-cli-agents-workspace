@@ -25,7 +25,11 @@
 
 ## Remote
 
-- Push only when the owner asks. Each request covers that push only, never a later one.
+- `developer` is the default branch and the base of every change; `main` moves only by `/merge --main`.
+- The work branch of a clone in `tmp/work/` is pushed at open and after each commit (`/prompt`), so the work is on
+  the remote before the clone is deleted. `/merge` pushes that branch and `developer`: running it is the owner's order.
+  Any other push only when the owner asks; each request covers that push only, never a later one.
 - Never rewrite published history: no force push, no rebase or amend of a pushed commit, no moved or deleted tag.
-- Tags only through `/release`. Never change git config (user, hooks, remotes) unless asked.
-- A branch for a change that goes through a pull request: `<type>/<kebab-description>`.
+- Tags only through `/merge --main`. Never change git config (user, hooks, remotes) unless asked.
+- A work branch (a clone in `tmp/work/`, or a pull request): `<type>/<kebab-description>`; the release clone's is
+  `fix/release-vX-Y-Z`.

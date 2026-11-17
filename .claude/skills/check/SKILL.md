@@ -10,8 +10,8 @@ Arguments: `$ARGUMENTS`, passed to `tests/check.sh` after the defaults below.
 
 1. Pick the flags:
    - always `--all`, so every check reports instead of stopping at the first failure;
-   - `--base <ref>`: the base of the change. Default: `main` when the current branch is another one; on `main`, the
-     commit before this session's first commit, or `$(git rev-list --max-parents=0 HEAD)` to judge every file;
+   - `--base <ref>`: the base of the change. Default: `origin/developer` when the current branch is another one; on
+     `developer`, the commit before this session's first commit, or `$(git rev-list --max-parents=0 HEAD)` to judge every file;
    - anything the owner gave in the arguments (`bash tests/check.sh --help` lists them).
 2. Run `bash tests/check.sh <flags>` from the repository root, in the background when it may pass 3 minutes. A long
    noisy run may go through the `verifier` agent (model claude-haiku-5-5, effort low) with the exact command.

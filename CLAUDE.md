@@ -16,7 +16,8 @@ You own and maintain this project. A session opened at this root changes the pro
 
 ## Language
 
-English in every file: code, docs, plans, requests, messages, commits. Reply in the language the person writes in.
+English in every file: code, docs, plans, requests, messages, commits. Reply in the language the person writes in; a
+plan, request or document is shown in that language and saved in English, with one line saying so.
 Translations live in `i18n/<locale>/`, only for documents and READMEs (`.claude/rules/docs.md`).
 
 ## Layout
@@ -32,16 +33,20 @@ Detail in `.claude/rules/process.md`.
 1. **Evaluate** the product and, read-only, its real use: an installed workspace, transcripts, the prompt log,
    measurements. Findings that name a company, customer or project stay in the git-ignored `tmp/` or the owner's
    custom layer, never in this repository.
-2. **Plan** in `maintainers/plans/`: options, a recommendation and numbered decisions for the owner.
+2. **Plan** in `maintainers/plans/`: options, a recommendation and numbered decisions for the owner. A plan the owner
+   approves in a session is recorded at once in `maintainers/requests/done/`.
 3. **Request**, with the owner's answers, in `maintainers/requests/`: objective, BR-n, AC-n, out of scope, stages with
    effort (`/draft-prompt`).
-4. **Execute** in stages with subagents (`/prompt`), always with explicit model and effort (high for hooks, the
-   installer, security and risky actions), in parallel only on disjoint paths, and an independent clean-context review
-   of hooks and security (`.claude/rules/review.md`).
+4. **Execute** in stages with subagents (`/prompt`, which works in a clone on a work branch under `tmp/work/`; a
+   session is either on `developer` at the root or in such a clone), always with explicit model and effort (high for
+   hooks, the installer, security and risky actions), in parallel only on disjoint paths, and an independent
+   clean-context review of hooks and security (`.claude/rules/review.md`).
 5. **Prove**: `bash tests/check.sh --all` on every change (`/check`); `/test-install` whenever the installer, a hook or
    `setup-claude.sh` changes.
-6. **Close**: commits per the convention below (`/commit`); push only when the owner asks, and each request covers
-   that push only; a release only through `/release`, with every public step confirmed.
+6. **Close**: commits per the convention below (`/commit`); the work branch of a clone is pushed at each commit;
+   `/merge` takes the work into `developer` (the default branch) and writes `workspace/CHANGELOG.md`; other pushes
+   only when the owner asks, each request covering that push only; a release only through `/merge --main`, with every
+   public step confirmed.
 
 ## Commits
 

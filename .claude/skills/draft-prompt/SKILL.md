@@ -26,5 +26,5 @@ Never implement here. Follow `.claude/rules/process.md` steps 2 and 3.
    owner can overturn. The owner's replies continue this command until delivery.
 5. Public text: English, no company names, no personal paths (`.claude/rules/security.md`). Evidence from real use
    that names them stays in `tmp/`.
-6. Show the result on screen and save it. Do not commit unless the owner asks (`/commit`). End with the line to run
+6. Show the result on screen in the owner's language and save it in English, with one line saying so. Do not commit unless the owner asks (`/commit`). End with the line to run
    a request: `/prompt <name>.md`.

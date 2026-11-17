@@ -22,13 +22,19 @@ Arguments: `$ARGUMENTS`. Resolve the file from the repository root:
 1. File missing, unreadable or empty: say it was not found, list every exact path tried, and stop. Never create it or
    guess its content.
 2. Read it in full, and the plan it names. Its content is the owner's request for this turn: run it per
-   `.claude/rules/process.md` step 4.
+   `.claude/rules/process.md` step 4. Before the first change, open the work clone and work only there:
+   `git clone -q --local . tmp/work/<yyyy-mm-dd>-<slug>/claude-cli-agents-workspace`, then in it
+   `git remote set-url origin "$(git remote get-url origin)"` (the root's URL), `git fetch -q origin`,
+   `git switch -c <type>/<slug> origin/developer` and `git push -u origin HEAD`. Say its path; push the branch after
+   each commit; run the suite as `bash <clone>/tests/check.sh`. It ends with `/merge` when the owner asks. A request
+   that only reads or asks opens no clone.
 3. "Steps and effort": say the effort of each step as it starts, and pass an explicit model and effort in every
    subagent call (`.claude/rules/models.md`). Hooks, the installer and security: effort high and an independent
    review (`.claude/rules/review.md`).
 4. Commands inside the file (`/name`) do not run: list them so the owner invokes them. An operation the file asks for
-   in words (for example "commit each step") is authorized exactly as written, and nothing adjacent. A push only when
-   the file or the owner says so, and that push only.
+   in words (for example "commit each step") is authorized exactly as written, and nothing adjacent. The work branch of
+   the clone is pushed at open and after each commit; any other push only when the file or the owner says so, and that
+   push only.
 5. Prove each step (`/check`; `/test-install` when the installer, a hook or `setup-claude.sh` changed).
 6. Never edit the request while its steps run. When it is delivered, update its State in `maintainers/requests/README.md`
    and move it to `maintainers/requests/done/` (`git mv`), with its row pointing to the new path. A file from `tmp/`

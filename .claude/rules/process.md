@@ -16,6 +16,9 @@ How the project is maintained. Every change goes through these steps; a typo fix
   recommendation, and numbered decisions (D-1, D-2...) for the owner to answer.
 - Ask only what has no best alternative; list the rest as assumed decisions the owner can overturn.
 - The plan stays the design reference after the request is written; update its status line when the request is built.
+- A plan the owner approves in a session (plan mode) is recorded at once, in English and in the request format, in
+  `maintainers/requests/done/<kebab-name>.md`, with its row in `maintainers/requests/README.md`.
+- A plan or request is shown to the owner in the language they wrote in, and saved in English; say so in one line.
 
 ## 3. Request
 
@@ -29,10 +32,10 @@ How the project is maintained. Every change goes through these steps; a typo fix
 
 - One stage at a time (`/prompt <name>`). Say the effort of each stage as it starts.
 - Subagents always get an explicit model and effort (`models.md`). Writers run in parallel only on disjoint paths.
-- Several requests at once run in separate sessions, each in its own worktree and branch (`claude --worktree <request>`
-  from the repository root; `claudeMdExcludes` already covers `.claude/worktrees/*/workspace/**`). Respect the order in
-  `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. Merge into `main` one
-  at a time, with `bash tests/check.sh --all` green after each merge.
+- `/prompt` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
+  `tmp/**`), so several requests run in separate sessions, each in its own clone. Respect the order in
+  `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/merge` takes each
+  into `developer`, one at a time, with `bash tests/check.sh --all` green.
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
 - Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
@@ -51,5 +54,6 @@ How the project is maintained. Every change goes through these steps; a typo fix
   same commit (`docs.md`).
 - Update the state of the request in `maintainers/requests/README.md` and of its backlog item, if any. A delivered
   request moves to `maintainers/requests/done/` (`git mv`) in the same commit, and its row points to the new path.
-- Push only when the owner asks; each request covers that push only. A release only through `/release`.
+- `/merge` takes the work into `developer` and writes `workspace/CHANGELOG.md`; other pushes only when the owner asks,
+  each request covering that push only. A release only through `/merge --main`.
 - End with a short report: what changed (commits), what was verified (commands and results), what is left.
