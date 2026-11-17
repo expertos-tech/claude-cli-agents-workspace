@@ -84,7 +84,8 @@ The agents of each stage run with the stage's effort, passed in the call.
   project created), when that network belongs to a third project, or when both the old and the group's volume exist;
   a copy that fails removes the new volume and starts the old containers again; the volume is copied with the image
   of the service that mounts it (a distroless image has no `cp`); an old volume left next to the group's is named by
-  `up` and in `list --json` (`old_volumes`); `down` only stops (`docker compose stop`); `measure.py` points to
+  `up` and in `list --json` (`old_volumes`), while an old volume with no group volume yet, the only copy of the data,
+  is listed as not moved yet (`unmoved_volumes`) and never offered for deletion; `down` only stops (`docker compose stop`); `measure.py` points to
   `run-tools.sh up observability`.
 - **Deviations:** none from the business rules.
 - **Acceptance criteria:**
@@ -103,8 +104,9 @@ The agents of each stage run with the stage's effort, passed in the call.
 - **Checks:** `tests/check.sh --base origin/developer --i18n-pending`; test-run-tools (117 checks), test_run_tools.py
   (62 tests, `run-tools.py` above 99 % of lines and branches), test-check-workspace, test_performance; the real Docker
   run on the prefixed copy (move with volume copy, both refusals, AC-1, `down`, AC-3), every test resource removed;
-  `docker compose config` of the group and of each tool alone; one independent review (effort high): APPROVED_WITH_CHANGES,
-  4 RECOMMENDED, fixed.
+  `docker compose config` of the group and of each tool alone; an independent review (effort high):
+  APPROVED_WITH_CHANGES, 4 RECOMMENDED, fixed; the merge review (effort high): APPROVED_WITH_CHANGES, 1 RECOMMENDED
+  (an old volume with no group volume offered as kept), fixed, and the fix reviewed.
 - **Left:** RN-8 and the skill's reply of AC-4 in a real session; the first `/run-tools` of an installed workspace
   moves its running tools (a stack attached to `login-simulator` must stop first); the observability smoke test fails
   its "dashboard behavior" check since 0.1.0 (`python3 -I` cannot import the sibling module), unrelated to this
