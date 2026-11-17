@@ -1,5 +1,5 @@
 ---
-name: draft-prompt
+name: caw-draft-prompt
 description: "Turn the owner's ideas into a plan (maintainers/plans/) or a request (maintainers/requests/, in the format of workspace/templates/request.md), asking only the doubts with no best alternative. Use only when the owner asks."
 argument-hint: "[plan | request] [ideas | path]"
 disable-model-invocation: true
@@ -26,5 +26,5 @@ Never implement here. Follow `.claude/rules/process.md` steps 2 and 3.
    owner can overturn. The owner's replies continue this command until delivery.
 5. Public text: English, no company names, no personal paths (`.claude/rules/security.md`). Evidence from real use
    that names them stays in `tmp/`.
-6. Show the result on screen in the owner's language and save it in English, with one line saying so. Do not commit unless the owner asks (`/commit`). End with the line to run
-   a request: `/prompt <name>.md`.
+6. Show the result on screen in the owner's language and save it in English, with one line saying so. Do not commit unless the owner asks (`/caw-commit`). End with the line to run
+   a request: `/caw-prompt <name>.md`.

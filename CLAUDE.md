@@ -12,7 +12,7 @@ You own and maintain this project. A session opened at this root changes the pro
   `claude-cli-agents-workspace`. In a clone with another name, add the same patterns with your clone's absolute path
   (for example `/abs/path/to/clone/workspace/**`) to `.claude/settings.local.json`, which git ignores.
 - No product hook runs here. Never run `workspace/scripts/setup-claude.sh` inside `workspace/`; exercise hooks in a
-  test installation (`/test-install`).
+  test installation (`/caw-test-install`).
 
 ## Language
 
@@ -21,6 +21,9 @@ plan, request or document is shown in that language and saved in English, with o
 Translations live in `i18n/<locale>/`, only for documents and READMEs (`.claude/rules/docs.md`).
 
 ## Layout
+
+Maintenance skills carry the prefix `caw-` (`/caw-merge`, `/caw-prompt`...), so they never mix with the product's
+skills in `workspace/rules/skills/` (`/merge`, `/prompt`...).
 
 `.claude/` (settings, `rules/`, `skills/`, `agents/`; no hooks), `tests/` (`check.sh`; `test-install.sh` arrives with
 the installer), `maintainers/` (`backlog/`, `plans/`, `requests/`, `reviews/`: public), `tmp/` (git-ignored: test
@@ -36,16 +39,16 @@ Detail in `.claude/rules/process.md`.
 2. **Plan** in `maintainers/plans/`: options, a recommendation and numbered decisions for the owner. A plan the owner
    approves in a session is recorded at once in `maintainers/requests/done/`.
 3. **Request**, with the owner's answers, in `maintainers/requests/`: objective, BR-n, AC-n, out of scope, stages with
-   effort (`/draft-prompt`).
-4. **Execute** in stages with subagents (`/prompt`, which works in a clone on a work branch under `tmp/work/`; a
+   effort (`/caw-draft-prompt`).
+4. **Execute** in stages with subagents (`/caw-prompt`, which works in a clone on a work branch under `tmp/work/`; a
    session is either on `developer` at the root or in such a clone), always with explicit model and effort (high for
    hooks, the installer, security and risky actions), in parallel only on disjoint paths, and an independent
    clean-context review of hooks and security (`.claude/rules/review.md`).
-5. **Prove**: `bash tests/check.sh --all` on every change (`/check`); `/test-install` whenever the installer, a hook or
+5. **Prove**: `bash tests/check.sh --all` on every change (`/caw-check`); `/caw-test-install` whenever the installer, a hook or
    `setup-claude.sh` changes.
-6. **Close**: commits per the convention below (`/commit`); the work branch of a clone is pushed at each commit;
-   `/merge` takes the work into `developer` (the default branch) and writes `workspace/CHANGELOG.md`; other pushes
-   only when the owner asks, each request covering that push only; a release only through `/merge --main`, with every
+6. **Close**: commits per the convention below (`/caw-commit`); the work branch of a clone is pushed at each commit;
+   `/caw-merge` takes the work into `developer` (the default branch) and writes `workspace/CHANGELOG.md`; other pushes
+   only when the owner asks, each request covering that push only; a release only through `/caw-merge --main`, with every
    public step confirmed.
 
 ## Commits

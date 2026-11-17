@@ -1,5 +1,5 @@
 ---
-name: test-install
+name: caw-test-install
 description: "Install a disposable work workspace from the current tree into tmp/test-install/<date>/ and exercise the hooks and scripts end to end. Use after a change to the installer, a hook or setup-claude.sh, and before a release."
 argument-hint: "[--keep]"
 model: claude-opus-5-5

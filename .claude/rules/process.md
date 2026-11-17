@@ -26,15 +26,15 @@ How the project is maintained. Every change goes through these steps; a typo fix
   objective, business rules (BR-n), acceptance criteria (AC-n, verifiable), out of scope, and the stages with the
   effort of each.
 - Add the request to the table of `maintainers/requests/README.md`, in the order it runs.
-- `/draft-prompt` writes plans and requests; `requirements-analyst` finds the gaps of a long or ambiguous one.
+- `/caw-draft-prompt` writes plans and requests; `requirements-analyst` finds the gaps of a long or ambiguous one.
 
 ## 4. Execute
 
-- One stage at a time (`/prompt <name>`). Say the effort of each stage as it starts.
+- One stage at a time (`/caw-prompt <name>`). Say the effort of each stage as it starts.
 - Subagents always get an explicit model and effort (`models.md`). Writers run in parallel only on disjoint paths.
-- `/prompt` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
+- `/caw-prompt` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
   `tmp/**`), so several requests run in separate sessions, each in its own clone. Respect the order in
-  `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/merge` takes each
+  `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/caw-merge` takes each
   into `developer`, one at a time, with `bash tests/check.sh --all` green.
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
@@ -44,16 +44,16 @@ How the project is maintained. Every change goes through these steps; a typo fix
 
 ## 5. Prove
 
-- Every change: `bash tests/check.sh --all` (`/check`). A failing check is fixed, never skipped.
-- A change to the installer, a hook or `workspace/scripts/setup-claude.sh`: `/test-install` too.
+- Every change: `bash tests/check.sh --all` (`/caw-check`). A failing check is fixed, never skipped.
+- A change to the installer, a hook or `workspace/scripts/setup-claude.sh`: `/caw-test-install` too.
 - A claim in a plan, request or doc is checked against the code or a run before it is written.
 
 ## 6. Close
 
-- Commit per `git.md` (`/commit`), one logical change per commit, with the translations of changed documents in the
+- Commit per `git.md` (`/caw-commit`), one logical change per commit, with the translations of changed documents in the
   same commit (`docs.md`).
 - Update the state of the request in `maintainers/requests/README.md` and of its backlog item, if any. A delivered
   request moves to `maintainers/requests/done/` (`git mv`) in the same commit, and its row points to the new path.
-- `/merge` takes the work into `developer` and writes `workspace/CHANGELOG.md`; other pushes only when the owner asks,
-  each request covering that push only. A release only through `/merge --main`.
+- `/caw-merge` takes the work into `developer` and writes `workspace/CHANGELOG.md`; other pushes only when the owner asks,
+  each request covering that push only. A release only through `/caw-merge --main`.
 - End with a short report: what changed (commits), what was verified (commands and results), what is left.

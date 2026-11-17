@@ -1,5 +1,5 @@
 ---
-name: check
+name: caw-check
 description: "Run the repository suite (tests/check.sh) with the right flags for the change and explain each failure: what failed, where, and the likely fix. Use after every change and before a commit."
 argument-hint: "[--base <ref>] [--floor] [extra check.sh options]"
 model: claude-opus-5-5
@@ -22,7 +22,7 @@ Arguments: `$ARGUMENTS`, passed to `tests/check.sh` after the defaults below.
    - `validate` markdown: fix the rule markdownlint names, with `workspace/.markdownlint-cli2.jsonc`;
    - `i18n` outdated or missing: translate the change, then set the source line hash (`.claude/rules/docs.md`);
    - `repo-terms` or `custom-terms`: reword without the company term; never print the term in the report.
-5. Never weaken a check, skip it or add an exemption to make it pass. A fix goes back through `/check`.
+5. Never weaken a check, skip it or add an exemption to make it pass. A fix goes back through `/caw-check`.
 
 The suite does not lint Markdown outside `workspace/` (the root, `.claude/`, `maintainers/`): when those changed, also run
 markdownlint-cli2 from the pinned image of `workspace/docker/compose.yaml` with `workspace/.markdownlint-cli2.jsonc`.

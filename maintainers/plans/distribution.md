@@ -186,7 +186,7 @@ claude-cli-agents-workspace/
 - **What the maintenance defines:**
   - the suite (`tests/check.sh`, which runs the product gate on `workspace/` and the company-terms scan of the whole
     repository);
-  - the test installation (`/test-install`, `tests/test-install.sh`): a throwaway workspace created from the current
+  - the test installation (`/caw-test-install`, `tests/test-install.sh`): a throwaway workspace created from the current
     tree under `tmp/test-install/`, where a session exercises the hooks end to end;
   - the release process (`/release`): raise `VERSION`, write `CHANGELOG.md`, create the tag and publish the release;
   - the process, rules, skills and agents of the maintenance, in the root `CLAUDE.md` and `.claude/`: adapted copies of

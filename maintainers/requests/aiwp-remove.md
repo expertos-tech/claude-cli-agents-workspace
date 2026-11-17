@@ -52,7 +52,7 @@ lost, asks, opens the permissions only of that workspace, deletes it and takes i
 - AC-5: Given no terminal and no `--yes`, then nothing is deleted.
 - AC-6: Given a link to a workspace, when removed through the link, then the real workspace is the one checked and
   deleted, and the permissions of any other path are unchanged (tested).
-- AC-7: The `aiwp` suite covers every rule above; `bash tests/check.sh --all` and `/test-install` pass.
+- AC-7: The `aiwp` suite covers every rule above; `bash tests/check.sh --all` and `/caw-test-install` pass.
 
 ## 7. Out of scope
 

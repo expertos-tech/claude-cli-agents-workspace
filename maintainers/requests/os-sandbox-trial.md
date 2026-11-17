@@ -21,7 +21,7 @@ This request runs that trial and adopts the sandbox only if it adds protection w
 
 ## 3. Business rules
 
-- BR-1: the trial runs in a test installation (`/test-install`) with a real session doing a normal request end to end:
+- BR-1: the trial runs in a test installation (`/caw-test-install`) with a real session doing a normal request end to end:
   open a clone, edit, test, `up` to the local Docker, automatic push, `/merge`, `close`.
 - BR-2: the sandbox configuration under test: writes allowed in `tmp/work/`, `custom/`, `.history/`, `.claude/` and
   the user's temporary folder; Docker, `aiwp-cmds.sh push`, the git hooks that push, `aiwp-gate.sh` and `release` run
@@ -44,7 +44,7 @@ This request runs that trial and adopts the sandbox only if it adds protection w
   `projects/`, then the OS sandbox refuses it, besides the 555 modes and `guard-bash`.
 - AC-3: If adopted: given a normal request run end to end, then the number of questions to the person is the same as
   without the sandbox.
-- AC-4: `bash tests/check.sh --all` and `/test-install` pass.
+- AC-4: `bash tests/check.sh --all` and `/caw-test-install` pass.
 
 ## 7. Out of scope
 

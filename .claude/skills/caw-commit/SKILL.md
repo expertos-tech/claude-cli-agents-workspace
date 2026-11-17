@@ -1,5 +1,5 @@
 ---
-name: commit
+name: caw-commit
 description: "Create one Conventional Commit per logical change of this session in the repository, by path, per .claude/rules/git.md. Use only when the owner asks to commit."
 argument-hint: "[--all]"
 disable-model-invocation: true
@@ -17,7 +17,7 @@ This request authorizes commits only: no push, no branch, no tag, no merge.
    translations (`.claude/rules/docs.md`); both paths of a move go together.
 3. Read the selected diff for company terms, personal paths, e-mail addresses, internal URLs, keys, tokens and `.env`
    (`.claude/rules/security.md`). A finding: stop and report it without printing the term.
-4. `/check` passed on these changes in this session; if not, run it first.
+4. `/caw-check` passed on these changes in this session; if not, run it first.
 5. Write the message of `.claude/rules/git.md` to a file in the scratchpad and commit by path:
    `git commit -F <file> -- <paths>` (or `git add -- <paths>` then `git commit -F <file>`).
 6. Report `<hash> <title>` per commit, and what was left out and why.

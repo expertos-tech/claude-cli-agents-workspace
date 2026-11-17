@@ -52,14 +52,14 @@ use that release to test `aiwp update` on a real installed workspace.
   disk that only grows, the Dock icon, a broken VM and `colima stop --force`). Derived from the product's code; linked
   from the README.
 - BR-12: each change keeps its translations (`i18n/pt-BR`, `i18n/es`) in the same commit when it touches a document.
-- BR-13: release through `/merge --main`: the version is a minor (rules change behaviour), `CHANGELOG.md` lists the
-  eleven items, written by `/merge` as they enter `developer`; tag, push and GitHub release only with the owner's confirmation at each step.
+- BR-13: release through `/caw-merge --main`: the version is a minor (rules change behaviour), `CHANGELOG.md` lists the
+  eleven items, written by `/caw-merge` as they enter `developer`; tag, push and GitHub release only with the owner's confirmation at each step.
 - BR-14: after the release, the owner runs `aiwp update` in a terminal on a dedicated installed workspace with real
   projects (not the main one); the session records the result.
 
 ## 4. Acceptance criteria
 
-- AC-1: Given the eleven changes, then `bash tests/check.sh --all` and `/test-install` pass, and no change adds a hook,
+- AC-1: Given the eleven changes, then `bash tests/check.sh --all` and `/caw-test-install` pass, and no change adds a hook,
   a gate step or a mandatory step.
 - AC-2: Given the release, when the owner runs `aiwp update` on the dedicated workspace, then it lists the installed
   workspaces with "Update all" as the default, the data folder moves to the new tag, only the changed core files are
