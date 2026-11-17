@@ -14,6 +14,7 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 
 - `/prompt` opens the work clone before the first change to a project or POC.
 - `/commit`, the implementer and the docs writer no longer write `CHANGELOG.md`; `/merge` does.
+- The gate of the product repository (`scripts/check-workspace.sh`, a maintenance tool) requires a `pt-BR` and an `es` translation of every `README.md` of the repository and of every page of its root `docs/`, besides the product's documents.
 - After updating: a project whose `CHANGELOG.md` has a plain `## [Unreleased]` section gets it named by the next `/merge` (`## [X.Y.Z] - Unreleased`); nothing to do by hand.
 
 ## [0.1.0] - 2026-11-16
