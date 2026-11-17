@@ -49,3 +49,11 @@ near the end (after Commands, updates, hooks, custom layer and layout) and "What
 | 1. Reorder the three READMEs, fix anchors, run the suite | low | A mechanical text change |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+---
+
+## Execution — 2026-11-17, merged into developer at f9ba9cf
+
+- **Done:** inside `project-docs.md`: "Get involved" first and "Quick start" second in the three READMEs.
+- **Acceptance criteria:** AC-1, AC-2, AC-3: proven (see `project-docs.md`).
+- **Left:** none.

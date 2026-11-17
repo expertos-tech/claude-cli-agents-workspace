@@ -50,3 +50,17 @@ into `pt-BR` and `es`, each with a language links line.
 | 4. Suite, markdownlint, commits | medium | Proof |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+---
+
+## Execution — 2026-11-17, merged into developer at f9ba9cf
+
+- **Done:** the i18n check covers every README and the root `docs/` (b1e3d48); `docs/`, the short README, the
+  translations of every README outside the product, the rules (f9ba9cf); review fixes (7689fce, e0dbf30).
+- **Decisions taken while running:** `readme-get-involved-first` delivered inside this request.
+- **Deviations:** none.
+- **Acceptance criteria:** AC-1, AC-2, AC-3: proven (the README order in three languages, every old paragraph placed,
+  the i18n check scenarios, 45 documents with links and anchors resolved, markdownlint).
+- **Checks:** the suite, the check-workspace suite (796), markdownlint, an independent review (APPROVED_WITH_CHANGES,
+  five RECOMMENDED fixed).
+- **Left:** none.

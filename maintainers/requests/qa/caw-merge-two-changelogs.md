@@ -53,3 +53,18 @@ Only the product is released: a release with no product change is no new version
 | 1. `/caw-merge`, `CLAUDE.md`, `git.md`, `process.md`, the root `CHANGELOG.md`, this record | medium | Text over decided behavior |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+---
+
+## Execution — 2026-11-17, merged into developer at d4c22bd
+
+- **Done:** the root `CHANGELOG.md`, `/caw-merge` writing both changelogs and releasing only the product, the rules
+  (d4c22bd); the `/caw-merge` range fixed to start at the last changelog commit (579ea98).
+- **Decisions taken while running:** none.
+- **Deviations:** none.
+- **Acceptance criteria:**
+  - AC-1, AC-2: proven by the `/caw-merge` runs of 2b201dc and 67a99c9 (root only for maintenance, both for product).
+  - AC-3, AC-4: pending: no `/caw-merge --main` has run yet.
+  - AC-5: proven (`tests/check.sh --all`, markdownlint).
+- **Checks:** the suite, markdownlint.
+- **Left:** AC-3 and AC-4, at the first release.

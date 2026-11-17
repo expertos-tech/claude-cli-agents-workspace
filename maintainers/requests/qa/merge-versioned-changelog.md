@@ -93,3 +93,22 @@ repository gets a copy with the same behavior, and the owner then says what diff
 | 5. Suite, `/test-install`, independent review, commits, first `/merge` writing `## [0.2.0] - Unreleased` | high | Proof of a core change |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+---
+
+## Execution — 2026-11-17, merged into developer at 8e01d75 (recorded later, at fb442c1)
+
+- **Done:** `developer` fast-forwarded and pushed (stage 0); the record (e39a284); `aiwp-cmds.sh release --tag`
+  (dc20572); the language rule (be29ad9); the product `/merge` with the versioned CHANGELOG and `--main` (77d3773);
+  the maintenance copy and `/release` removed (c4419c0); `## [0.2.0] - Unreleased` (8e01d75).
+- **Decisions taken while running:** the tag is not created on the pull-request path of a protected `main`
+  (`requests/release-tag-after-pull-request.md`); a lightweight tag is refused.
+- **Deviations:** none.
+- **Acceptance criteria:**
+  - AC-1, AC-2, AC-3: pending: the end-to-end run of `/merge` and `/merge --main` in a test installation with a
+    throwaway project and a bare remote was not done.
+  - AC-4: proven (the aiwp-gate suite, 35 tests, with the tag scenarios).
+  - AC-5: proven (`tests/check.sh --all`, `/test-install` 22 PASS, the independent review: no BLOCKER open).
+  - AC-6: proven (`gh repo view` shows `developer` as the default branch).
+- **Checks:** the suite, the test installation, two independent reviews (APPROVED_WITH_CHANGES, fixed).
+- **Left:** AC-1 to AC-3.

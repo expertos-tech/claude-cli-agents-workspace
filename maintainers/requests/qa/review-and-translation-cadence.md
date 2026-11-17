@@ -60,3 +60,19 @@ product.
 | 3. Suite, review of the difference, commits | medium | Proof |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+---
+
+## Execution — 2026-11-17, merged into developer at fb442c1
+
+- **Done:** `check-workspace.sh --i18n-pending` (b5ea3b0); the final review of the product `/merge --main` (b2a584f);
+  reviews by risk, translations at the release, the final review here (ff4e45d); the release commit checked and
+  reviewed before it merges (eb40e43, the review's BLOCKER).
+- **Decisions taken while running:** none.
+- **Deviations:** none.
+- **Acceptance criteria:** AC-1, AC-2, AC-3, AC-4: proven (the check-workspace suite, 815, with the pending-mode
+  scenarios; the rules and pages read against the request by the review).
+- **Checks:** the suite, shellcheck, markdownlint, an independent review (one BLOCKER, fixed and reviewed again).
+- **Left:** six RECOMMENDED findings, now pending requests (`process-merge-check-command`, `review-effort-wording`,
+  `review-docs-only-scope`, `merge-release-step-reference`, `release-developer-moved`,
+  `review-final-brief-unreleased`).
