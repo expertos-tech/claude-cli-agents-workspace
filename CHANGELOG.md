@@ -20,6 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The i18n check of the product gate also requires the translations of every README and of the root `docs/`, and can
   report them as pending (`--i18n-pending`).
 - `/merge --main` ends with a final review of what enters and what leaves, then a general one.
+- A request lifecycle (pending, `qa/`, `done/`) with an Execution block at each merge; the release per project with
+  the project's own changelog in its root repo; any project layout, nested repos included; `/prompt` becomes
+  `/request`; the prompt log moves to `logs/`; no backlog.
 
 ### Added
 
@@ -29,6 +32,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Requests in `maintainers/requests/` for the features discussed and not built yet, in the order they run, and the
   `/rules` lessons and the local delivery of `/fork-my-rules` in the `rules` and `fork-my-rules` requests.
 - `maintainers/requests/done/`: delivered requests, and every plan the owner approves, recorded at approval.
+- `maintainers/requests/qa/`: the requests on `developer` not released yet, each with what each merge did; the
+  backlog becomes pending requests (`idea` or `ready`).
+- `tests/check.sh` checks every `caw-*` layer: its product skill exists and its three sections are there.
 - `docs/`: the documentation of the project: getting started, features, commands and updates, hooks, the repository,
   contributing, maintenance, releases and translations.
 - `pt-BR` and `es` translations of `docs/` and of every README outside the product, each with a language links line.
@@ -38,7 +44,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `developer` is the default branch; `main` moves only by a product release.
 - `/caw-prompt` works in a clone on a work branch under `tmp/work/`, and finds a bare file name in
   `maintainers/requests/`, then `tmp/prompts/`, then `tmp/`.
-- The maintenance skills carry the prefix `caw-`, apart from the product's.
+- The maintenance skills carry the prefix `caw-`, apart from the product's; `/caw-merge`, `/caw-request` (was
+  `/caw-prompt`), `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same purpose.
+- An approved plan is recorded as a pending request, no longer in `done/`.
 - Plans and requests are shown to the owner in their language and saved in English.
 - A merge into `developer` checks and reviews only the difference that enters, with the review effort by risk and no
   review for documentation alone; a RECOMMENDED finding becomes a backlog item.

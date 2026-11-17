@@ -7,17 +7,28 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 ### Added
 
 - `/merge` writes the project's `CHANGELOG.md` at every merge into `developer`, always under a named version (`## [X.Y.Z] - Unreleased`): a `feat` makes it a minor, anything else a patch, and a fix of something that entered the same unreleased version adjusts its entry instead of adding a "Fixed" one (`rules/docs.md`). With no argument, `/merge` takes the clone of the session.
-- `/merge --main <repo>` releases that version: a release clone on `fix/release-vX-Y-Z`, a full check in a clean context, its fixes, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the annotated tag `vX.Y.Z` (`aiwp-cmds.sh release <repo> --tag vX.Y.Z`, which never moves a tag).
+- `/merge --main <project> [instructions]` releases the project: every repo in it with its own version, dated `CHANGELOG.md` and annotated tag `vX.Y.Z` (`aiwp-cmds.sh release <repo> --tag vX.Y.Z`, which never moves a tag), then the project version in its root repo, whose `CHANGELOG.md` gets a "Components" table and whose `README.md` keeps the production versions. It first states its plan and every conflict an instruction would cause (a partial release that breaks a dependency between the repos), and asks.
 - Plans, requests and documents Claude writes to a file are saved in English and shown in your language.
 - `/merge --main` ends with a final review of everything since the last release, in two clean-context rounds: what enters and what leaves (the inventory of what was added, changed and removed, each traced to its request; regressions; whether each change does what was asked; the `CHANGELOG.md`), then a general reading of the whole tree. An unexplained removal or a regression stops the release.
 - `scripts/check-workspace.sh --i18n-pending` (the gate of the product repository) lists missing or outdated translations as pending instead of failing.
 
+- A request lifecycle in `custom/requests/`: pending (state `idea` or `ready`), `qa/<project>/` once `/merge` takes it into `developer` (with an "Execution" block: what was done, decisions, deviations, the status of each acceptance criterion), `done/<project>/` once released. `/merge --main` validates every request waiting in `qa/<project>/` against the code, gathers every finding, and asks per finding: fix now in the release clone, or a request.
+
 ### Changed
 
-- `/prompt` opens the work clone before the first change to a project or POC.
+- `/prompt` and `/draft-prompt` are renamed `/request` and `/draft-request` (`rules/request-writing.md`); `/request` opens the work clone before the first change to a project or POC, and its default file is `tmp/request.md`. Requests live in `custom/requests/` instead of `custom/prompts/`.
+- Any project layout: a folder of `projects/` at any depth may be a repo, inside another repo too; no tool refuses a layout. A clone of a nested repo is named after its path with each `/` as `--` (`billing--billing-api`).
+- The prompt log moves to `logs/prompts/` at the workspace root (a new writable folder), never versioned; `prompt-log.py sync --scan` removes any secret from it. Its sources move to `custom/config/prompt-log/sources.json`.
 - `/commit`, the implementer and the docs writer no longer write `CHANGELOG.md`; `/merge` does.
 - The gate of the product repository (`scripts/check-workspace.sh`, a maintenance tool) requires a `pt-BR` and an `es` translation of every `README.md` of the repository and of every page of its root `docs/`, besides the product's documents.
-- After updating: a project whose `CHANGELOG.md` has a plain `## [Unreleased]` section gets it named by the next `/merge` (`## [X.Y.Z] - Unreleased`); nothing to do by hand.
+### Removed
+
+- The backlog (`custom/backlog/`, `templates/backlog-item.md`): an idea is a request in state `idea`.
+
+### After updating
+
+- Your custom layer, in this order: `git -C custom mv prompts requests` (the requests and their archive move together); move `custom/requests/log/sources.json` to `custom/config/prompt-log/sources.json`; copy the rest of `custom/requests/log/` to `logs/prompts/` and remove it from `custom/` (`git -C custom rm -r requests/log`); turn each file of `custom/backlog/` into a request in `custom/requests/` with `**State:** idea`; commit and push `custom/`.
+- A project whose `CHANGELOG.md` has a plain `## [Unreleased]` section gets it named by the next `/merge` (`## [X.Y.Z] - Unreleased`); nothing to do by hand.
 
 ## [0.1.0] - 2026-11-16
 
