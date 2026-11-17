@@ -101,7 +101,7 @@ The agents of each stage run with the stage's effort, passed in the call.
   - AC-6: proven (test-run-tools and test_run_tools.py: detection, missing configuration, busy port, rollback tag,
     `down` without removing a container, volume or image).
   - RN-8 (the checkboxes) is skill text, pending a real session.
-- **Checks:** `tests/check.sh --base origin/developer --i18n-pending`; test-run-tools (117 checks), test_run_tools.py
+- **Checks:** `tests/check.sh --base origin/developer --i18n-pending`; test-run-tools (120 checks), test_run_tools.py
   (62 tests, `run-tools.py` above 99 % of lines and branches), test-check-workspace, test_performance; the real Docker
   run on the prefixed copy (move with volume copy, both refusals, AC-1, `down`, AC-3), every test resource removed;
   `docker compose config` of the group and of each tool alone; an independent review (effort high):
