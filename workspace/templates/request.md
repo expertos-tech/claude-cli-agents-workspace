@@ -73,7 +73,7 @@ A new project (with its folder in `projects/`, at any level), an evolution of an
 
 ## 9. Visual identity (optional)
 
-Only for deliveries with a user interface. Empty: the default identity of the custom layer (`custom/rules/identity.md`); a product with an identity of its own there uses it. Another brand: give its colors, fonts and logo files.
+Only for deliveries with a user interface. Empty: the default identity of the custom layer (`custom/my-rules/identity.md`); a product with an identity of its own there uses it. Another brand: give its colors, fonts and logo files.
 
 ## 10. Language (optional)
 

@@ -1216,7 +1216,10 @@ custom_skeleton() {
 The private layer of this workspace: what belongs to you or your company and never goes into the product.
 It is a git repository of its own. Put here:
 
-- `rules/<name>.md`: your own rules; each one reaches the next sessions as `.claude/rules/custom-<name>.md`.
+- `my-rules/`: your own rules (`<name>.md`), skills (`skills/<name>/`) and agents (`agents/<name>.md`); each one
+  reaches the next sessions as `custom-<name>` in `.claude/`.
+- `rules-config.json`: the core rules, skills and agents this workspace turns off, and the core rules it replaces
+  with its own (`/rules`).
 - `core-terms.txt`: terms that must never reach a public repository (company and customer names).
 - `projects.md`: the list of your projects.
 - `requests/`: your requests: pending at its root, `qa/<project>/` once on `developer`, `done/<project>/` once released.

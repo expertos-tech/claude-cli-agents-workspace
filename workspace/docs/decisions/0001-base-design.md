@@ -1,6 +1,6 @@
 # 0001 Base design
 
-Status: accepted
+Status: partly superseded by 0003
 
 ## Context
 
@@ -32,3 +32,5 @@ Claude CLI Agents Workspace is a folder where Claude Code works on a person's pr
 - A person who wants other rules adds them to `custom/rules/`; the mandatory core still applies.
 
 ## Change history
+
+- 2026-11-17 — the own rules move from `custom/rules/` to `custom/my-rules/`, the custom layer can turn optional core rules, skills and agents off, and the mandatory core is declared in `rules/manifest.json` (`/request` in place of `/prompt`, plus the agents `reviewer` and `verifier`) — configurable rules — the owner (0003)

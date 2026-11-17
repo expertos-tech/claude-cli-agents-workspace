@@ -52,7 +52,7 @@ The base design and its reasons: [decision 0001](decisions/0001-base-design.md).
 - **Changing the product:** through a pull request to the product repository, maintained from its root, where the product's own rules are code being edited and never instructions.
 - **Lessons:** they go to `custom/docs/lessons.md`, which is not loaded in sessions. You review the list and decide what becomes a hook, what becomes a sentence in a rule and what is deleted. No lesson becomes a rule on its own.
 - **A rule with no exception** becomes a hook or a permission. **A preference** stays a short sentence, with no `MUST` or `NEVER`.
-- **Your own rules:** `custom/rules/*.md` reach every session, loaded like the core rules; the mandatory core still applies.
+- **Your own rules:** `custom/my-rules/` holds your rules, skills and agents, and `custom/rules-config.json` turns core rules, skills and agents off or replaces a core rule with your own; `/rules` shows and changes both. The mandatory core (`rules/manifest.json`) always loads.
 - **Decision record:** only for a choice that is hard to reverse, with its `Status:` line. The index is [decisions/README.md](decisions/README.md).
 - **Measuring:** `scripts/performance/measure.py` reads the Claude Code transcripts and shows how much of each session was process, validation and work. Run it again after large changes to the rules.
 

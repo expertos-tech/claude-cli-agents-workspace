@@ -15,5 +15,6 @@ One record per decision about the workspace itself: a choice that is hard to rev
 
 | No. | Decision | Status |
 | --- | --- | --- |
-| [0001](0001-base-design.md) | Base design: custom layer, work in clones and a merge gate, hooks, a mandatory core, a read-only installed core updated by `aiwp`, the maintenance at the repository root | accepted |
+| [0001](0001-base-design.md) | Base design: custom layer, work in clones and a merge gate, hooks, a mandatory core, a read-only installed core updated by `aiwp`, the maintenance at the repository root | partly superseded by 0003 |
 | [0002](0002-workspace-projects-and-normalization.md) | Workspace projects: the version marker, the warning at every interaction, `/normalize-projects` in two stages with checkpoint tags, and a gate that judges a normalization on what it adds | accepted |
+| [0003](0003-configurable-rules.md) | Configurable rules: `custom/rules-config.json` turns optional core rules, skills and agents off or replaces a core rule, own items in `custom/my-rules/`, the mandatory core in `rules/manifest.json`, the effective `AGENTS.md` generated in `.claude/` | accepted |

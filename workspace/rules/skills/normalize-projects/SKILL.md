@@ -89,7 +89,7 @@ content of `VERSION`.
    `feat/ai-workspace-migration-<x>-<y>-<z>` with the version being applied. Every commit below is pushed by the
    clone's hooks.
 4. **Apply the approved lines, in commits** (`rules/git.md` "Commits"), in this order:
-   1. **Custom layer:** company- and environment-specific knowledge as `custom/rules/project-<name>.md` with
+   1. **Custom layer:** company- and environment-specific knowledge as `custom/my-rules/project-<name>.md` with
       `paths:` `projects/<repo>/**` and `tmp/work/*/<name>/**`, without any secret value; files kept for a team: one
       line each, `projects/<repo>/<path>`, in `custom/claude-md-excludes.txt` (`scripts/setup-claude.sh` adds them to
       `claudeMdExcludes`; run it now). Commit in `custom/` by path and push `custom/`.

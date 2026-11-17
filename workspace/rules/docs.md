@@ -11,7 +11,7 @@ paths:
 
 - Documentation changes in the same commit as the code it describes.
 - The workspace core and its tools: English only. Translations of its documents live in `i18n/<locale>/` of the product repository, each starting with `<!-- source: <path> sha256:<hash of the English file> -->`; a change to an English document updates its translations in the same commit.
-- A project or POC: `docs/`, `README.md` and `CHANGELOG.md` in the language its own rules or `custom/rules/` choose; none chosen: English. An `sdk/` meant for external use: English.
+- A project or POC: `docs/`, `README.md` and `CHANGELOG.md` in the language its own rules or `custom/my-rules/` choose; none chosen: English. An `sdk/` meant for external use: English.
 - Each page has one role: reference, explanation or how-to guide.
 
 ## README.md (every project, component and SDK)

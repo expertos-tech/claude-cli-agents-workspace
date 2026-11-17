@@ -57,7 +57,7 @@ It exists only in the session opened by `single-claude`. Type `/single-agent`: C
 
 ## What still applies
 
-With no option to turn it off: data security, confirmation before a destructive action, the temperature reading before a heavy task and only the cloud and tenant of the custom layer (`custom/rules/company.md`). The single session completely ignores messages from `ai-workspace-*` sessions (no reply, no action, no mention to you), and the workspace's sessions send it no message and never read `SINGLE-AGENT.md`.
+With no option to turn it off: data security, confirmation before a destructive action, the temperature reading before a heavy task and only the cloud and tenant of the custom layer (`custom/my-rules/company.md`). The single session completely ignores messages from `ai-workspace-*` sessions (no reply, no action, no mention to you), and the workspace's sessions send it no message and never read `SINGLE-AGENT.md`.
 
 ## History
 
