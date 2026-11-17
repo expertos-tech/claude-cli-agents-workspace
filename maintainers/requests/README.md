@@ -19,42 +19,69 @@ A request never moves while its stages run. There is no backlog: an idea is a pe
 
 ## Pending
 
-Run them in this order; a request starts only after the ones it depends on are on `developer`. Each runs in its own
-session and clone under `tmp/work/` (`/caw-request`), and enters `developer` through `/caw-merge`, one at a time.
+Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`), and enters `developer` through
+`/caw-merge`, one at a time; a request starts only after the ones it depends on are on `developer`.
 
-| Round | Request | State | Notes |
-| --- | --- | --- | --- |
-| 0 | `import-from-fork.md` | ready | The first release after the publication: the first real test of `aiwp update` |
-| 1 | `rules.md` | ready | Design: `plans/rules-config.md` |
-| 1 | `run-tools.md` | ready | Design: `plans/run-tools.md` |
-| 1 | `prompt-log-results.md` | idea | Two decisions open |
-| 1 | `gate-audit-gaps.md` | idea | Three decisions open |
-| 1 | `work-status-docker-stacks.md` | idea | Two decisions open |
-| 1 | `aiwp-remove.md` | idea | Its first decision is whether to build it |
-| 1 | `measure-quality-indicators.md` | idea | After `import-from-fork` (both change `measure.py`) |
-| 2 | `normalize-rules.md` | ready | Needs `rules`; design: `plans/normalize-rules.md` |
-| 2 | `fork-my-rules.md` | ready | Needs `rules`; design: `plans/fork-my-rules.md` |
-| 2 | `tools-hub.md` | ready | Needs `run-tools`; design: `plans/tools-hub.md` |
-| 2 | `onboard.md` | idea | Needs `rules`; four decisions open; design: `plans/distribution.md` |
-| 3 | `final-review.md` | ready | A whole-product review in a new session; every release now also ends with a final review |
-| 3 | `rules-size-budget.md` | idea | Folded into `final-review` or right before it |
-| 4 | `os-sandbox-trial.md` | idea | After round 3; three decisions open |
-| — | `qa-validation-on-developer.md` | idea | The `--qa` validation; the owner completes the design |
-| — | `release-developer-moved.md` | ready | `/caw-merge --main` when `developer` moves during the release |
-| — | `release-tag-after-pull-request.md` | idea | The tag after a pull request into a protected `main` |
-| — | `process-merge-check-command.md` | ready | A review finding |
-| — | `review-effort-wording.md` | ready | A review finding |
-| — | `review-docs-only-scope.md` | ready | A review finding |
-| — | `workflow-agent-session-name.md` | idea | Parent session name in the labels of Workflow agents |
-| — | `release-per-project-proof.md` | ready | Prove AC-1 to AC-4 of `request-lifecycle` in a run |
-| — | `old-names-leftovers.md` | ready | A review finding |
-| — | `caw-layers-missing-target.md` | ready | A review finding |
-| — | `merge-project-name.md` | ready | A review finding |
-| — | `execution-block-after-fixes.md` | ready | A review finding |
-| — | `work-branch-push-before-scan.md` | ready | A review finding |
-| — | `repo-terms-skip-stops-merge.md` | idea | A review finding: today no terms list exists here |
-| — | `clone-path-findings-loop.md` | ready | A review finding |
-| — | `release-main-sha-check.md` | ready | A review finding |
+### Recommended order
+
+1. Round 1: `rules`, `run-tools`; the ideas of round 1 once the owner answers their decisions
+   (except `measure-quality-indicators`, which waits for `import-from-fork`).
+2. Round 2: `normalize-rules` first (the owner needs it to migrate the final project), then `fork-my-rules`,
+   `tools-hub`, `onboard`.
+3. `import-from-fork`: the first release after the publication, right after `normalize-rules`; then
+   `measure-quality-indicators` (both change `measure.py`).
+4. Before that first release: the findings of the merge and release flow (the small ready requests below), above all
+   `release-developer-moved` and `release-main-sha-check`, and `release-per-project-proof`, which proves the qa
+   lifecycle and the release per project in a real run. The small ones mostly touch `/caw-merge` and the rules and can
+   run together in one session.
+
+### Ready: the plan
+
+| Round | Request | Notes |
+| --- | --- | --- |
+| 1 | `rules.md` | Design: `plans/rules-config.md` |
+| 1 | `run-tools.md` | Design: `plans/run-tools.md` |
+| 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
+| 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
+| 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
+| 2 | `tools-hub.md` | Needs `run-tools`; design: `plans/tools-hub.md` |
+| 3 | `final-review.md` | A whole-product review in a new session; every release now also ends with a final review |
+
+### Ready: findings of the reviews
+
+Small adjustments, effort low unless noted.
+
+| Request | What it fixes |
+| --- | --- |
+| `release-developer-moved.md` | `/caw-merge --main` when `developer` moves during the release |
+| `release-main-sha-check.md` | The push of `main` and the tag tied to the sha the suite judged |
+| `work-branch-push-before-scan.md` | Work and release branches pushed before the company-terms scan |
+| `execution-block-after-fixes.md` | The Execution block written before the results it records |
+| `clone-path-findings-loop.md` | Requests made of findings loop the clone path of `/caw-merge` |
+| `caw-layers-missing-target.md` | The `caw-layers` check passes a layer whose product skill is missing |
+| `merge-project-name.md` | `<project>` for a plain folder of repos with no root repo |
+| `old-names-leftovers.md` | Old names in a decision record and in pending requests |
+| `process-merge-check-command.md` | `process.md` names the old suite command for a merge |
+| `review-effort-wording.md` | Texts still say every review is effort high |
+| `review-docs-only-scope.md` | `CLAUDE.md`, `AGENTS.md` and templates count as documentation and skip the review |
+| `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
+
+### Ideas
+
+| Round | Request | What is missing |
+| --- | --- | --- |
+| 1 | `prompt-log-results.md` | Two decisions |
+| 1 | `gate-audit-gaps.md` | Three decisions |
+| 1 | `work-status-docker-stacks.md` | Two decisions |
+| 1 | `aiwp-remove.md` | Whether to build it |
+| 2 | `onboard.md` | Four decisions; needs `rules`; design: `plans/distribution.md` |
+| 2 | `measure-quality-indicators.md` | Three decisions; after `import-from-fork` (both change `measure.py`) |
+| 3 | `rules-size-budget.md` | Two decisions; folded into `final-review` or right before it |
+| 4 | `os-sandbox-trial.md` | Three decisions; after round 3 |
+| — | `qa-validation-on-developer.md` | The owner completes the design of `--qa` |
+| — | `release-tag-after-pull-request.md` | The design of the tag after a pull request into a protected `main` |
+| — | `repo-terms-skip-stops-merge.md` | Today no terms list exists here |
+| — | `workflow-agent-session-name.md` | The parent session name in the labels of Workflow agents |
 
 ## QA
 
