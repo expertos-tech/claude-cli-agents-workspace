@@ -39,19 +39,21 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
 - Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
-  stage closes.
+  stage closes. A review covers only the difference it is given; a RECOMMENDED finding becomes a backlog item.
 - A stage that cannot finish: write where it stopped and the next steps into the request, or into `tmp/prompt.md`.
 
 ## 5. Prove
 
-- Every change: `bash tests/check.sh --all` (`/caw-check`). A failing check is fixed, never skipped.
+- Every change: `bash tests/check.sh --base origin/developer --i18n-pending` (`/caw-check`): only what changed, with
+  the translations left pending. The release runs it strict: `--all --base <last tag>`. A failing check is fixed,
+  never skipped.
 - A change to the installer, a hook or `workspace/scripts/setup-claude.sh`: `/caw-test-install` too.
 - A claim in a plan, request or doc is checked against the code or a run before it is written.
 
 ## 6. Close
 
-- Commit per `git.md` (`/caw-commit`), one logical change per commit, with the translations of changed documents in the
-  same commit (`docs.md`).
+- Commit per `git.md` (`/caw-commit`), one logical change per commit. Translations are not updated per commit: one
+  agent brings them all up to date at the release (`docs.md`).
 - Update the state of the request in `maintainers/requests/README.md` and of its backlog item, if any. A delivered
   request moves to `maintainers/requests/done/` (`git mv`) in the same commit, and its row points to the new path.
 - `/caw-merge` takes the work into `developer` and writes the root `CHANGELOG.md` and, for a product change,

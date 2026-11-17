@@ -29,7 +29,8 @@ Detail in `.claude/rules/process.md`. A typo fix may skip plan and request.
    with effort.
 4. **Execute** in stages, with subagents when worth it, always with explicit model and effort, and an independent
    clean-context review of hooks and security.
-5. **Prove**: `bash tests/check.sh --all` on every change; `/caw-test-install` when the installer, a hook or
+5. **Prove**: `bash tests/check.sh --base origin/developer --i18n-pending` on every change (only what changed; the
+   release runs it strict); `/caw-test-install` when the installer, a hook or
    `setup-claude.sh` changes.
 6. **Close**: commits in Conventional Commits, one logical change each; push only when the owner asks.
 
@@ -52,7 +53,7 @@ The maintenance skills carry the prefix `caw-`, so they do not collide with the 
 
 | Skill | Arguments | What it does |
 | --- | --- | --- |
-| `/caw-check` | `[--base <ref>] [--floor] [extra check.sh options]` | Runs `tests/check.sh --all` with the right flags and explains each failure |
+| `/caw-check` | `[--base <ref>] [--floor] [extra check.sh options]` | Runs `tests/check.sh` on what changed (`--base origin/developer --i18n-pending`) and explains each failure |
 | `/caw-commit` | `[--all]` | One Conventional Commit per logical change of the session, by path; no push, no branch, no tag |
 | `/caw-draft-prompt` | `[plan \| request] [ideas \| path]` | Turns ideas into a plan or a request, asking only what has no best alternative |
 | `/caw-prompt` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `tmp/prompts/`, then `tmp/`; no argument reads `tmp/prompt.md` |
@@ -67,9 +68,10 @@ hooks, the installer, security, risky actions and every review (`.claude/rules/m
 | Task | Agent | Model | Effort |
 | --- | --- | --- | --- |
 | Gaps of a plan or request | `requirements-analyst` | claude-opus-5-5 | high |
-| Independent review | `reviewer` | claude-opus-5-5 | high |
+| Independent review | `reviewer` | claude-opus-5-5 | by risk: high or medium ([review](#reviews)) |
 | Scripts, hooks and their tests | `script-engineer` | claude-opus-5-5 | high for hooks and the installer, else medium |
-| Docs and their pt-BR and es translations | `docs-writer` | claude-sonnet-5-5 | medium |
+| Docs in English | `docs-writer` | claude-sonnet-5-5 | medium |
+| The pt-BR and es translations, once per release | `docs-writer`, one call | claude-sonnet-5-5 | medium |
 | Running the suite, returning only result lines | `verifier` | claude-haiku-5-5 | low |
 | Official docs, versions, prices | `web-researcher` | claude-sonnet-5-5 | high |
 
@@ -87,12 +89,23 @@ The default is no subagent. Subagents never commit or push: the main session doe
 Only when the owner asks. Running it is the owner's order for the pushes it makes.
 
 - **From a clone:** merge `origin/developer` into the clone, write the changelogs, run
-  `bash tests/check.sh --all --base origin/developer` (and `/caw-test-install` when the installer, a hook or
-  `setup-claude.sh` changed), then a `reviewer` in a clean context. Only then, at the root, fast-forward `developer`
+  `bash tests/check.sh --base origin/developer --i18n-pending` (and `/caw-test-install` when the installer, a hook or
+  `setup-claude.sh` changed), then the review of the difference ([reviews](#reviews)). Only then, at the root, fast-forward `developer`
   to the clone's commit, push it, delete the work branch and the clone.
 - **On developer:** the same gates over the commits since the last changelog commit (`docs(changelog)` or
   `chore(release)`), then the push.
 - **`--main`:** the release of the product ([releases](releases.md)).
+
+## Reviews
+
+A `reviewer` subagent with a clean context, which did not write the change (`.claude/rules/review.md`).
+
+- **Merge into `developer`:** only the difference that enters; what is already on `developer` was reviewed. Effort by
+  risk: `high` for a hook, the installer, `setup-claude.sh`, a gate script, a permission or deny rule or secrets;
+  `medium` for other code or rules; no review for documentation alone.
+- **Merge into `main`** (the release): the final review in two rounds, described in [releases](releases.md).
+- **Findings:** a BLOCKER is fixed before the merge and the fix is reviewed. A RECOMMENDED never blocks: it becomes a
+  backlog item, fixed when the owner asks.
 
 It never merges with a failing check or an open BLOCKER, and never rewrites `developer` or `main`.
 

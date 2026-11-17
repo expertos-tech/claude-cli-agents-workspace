@@ -13,6 +13,7 @@ Run them in this order; each one depends on the ones before it:
 | 0a | `done/merge-versioned-changelog.md` | — | In progress; plan approved 2026-11-17, recorded at approval |
 | 0b | `done/caw-merge-two-changelogs.md` | — | Built 2026-11-17: two changelogs, only the product is released |
 | 0c | `done/project-docs.md` | — | Built 2026-11-17: `docs/`, a short README, translations of every README |
+| 0d | `done/review-and-translation-cadence.md` | — | Built 2026-11-17: reviews by risk, translations at the release, final review |
 | 0 | `import-from-fork.md` | — | Pending; first after the publication, with its own release |
 | 1 | `done/normalize-projects.md` | `plans/normalize-projects.md` | Built in 0.1.0; end-to-end test passed on six projects; a second test on unseen projects pending |
 | 2 | `rules.md` | `plans/rules-config.md` | Pending |

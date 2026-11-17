@@ -15,14 +15,14 @@ Found a better way to do something? Fixed a defect? Wrote a hook that saves ques
    (for example `fix/session-title-prefix`).
 3. **Change:** small and focused, with a commit per logical change in Conventional Commits
    (`type(scope): subject`, in English).
-4. **Before sending:** `bash tests/check.sh --all` passes. It runs the lint, the secret scan, the script suites and the
-   check that keeps company data out of the repository.
+4. **Before sending:** `bash tests/check.sh --base origin/developer --i18n-pending` passes. It runs the lint, the
+   secret scan, the suites of the scripts you changed and the check that keeps company data out of the repository.
 5. **Pull request** to `developer`, saying why, not only what.
 
 ## What to keep in mind
 
-- **Translations:** a change to an English document updates its translations in `i18n/pt-BR/` and `i18n/es/` in the
-  same commit ([translations](translations.md)).
+- **Translations:** write in English; the translations in `i18n/pt-BR/` and `i18n/es/` are brought up to date at the
+  release ([translations](translations.md)). Sending them with your change is welcome, not required.
 - **What is yours stays with you:** company, projects, visual identity and requests stay in your custom layer, never in
   the pull request.
 - **New rule:** prefer a hook or a tested script to more text, and say what the change adds to or removes from every

@@ -46,7 +46,8 @@ Detail in `.claude/rules/process.md`.
    session is either on `developer` at the root or in such a clone), always with explicit model and effort (high for
    hooks, the installer, security and risky actions), in parallel only on disjoint paths, and an independent
    clean-context review of hooks and security (`.claude/rules/review.md`).
-5. **Prove**: `bash tests/check.sh --all` on every change (`/caw-check`); `/caw-test-install` whenever the installer,
+5. **Prove**: `bash tests/check.sh --base origin/developer --i18n-pending` on every change, only what changed
+   (`/caw-check`); the release runs it strict from the last tag; `/caw-test-install` whenever the installer,
    a hook or `setup-claude.sh` changes.
 6. **Close**: commits per the convention below (`/caw-commit`); the work branch of a clone is pushed at each commit;
    `/caw-merge` takes the work into `developer` (the default branch) and writes the two changelogs: the root

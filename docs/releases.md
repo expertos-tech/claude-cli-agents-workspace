@@ -32,15 +32,20 @@ Both follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semant
 `/caw-merge --main`, only when the owner asks. The version is the `Unreleased` one of `workspace/CHANGELOG.md`.
 
 1. A release clone `tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/` on the branch `fix/release-vX-Y-Z`.
-2. A full check in a clean context: the suite from the last tag, the test installation and a review of the range.
-3. Fixes of what it finds, as commits in the clone.
-4. `workspace/VERSION` to `X.Y.Z`, the product section dated, the root section dated and linked to the release, the
-   translations of the changed documents, and the commit `chore(release): X.Y.Z`.
-5. The clone enters `developer` as in any merge.
-6. Each public step is confirmed by the owner, one by one: `main` (a fast-forward from `developer`, or a pull request
+2. The translations: one agent brings every pending one up to date.
+3. The full suite, strict, from the last tag (translations included), and the test installation.
+4. The final review of everything since the last tag, in two rounds with a clean context: **what enters and what
+   leaves** (effort high: the inventory of what was added, changed and removed, each traced to the request that asked
+   for it; regressions, so nothing that works is removed without a request; whether each change does what was asked;
+   the changelogs), then a **general** reading of the whole tree (effort medium: contradictions, dead references,
+   leftovers). Its BLOCKERs are fixed in the clone; its RECOMMENDED become backlog items.
+5. `workspace/VERSION` to `X.Y.Z`, the product section dated, the root section dated and linked to the release, and
+   the commit `chore(release): X.Y.Z`.
+6. The clone enters `developer`.
+7. Each public step is confirmed by the owner, one by one: `main` (a fast-forward from `developer`, or a pull request
    when refused), the tag `vX.Y.Z` (never moved or deleted) and the GitHub release, with the product changelog section
    as its notes.
-7. A check that a fresh installation picks up the new tag.
+8. A check that a fresh installation picks up the new tag.
 
 A refused or failed public step stops the release there. Nothing is forced.
 

@@ -20,9 +20,11 @@ paths:
 - A translated document outside the product carries, right under its H1, the language links line:
   `English · [Português (Brasil)](<path to i18n/pt-BR/...>) · [Español](<path to i18n/es/...>)`; each translation
   carries the same line with its own language unlinked.
-- A change to an English document updates both translations in the same commit. Line 1 of each translation is exactly
+- Translations are brought up to date once, at the release (`/caw-merge --main`), by one `docs-writer` call with effort
+  `medium`, for every pending one; between releases the suite reports them as pending (`--i18n-pending`). Line 1 of
+  each translation is exactly
   `<!-- source: <path from the repository root> sha256:<sha256 of the English file> -->`; recompute it after the last
-  edit (`sha256sum <path>`). The gate fails on a missing, stale or orphan translation.
+  edit (`sha256sum <path>`). The strict suite (the release) fails on a missing, stale or orphan translation.
 - Links in a translation point to the same-locale translation when it exists, else to the English original, with a
   path relative to the translation (`../../LICENSE`). Check every link you add resolves.
 - The root `docs/` documents the project: how to install and use it, contribute, maintain and release it; the
