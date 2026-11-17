@@ -24,6 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - This changelog of the repository, next to the product's.
 - `/caw-merge`: the work of a session into `developer` through the suite and a clean-context review, writing both
   changelogs; `/caw-merge --main` releases the product version.
+- Requests in `maintainers/requests/` for the features discussed and not built yet, in the order they run, and the
+  `/rules` lessons and the local delivery of `/fork-my-rules` in the `rules` and `fork-my-rules` requests.
 - `maintainers/requests/done/`: delivered requests, and every plan the owner approves, recorded at approval.
 - `docs/`: the documentation of the project: getting started, features, commands and updates, hooks, the repository,
   contributing, maintenance, releases and translations.
