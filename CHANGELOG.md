@@ -17,7 +17,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `/merge` writes a versioned changelog at every merge, and `/merge --main` releases that version with a tag
   ([product changelog](workspace/CHANGELOG.md)).
 - Plans and requests are shown in the person's language and saved in English.
-- The i18n check of the product gate also requires the translations of every README and of the root `docs/`.
+- The i18n check of the product gate also requires the translations of every README and of the root `docs/`, and can
+  report them as pending (`--i18n-pending`).
+- `/merge --main` ends with a final review of what enters and what leaves, then a general one.
 
 ### Added
 
@@ -38,6 +40,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `maintainers/requests/`, then `tmp/prompts/`, then `tmp/`.
 - The maintenance skills carry the prefix `caw-`, apart from the product's.
 - Plans and requests are shown to the owner in their language and saved in English.
+- A merge into `developer` checks and reviews only the difference that enters, with the review effort by risk and no
+  review for documentation alone; a RECOMMENDED finding becomes a backlog item.
+- Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
+- `/caw-merge --main` ends with the same final review as the product's: what enters and what leaves, then general.
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
 
 ### Removed

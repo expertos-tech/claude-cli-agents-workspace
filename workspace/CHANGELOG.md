@@ -9,6 +9,8 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 - `/merge` writes the project's `CHANGELOG.md` at every merge into `developer`, always under a named version (`## [X.Y.Z] - Unreleased`): a `feat` makes it a minor, anything else a patch, and a fix of something that entered the same unreleased version adjusts its entry instead of adding a "Fixed" one (`rules/docs.md`). With no argument, `/merge` takes the clone of the session.
 - `/merge --main <repo>` releases that version: a release clone on `fix/release-vX-Y-Z`, a full check in a clean context, its fixes, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the annotated tag `vX.Y.Z` (`aiwp-cmds.sh release <repo> --tag vX.Y.Z`, which never moves a tag).
 - Plans, requests and documents Claude writes to a file are saved in English and shown in your language.
+- `/merge --main` ends with a final review of everything since the last release, in two clean-context rounds: what enters and what leaves (the inventory of what was added, changed and removed, each traced to its request; regressions; whether each change does what was asked; the `CHANGELOG.md`), then a general reading of the whole tree. An unexplained removal or a regression stops the release.
+- `scripts/check-workspace.sh --i18n-pending` (the gate of the product repository) lists missing or outdated translations as pending instead of failing.
 
 ### Changed
 
