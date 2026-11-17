@@ -10,8 +10,10 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
-# Scratch files, worktrees and tmp/prompt.md, the default input of /prompt
+# Scratch files, worktrees and tmp/request.md, the default input of /request
 /tmp/
+# Logs of the workspace (the prompt log of scripts/prompt-log.py in logs/prompts/): local, never versioned
+/logs/
 # The custom layer: a git repo of its own (rules/rules.md "Custom layer")
 /custom/
 # macOS Finder metadata

@@ -116,7 +116,8 @@ AGENT = '[#automatic-agent-commit]'
 
 
 class Workspace:
-    """A throwaway workspace root with custom/, projects/ and a Claude config folder for the transcripts."""
+    """A throwaway workspace root with custom/, projects/ and a Claude config folder for the transcripts; the log in
+    logs/prompts/ and its sources in custom/config/prompt-log/sources.json."""
 
     def __enter__(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -124,8 +125,9 @@ class Workspace:
         # [, * and ? in the path: the log must not take them for glob patterns.
         self.root = os.path.join(base, 'ws[1]*?')
         self.config = os.path.join(base, 'config')
-        self.log = os.path.join(self.root, 'custom', 'prompts', 'log')
-        os.makedirs(os.path.join(self.root, 'custom'))
+        self.log = os.path.join(self.root, 'logs', 'prompts')
+        self.sources = os.path.join(self.root, 'custom', 'config', 'prompt-log', 'sources.json')
+        os.makedirs(os.path.dirname(self.sources))
         for repo in ('billing/.git', 'shop/api/.git', 'shop/web/.git'):
             os.makedirs(os.path.join(self.root, 'projects', repo))
         self.env = mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': self.config})
@@ -291,7 +293,7 @@ class TranscriptTest(unittest.TestCase):
                 (int(epoch(30, day=14, hour=15)), 'ddd4444', 'feat: past the 4 h cap', AGENT),
             )
             with mock.patch.object(log.subprocess, 'run', side_effect=fake_git({'billing': commits})):
-                fresh = log.collect(ws.root, ws.log)
+                fresh = log.collect(ws.root)
         first, second = sorted(fresh.values(), key=lambda r: r['timestamp'])
         self.assertEqual(first['until'], epoch(58, day=9) + 1)
         self.assertEqual(first['commits'], [['aaa1111', 'feat: in the first turn']])
@@ -309,16 +311,19 @@ class TranscriptTest(unittest.TestCase):
 class SourcesTest(unittest.TestCase):
     def test_sources(self):
         with Workspace() as ws:
-            os.makedirs(ws.log)
-            self.assertEqual(log.read_sources(ws.root, ws.log), [(ws.transcripts(), 'workspace')])
-            path = os.path.join(ws.log, 'sources.json')
+            self.assertEqual(log.read_sources(ws.root), [(ws.transcripts(), 'workspace')])
+            path = ws.sources
+            # The former place of the sources is not read any more.
+            os.makedirs(os.path.join(ws.root, 'custom', 'prompts', 'log'))
+            Path(ws.root, 'custom', 'prompts', 'log', 'sources.json').write_text('{', encoding='utf-8')
+            self.assertEqual(log.read_sources(ws.root), [(ws.transcripts(), 'workspace')])
             Path(path).write_text(json.dumps({'/other/place': 'claude-cli', ws.root: 'dup'}), encoding='utf-8')
-            sources = log.read_sources(ws.root, ws.log)
+            sources = log.read_sources(ws.root)
             self.assertEqual(sources, [(ws.transcripts(), 'workspace'), (ws.transcripts('/other/place'), 'claude-cli')])
             for bad in ('{', '[]', '{"/x": "../evil"}', '{"/x": 3}'):
                 Path(path).write_text(bad, encoding='utf-8')
                 with self.assertRaises(log.LogError):
-                    log.read_sources(ws.root, ws.log)
+                    log.read_sources(ws.root)
 
 
 class CommitsTest(unittest.TestCase):
@@ -441,32 +446,23 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(text[2:4], ['  - feat: thing 0', '  - feat: thing 1'])
         self.assertEqual(text[10], '  - and 2 more')
         self.assertEqual(text[11], '- workspace: 1 prompt in 1 session, no commits.')
-        self.assertEqual(text[-1], 'Details, only if the human asks: custom/prompts/log/<project>/2026-W46.md.')
+        self.assertEqual(text[-1], 'Details, only if the human asks: logs/prompts/<project>/2026-W46.md.')
         many = [record(day=13, project=f'p{i:02d}', commits=commits[:3]) for i in range(30)]
         text = log.context(many, today).splitlines()
         self.assertEqual(len(text), log.CONTEXT_LINES)
         self.assertEqual(text[-2], '- (cut; the rest is in the files)')
 
 
-class ScanAndCommitTest(unittest.TestCase):
-    def test_changed_log_files(self):
-        with mock.patch.object(log.subprocess, 'run', side_effect=FileNotFoundError('git')):
-            self.assertIsNone(log.changed_log_files('/c'))
-        with mock.patch.object(log.subprocess, 'run', return_value=mock.Mock(returncode=128, stdout='')):
-            self.assertIsNone(log.changed_log_files('/c'))
-        out = '?? prompts/log/shop/2026-W46.md\0 M prompts/log/sources.json\0R  prompts/log/a/2026-W45.md\0old\0\0x'
-        with mock.patch.object(log.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=out)):
-            self.assertEqual(log.changed_log_files('/c'), ['prompts/log/a/2026-W45.md', 'prompts/log/shop/2026-W46.md'])
-
+class ScanTest(unittest.TestCase):
     def test_run_gitleaks(self):
         with mock.patch.object(log.subprocess, 'run', side_effect=FileNotFoundError('docker')):
-            self.assertEqual(log.run_gitleaks('/ws', 'custom/prompts/log', '/tmp/r'), (None, 'docker'))
+            self.assertEqual(log.run_gitleaks('/ws', 'logs/prompts', '/tmp/r'), (None, 'docker'))
         with mock.patch.object(log.subprocess, 'run', return_value=mock.Mock(returncode=1, stderr=' leaks \n')) as run:
-            self.assertEqual(log.run_gitleaks('/ws', 'custom/prompts/log', '/tmp/r'), (1, 'leaks'))
+            self.assertEqual(log.run_gitleaks('/ws', 'logs/prompts', '/tmp/r'), (1, 'leaks'))
         command = run.call_args[0][0]
         self.assertEqual(command[:6], ['docker', 'compose', '--progress', 'quiet', '-f', '/ws/docker/compose.yaml'])
         self.assertIn('/tmp/r:/report', command)
-        self.assertIn('/work/custom/prompts/log', command)
+        self.assertIn('/work/logs/prompts', command)
         self.assertNotIn('--redact', command)
         self.assertEqual(command[command.index('--config') + 1], log.GITLEAKS_CONFIG)
         self.assertEqual(run.call_args[1]['env']['WORKSPACE_DIR'], '/ws')
@@ -487,13 +483,13 @@ class ScanAndCommitTest(unittest.TestCase):
 
     def test_scan_refuses_files_it_may_not_read(self):
         with tempfile.TemporaryDirectory() as root:
-            path = os.path.join(root, 'custom', 'prompts', 'log', 'billing', '2026-W46.md')
+            path = os.path.join(root, 'logs', 'prompts', 'billing', '2026-W46.md')
             log.write_whole(path, 'x')
             self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o644)
-            files = {'custom/prompts/log/billing/2026-W46.md'}
+            files = {'logs/prompts/billing/2026-W46.md'}
             os.chmod(path, 0o600)
             with mock.patch.object(log, 'run_gitleaks') as run:
-                with self.assertRaisesRegex(log.LogError, 'would not read custom/prompts/log/billing/2026-W46.md'):
+                with self.assertRaisesRegex(log.LogError, 'would not read logs/prompts/billing/2026-W46.md'):
                     log.scan(root, files)
             run.assert_not_called()
             os.chmod(path, 0o644)
@@ -525,18 +521,18 @@ class ScanAndCommitTest(unittest.TestCase):
         return run
 
     def test_scan(self):
-        files = {'custom/prompts/log/billing/2026-W46.md'}
+        files = {'logs/prompts/billing/2026-W46.md'}
         found = json.dumps(
             [
-                {'File': '/work/custom/prompts/log/billing/2026-W46.md', 'Secret': 's3cr3t'},
-                {'File': 'custom/prompts/log/billing/2026-W46.md', 'Match': 'm4tch'},
-                {'File': '/work/custom/prompts/log/other/2026-W46.md', 'Secret': 'x'},
-                {'File': '/work/custom/prompts/log/billing/2026-W46.md'},
+                {'File': '/work/logs/prompts/billing/2026-W46.md', 'Secret': 's3cr3t'},
+                {'File': 'logs/prompts/billing/2026-W46.md', 'Match': 'm4tch'},
+                {'File': '/work/logs/prompts/other/2026-W46.md', 'Secret': 'x'},
+                {'File': '/work/logs/prompts/billing/2026-W46.md'},
                 'odd',
             ]
         )
         with mock.patch.object(log, 'run_gitleaks', side_effect=self.gitleaks([found])):
-            self.assertEqual(log.scan('/ws', files), {'custom/prompts/log/billing/2026-W46.md': ['s3cr3t', 'm4tch']})
+            self.assertEqual(log.scan('/ws', files), {'logs/prompts/billing/2026-W46.md': ['s3cr3t', 'm4tch']})
         with mock.patch.object(log, 'run_gitleaks', return_value=(None, 'no docker')):
             with self.assertRaisesRegex(log.LogError, 'no Docker'):
                 log.scan('/ws', files)
@@ -558,52 +554,40 @@ class ScanAndCommitTest(unittest.TestCase):
         self.assertEqual((only['title'], only['commits']), (log.REMOVED, [['a', f'fix: {log.REMOVED}']]))
         self.assertEqual(log.redact(records, ['ausente']), 0)
 
-    def test_git_commit(self):
-        with mock.patch.object(log.subprocess, 'run', return_value=mock.Mock(returncode=0)) as run:
-            self.assertEqual(log.git_commit('/c', ['a.md'], ['-m', 'x']), (True, ''))
-        self.assertEqual(run.call_args[0][0], ['git', '-C', '/c', 'commit', '-q', '-m', 'x', '--', 'a.md'])
-        with mock.patch.object(log.subprocess, 'run', return_value=mock.Mock(returncode=1, stderr='', stdout='no')):
-            self.assertEqual(log.git_commit('/c', ['a.md'], []), (False, 'no'))
-        with mock.patch.object(log.subprocess, 'run', side_effect=FileNotFoundError('git')):
-            self.assertEqual(log.git_commit('/c', ['a.md'], []), (False, 'git'))
-
-    def commit(self, ws, changed, scans, commit=(True, '')):
-        """Runs commit_log over one billing record with the git and gitleaks stand-ins; returns (code, out, err)."""
+    def scan_log(self, ws, scans):
+        """Runs scan_log over one billing record with the gitleaks stand-in; returns (code, out, err)."""
         records = {('s1', stamp(1)): record(text='password s3cr3t-value here')}
         log.write_log(ws.log, records, datetime.date(2026, 11, 11))
         out, err = io.StringIO(), io.StringIO()
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.object(log, 'changed_log_files', return_value=changed))
-            stack.enter_context(mock.patch.object(log, 'scan', side_effect=scans))
-            git_commit = stack.enter_context(mock.patch.object(log, 'git_commit', return_value=commit))
+            self.scan = stack.enter_context(mock.patch.object(log, 'scan', side_effect=scans))
             stack.enter_context(contextlib.redirect_stdout(out))
             stack.enter_context(contextlib.redirect_stderr(err))
-            code = log.commit_log(ws.root, ws.log, records, datetime.date(2026, 11, 11))
-        self.git_commit = git_commit
+            code = log.scan_log(ws.root, ws.log, records, datetime.date(2026, 11, 11))
         return code, out.getvalue(), err.getvalue()
 
-    def test_commit_log(self):
-        path = 'custom/prompts/log/billing/2026-W46.md'
+    def test_scan_log(self):
+        path = 'logs/prompts/billing/2026-W46.md'
         with Workspace() as ws:
-            self.assertEqual(self.commit(ws, None, [])[0], 1)
-            self.assertEqual(self.commit(ws, [], [])[1], 'prompt-log: nothing new to commit\n')
-            changed = ['prompts/log/billing/2026-W46.md']
-            code, _, err = self.commit(ws, changed, log.LogError('no Docker for gitleaks (x)'))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), mock.patch.object(log, 'scan') as scan:
+                self.assertEqual(log.scan_log(ws.root, ws.log, {}, datetime.date(2026, 11, 11)), 0)
+            scan.assert_not_called()
+            self.assertEqual(out.getvalue(), 'prompt-log: nothing to scan\n')
+            code, _, err = self.scan_log(ws, log.LogError('no Docker for gitleaks (x)'))
             self.assertEqual(code, 1)
-            self.assertIn('no commit: no Docker', err)
-            code, _, err = self.commit(ws, changed, [{path: ['s3cr3t-value']}, {path: ['another']}])
+            self.assertIn('not scanned: no Docker', err)
+            code, _, err = self.scan_log(ws, [{path: ['s3cr3t-value']}, {path: ['another']}])
             self.assertEqual(code, 1)
             self.assertIn('still finds a secret', err)
-            code, out, _ = self.commit(ws, changed, [{path: ['s3cr3t-value']}, {}])
+            code, out, _ = self.scan_log(ws, [{path: ['s3cr3t-value']}, {}])
             self.assertEqual(code, 0)
             self.assertIn('secret removed from ' + path, out)
+            self.assertIn('1 file scanned, no secret left', out)
             self.assertNotIn('s3cr3t-value', ws.read('billing'))
-            message = self.git_commit.call_args[0][2]
-            self.assertEqual(message[1], 'docs(prompts): record the prompt log')
-            self.assertEqual(message[-1], AGENT)
-            code, _, err = self.commit(ws, changed, [{}], commit=(False, 'hook said no'))
-            self.assertEqual(code, 1)
-            self.assertIn('git refused (hook said no)', err)
+            self.assertEqual(self.scan.call_args[0], (ws.root, {path}))
+            code, out, _ = self.scan_log(ws, [{}])
+            self.assertEqual((code, out), (0, 'prompt-log: 1 file scanned, no secret left\n'))
 
 
 class MainTest(unittest.TestCase):
@@ -618,7 +602,7 @@ class MainTest(unittest.TestCase):
             ws.session('s-today', [human(1, 'today', day=16)])
             self.assertEqual(self.main('--context', '--root', ws.root, '--today', '2026-11-16'), (0, '', ''))
             other = os.path.join(ws.root, '..', 'review')
-            Path(ws.log, 'sources.json').write_text(json.dumps({other: 'claude-cli'}), encoding='utf-8')
+            Path(ws.sources).write_text(json.dumps({other: 'claude-cli'}), encoding='utf-8')
             ws.session('s-old', [human(1, 'tweak', day=13)], folder=other)
             ws.session(
                 's-shop',
@@ -632,7 +616,7 @@ class MainTest(unittest.TestCase):
                 code, out, err = self.main('--root', ws.root, '--today', '2026-11-16')
             self.assertEqual((code, err), (0, ''))
             self.assertIn('prompt-log: 2 new prompts; 2 files updated', out)
-            self.assertIn('custom/prompts/log/shop/2026-W46.md', out)
+            self.assertIn('logs/prompts/shop/2026-W46.md', out)
             self.assertIn('- `abc1234` feat(web): new cart', ws.read('shop'))
             self.assertIn('### 10:01 · s-old', ws.read('claude-cli'))
             self.assertIn('> today', ws.read('workspace', '2026-W47'))
@@ -644,26 +628,31 @@ class MainTest(unittest.TestCase):
             with mock.patch.object(log.subprocess, 'run', side_effect=fake_git(outputs)):
                 code, out, _ = self.main('--root', ws.root, '--today', '2026-11-16')
             self.assertIn('0 new prompts; 0 files updated', out)
-            with mock.patch.object(log, 'commit_log', return_value=0) as commit_log:
-                self.assertEqual(self.main('--commit', '--root', ws.root, '--today', '2026-11-16')[0], 0)
-            commit_log.assert_called_once()
+            for flag in ('--scan', '--commit'):
+                with mock.patch.object(log, 'scan_log', return_value=0) as scan_log:
+                    self.assertEqual(self.main(flag, '--root', ws.root, '--today', '2026-11-16')[0], 0)
+                scan_log.assert_called_once()
+            self.assertFalse(os.path.exists(os.path.join(ws.root, 'custom', 'prompts')))
 
     def test_errors(self):
         with Workspace() as ws:
-            os.makedirs(ws.log)
-            Path(ws.log, 'sources.json').write_text('{', encoding='utf-8')
+            Path(ws.sources).write_text('{', encoding='utf-8')
             code, out, err = self.main('--context', '--root', ws.root)
             self.assertEqual((code, out), (0, ''))
             self.assertRegex(err, r'^prompt-log: .*sources.json: not readable JSON')
             self.assertEqual(self.main('--root', ws.root)[0], 1)
-            os.remove(os.path.join(ws.log, 'sources.json'))
+            os.remove(ws.sources)
             with mock.patch.object(log, 'collect', side_effect=RuntimeError('boom')):
                 code, out, err = self.main('--context', '--root', ws.root)
                 self.assertEqual((code, out, err), (0, '', 'prompt-log: failed (RuntimeError: boom)\n'))
                 with self.assertRaises(RuntimeError):
                     self.main('--root', ws.root)
-            code, _, err = self.main('--root', os.path.join(ws.root, 'projects'))
-            self.assertEqual((code, err), (1, 'prompt-log: no custom layer (custom/)\n'))
+            # Without the custom layer the log still syncs: only the sources are read from custom/.
+            shutil.rmtree(os.path.join(ws.root, 'custom'))
+            ws.session('s-plain', [human(1, 'no custom layer')])
+            code, out, err = self.main('--root', ws.root, '--today', '2026-11-16')
+            self.assertEqual((code, err), (0, ''))
+            self.assertIn('> no custom layer', ws.read('workspace'))
 
 
 class TimeTest(unittest.TestCase):
@@ -686,13 +675,12 @@ class TimeTest(unittest.TestCase):
 
 
 class Processes:
-    """Stands in for the git and docker processes of a --commit run; the rest of the code runs for real.
+    """Stands in for the git and docker processes of a --scan run; the rest of the code runs for real.
 
-    git status answers from statuses in turn; each gitleaks run writes the next report into its mounted folder.
+    git log answers empty; each gitleaks run writes the next report into its mounted folder.
     """
 
-    def __init__(self, statuses, reports):
-        self.statuses = iter(statuses)
+    def __init__(self, reports):
         self.reports = iter(reports)
         self.commands = []
 
@@ -703,55 +691,54 @@ class Processes:
             findings = next(self.reports)
             Path(folder, 'gitleaks.json').write_text(json.dumps(findings), encoding='utf-8')
             return mock.Mock(returncode=1 if findings else 0, stderr='')
-        if command[3] == 'status':
-            return mock.Mock(returncode=0, stdout=next(self.statuses))
         if command[3] == 'log':
             return mock.Mock(returncode=0, stdout='')
-        return mock.Mock(returncode=0, stdout='', stderr='')
+        raise AssertionError(command)
 
 
-class CommitFlowTest(unittest.TestCase):
+class ScanFlowTest(unittest.TestCase):
     def main(self, *argv):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = log.main(['sync', *argv])
         return code, out.getvalue(), err.getvalue()
 
-    def test_redaction_survives_resync_and_equal_head_exits_zero(self):
+    def test_redaction_survives_resync_and_nothing_is_committed(self):
         secret = 'hunter' + '-value-9'
-        week = 'prompts/log/workspace/2026-W46.md'
-        finding = [{'File': f'/work/custom/{week}', 'Secret': secret}]
+        week = 'logs/prompts/workspace/2026-W46.md'
+        finding = [{'File': f'/work/{week}', 'Secret': secret}]
         with Workspace() as ws:
+            os.makedirs(os.path.join(ws.root, 'custom', '.git'))
             ws.session('s-x', [{'type': 'custom-title', 'customTitle': f'deploy {secret}'}, human(1, 'hi')])
             args = ('--root', ws.root, '--today', '2026-11-16')
-            # The title has a secret no pattern knows: only gitleaks finds it. Once removed, the file equals what
-            # git already has (stand-in: an empty status), so there is nothing to commit and the run succeeds.
-            processes = Processes([f'?? {week}\0', ''], [finding, []])
+            # The title has a secret no pattern knows: only gitleaks finds it, and the scan removes it.
+            processes = Processes([finding, []])
             with mock.patch.object(log.subprocess, 'run', side_effect=processes):
-                code, out, err = self.main('--commit', *args)
+                code, out, err = self.main('--scan', *args)
             self.assertEqual((code, err), (0, ''))
-            self.assertIn('nothing new to commit', out)
+            self.assertIn(f'secret removed from {week}', out)
+            self.assertIn('1 file scanned, no secret left', out)
             self.assertNotIn(secret, ws.read('workspace'))
             self.assertIn(f'### 10:01 · deploy {log.REMOVED}', ws.read('workspace'))
-            self.assertFalse([c for c in processes.commands if c[3:4] in (['add'], ['commit'])])
+            docker = [c for c in processes.commands if c[0] == 'docker']
+            self.assertEqual(len(docker), 2)
+            self.assertIn('/work/logs/prompts', docker[0])
+            self.assertFalse([c for c in processes.commands if c[0] == 'git' and c[3] != 'log'])
             # A new sync re-reads the raw title from the transcript and must keep the redacted one.
             self.assertEqual(self.main(*args)[0], 0)
             self.assertNotIn(secret, ws.read('workspace'))
-            # With something left after the redaction, the commit runs on the files still changed.
-            ws.session('s-y', [human(5, 'one more')])
-            processes = Processes([f'?? {week}\0', f' M {week}\0'], [[], []])
+            # --commit, the former name, scans the same way; custom/ gets no commit and no file of the log.
+            processes = Processes([[]])
             with mock.patch.object(log.subprocess, 'run', side_effect=processes):
                 code, out, _ = self.main('--commit', *args)
             self.assertEqual(code, 0)
-            self.assertEqual(processes.commands[-1][3:5], ['commit', '-q'])
-            self.assertEqual(processes.commands[-1][-1], week)
-            # A second status that git cannot give stops before the commit.
-            processes = Processes([f'?? {week}\0'], [finding, []])
-            with mock.patch.object(log, 'changed_log_files', side_effect=[[week], None]):
-                with mock.patch.object(log.subprocess, 'run', side_effect=processes):
-                    code, _, err = self.main('--commit', *args)
+            self.assertIn('1 file scanned, no secret left', out)
+            self.assertEqual(sorted(os.listdir(os.path.join(ws.root, 'custom'))), ['.git', 'config'])
+            # Without Docker the log stays written and the run fails.
+            with mock.patch.object(log.subprocess, 'run', side_effect=FileNotFoundError('docker')):
+                code, _, err = self.main('--scan', *args)
             self.assertEqual(code, 1)
-            self.assertIn('is not a readable git repository', err)
+            self.assertIn('log written, not scanned: no Docker for gitleaks', err)
 
     def test_truncated_week_file_is_never_overwritten(self):
         with Workspace() as ws:
@@ -801,10 +788,10 @@ class ScriptTest(unittest.TestCase):
             shutil.copy(MODULE_PATH, os.path.join(folder, 'prompt-log.py'))
             shutil.copy(REPO / 'scripts' / 'performance' / 'measure.py', os.path.join(folder, 'performance'))
             command = ['python3', '-I', os.path.join(folder, 'prompt-log.py'), 'sync', '--context', '--root', folder]
-            result = subprocess.run(command, capture_output=True, text=True)
+            env = dict(os.environ, CLAUDE_CONFIG_DIR=os.path.join(folder, 'config'))
+            result = subprocess.run(command, capture_output=True, text=True, env=env)
             self.assertEqual(os.listdir(os.path.join(folder, 'performance')), ['measure.py'])
-        self.assertEqual((result.returncode, result.stdout), (0, ''))
-        self.assertEqual(result.stderr, 'prompt-log: no custom layer (custom/)\n')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ''))
 
     def test_missing_measure_never_breaks_the_hook(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -817,15 +804,23 @@ class ScriptTest(unittest.TestCase):
         self.assertNotIn('Traceback', hook.stderr)
         self.assertEqual(plain.returncode, 1)
 
-    def test_runs_isolated_without_custom(self):
+    def test_runs_isolated_without_custom_and_writes_under_logs(self):
         with tempfile.TemporaryDirectory() as folder:
+            config = os.path.join(folder, 'config')
+            with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': config}):
+                transcripts = log.measure.transcripts_folder(folder)
+            write_jsonl(os.path.join(transcripts, 's.jsonl'), [human(1, 'hi', day=11)])
             result = subprocess.run(
-                ['python3', '-I', str(MODULE_PATH), 'sync', '--context', '--root', folder],
+                ['python3', '-I', str(MODULE_PATH), 'sync', '--root', folder, '--today', '2026-11-16'],
                 capture_output=True,
                 text=True,
+                env=dict(os.environ, CLAUDE_CONFIG_DIR=config),
             )
-        self.assertEqual((result.returncode, result.stdout), (0, ''))
-        self.assertTrue(re.match(r'prompt-log: no custom layer', result.stderr))
+            written = sorted(os.listdir(os.path.join(folder, 'logs', 'prompts', 'workspace')))
+            self.assertFalse(os.path.exists(os.path.join(folder, 'custom')))
+        self.assertEqual((result.returncode, result.stderr), (0, ''))
+        self.assertIn('logs/prompts/workspace/2026-W46.md', result.stdout)
+        self.assertEqual(written, ['2026-W46.md'])
 
 
 if __name__ == '__main__':

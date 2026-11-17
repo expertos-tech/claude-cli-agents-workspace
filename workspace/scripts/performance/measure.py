@@ -112,10 +112,11 @@ def group_of(category):
 
 
 def path_bucket(path):
-    """Returns what a file path holds: work, rules or a request."""
+    """Returns what a file path holds: work, rules or a request (the 'prompt' bucket: custom/requests/, the default
+    tmp/request.md, and custom/prompts/, their former place, which transcripts may still hold)."""
     if re.search(r'/(tmp/work|projects|custom/pocs)/', path):
         return 'work'
-    if '/custom/prompts/' in path:
+    if re.search(r'/custom/(requests|prompts)/|/tmp/request\.md$', path):
         return 'prompt'
     name = os.path.basename(path)
     if name in ('AGENTS.md', 'CLAUDE.md') or re.search(r'/(rules|\.claude)/', path):

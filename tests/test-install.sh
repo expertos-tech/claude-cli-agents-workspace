@@ -87,7 +87,7 @@ import subprocess
 import sys
 
 ws, data, commit = sys.argv[1:4]
-writable_root = {"custom", "projects", "tmp", ".claude", ".history"}
+writable_root = {"custom", "projects", "tmp", "logs", ".claude", ".history"}
 failed = False
 
 
@@ -103,7 +103,7 @@ listing = subprocess.run(
     ["git", "-C", data, "ls-tree", "-r", "--name-only", "-z", commit, "--", "workspace/"],
     capture_output=True, check=True,
 ).stdout.decode().split("\0")
-writable_root = {"custom", "projects", "tmp", ".claude", ".history"}
+writable_root = {"custom", "projects", "tmp", "logs", ".claude", ".history"}
 # A file the repository tracks under a writable root folder (projects/README.md) is never installed.
 expected = sorted(p[len("workspace/"):] for p in listing if p and p[len("workspace/"):].split("/")[0] not in writable_root)
 paths = [f["path"] for f in manifest["files"]]

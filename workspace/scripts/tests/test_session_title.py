@@ -23,7 +23,7 @@ class SessionTitleTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        os.makedirs(os.path.join(self.root, 'custom', 'prompts'))
+        os.makedirs(os.path.join(self.root, 'custom', 'requests'))
         os.makedirs(os.path.join(self.root, 'tmp'))
         self.config = os.path.join(self.root, 'claude-config')
         os.makedirs(os.path.join(self.config, 'sessions'))
@@ -57,9 +57,9 @@ class SessionTitleTests(unittest.TestCase):
         return output['hookSpecificOutput']['sessionTitle'] if output else None
 
     def test_the_number_follows_the_running_sessions_of_the_project(self):
-        self.write('custom/prompts/a.md', '# A\n\n**Project:** billing-api\n\ntext\n')
-        self.write('custom/prompts/b.md', '# B\n\n**Project:** `shop-web`\n')
-        self.assertEqual(self.name('/prompt a.md', session_id='s1'), 'billing-api-1')
+        self.write('custom/requests/a.md', '# A\n\n**Project:** billing-api\n\ntext\n')
+        self.write('custom/requests/b.md', '# B\n\n**Project:** `shop-web`\n')
+        self.assertEqual(self.name('/request a.md', session_id='s1'), 'billing-api-1')
         self.session('s1', 'billing-api-1')
         self.session('s2', 'billing-api-2')
         self.session('s3', 'shop-web-7')
@@ -68,26 +68,26 @@ class SessionTitleTests(unittest.TestCase):
         self.session('s4', 'review-workspace-29')
         for session_id in ('s5', 's6', 's7'):
             self.session(session_id, 'not-named-yet')
-        self.assertEqual(self.name('/prompt a.md', session_id='s5'), 'billing-api-3')
-        self.assertEqual(self.name('/prompt b.md', session_id='s6'), 'shop-web-8')
-        self.assertEqual(self.name('  /prompt a.md  ', session_id='s7'), 'billing-api-4')
+        self.assertEqual(self.name('/request a.md', session_id='s5'), 'billing-api-3')
+        self.assertEqual(self.name('/request b.md', session_id='s6'), 'shop-web-8')
+        self.assertEqual(self.name('  /request a.md  ', session_id='s7'), 'billing-api-4')
 
     def test_a_claim_counts_until_its_session_ends(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
+        self.write('custom/requests/a.md', '**Project:** app\n')
         self.session('s1', 'derived-name')
-        self.assertEqual(self.name('/prompt a.md', session_id='s1'), 'app-1')
+        self.assertEqual(self.name('/request a.md', session_id='s1'), 'app-1')
         self.session('s2', 'other')
-        self.assertEqual(self.name('/prompt a.md', session_id='s2'), 'app-2')
+        self.assertEqual(self.name('/request a.md', session_id='s2'), 'app-2')
         os.remove(os.path.join(self.config, 'sessions', 's1.json'))
         os.remove(os.path.join(self.config, 'sessions', 's2.json'))
         self.session('s3', 'x')
-        self.assertEqual(self.name('/prompt a.md', session_id='s3'), 'app-1')
+        self.assertEqual(self.name('/request a.md', session_id='s3'), 'app-1')
 
     def test_without_the_registry_recent_claims_count(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
+        self.write('custom/requests/a.md', '**Project:** app\n')
         os.rmdir(os.path.join(self.config, 'sessions'))
-        self.assertEqual(self.name('/prompt a.md', session_id='s1'), 'app-1')
-        self.assertEqual(self.name('/prompt a.md', session_id='s2'), 'app-2')
+        self.assertEqual(self.name('/request a.md', session_id='s1'), 'app-1')
+        self.assertEqual(self.name('/request a.md', session_id='s2'), 'app-2')
         claims = os.path.join(self.root, '.history', 'session-numbers', 'app.json')
         with open(claims, encoding='utf-8') as handle:
             data = json.load(handle)
@@ -95,10 +95,10 @@ class SessionTitleTests(unittest.TestCase):
         data['s2'][1] -= title.CLAIM_TTL_SECONDS + 1
         with open(claims, 'w', encoding='utf-8') as handle:
             json.dump(data, handle)
-        self.assertEqual(self.name('/prompt a.md', session_id='s3'), 'app-1')
+        self.assertEqual(self.name('/request a.md', session_id='s3'), 'app-1')
 
     def test_a_damaged_registry_entry_or_claims_file_is_skipped(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
+        self.write('custom/requests/a.md', '**Project:** app\n')
         with open(os.path.join(self.config, 'sessions', 'bad.json'), 'w', encoding='utf-8') as handle:
             handle.write('{not json')
         with open(os.path.join(self.config, 'sessions', 'list.json'), 'w', encoding='utf-8') as handle:
@@ -106,56 +106,84 @@ class SessionTitleTests(unittest.TestCase):
         with open(os.path.join(self.config, 'sessions', 'notes.txt'), 'w', encoding='utf-8') as handle:
             handle.write('x')
         self.write('.history/session-numbers/app.json', 'garbage')
-        self.assertEqual(self.name('/prompt a.md', session_id='s1'), 'app-1')
+        self.assertEqual(self.name('/request a.md', session_id='s1'), 'app-1')
         self.write('.history/session-numbers/app.json', '[1]')
-        self.assertEqual(self.name('/prompt a.md', session_id='s2'), 'app-1')
+        self.assertEqual(self.name('/request a.md', session_id='s2'), 'app-1')
 
     def test_output_shape(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
-        output = title.title_for({'prompt': '/prompt a.md'}, self.root)['hookSpecificOutput']
+        self.write('custom/requests/a.md', '**Project:** app\n')
+        output = title.title_for({'prompt': '/request a.md'}, self.root)['hookSpecificOutput']
         self.assertEqual(output['hookEventName'], 'UserPromptSubmit')
         self.assertIn('app-1', output['additionalContext'])
 
     def test_a_session_already_named_for_the_project_keeps_its_name(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
-        self.assertIsNone(self.name('/prompt a.md', 'app-4'))
-        self.assertEqual(self.name('/prompt a.md', 'other-2'), 'app-1')
-        self.assertEqual(self.name('/prompt a.md', 'app-x', session_id='me'), 'app-1')
+        self.write('custom/requests/a.md', '**Project:** app\n')
+        self.assertIsNone(self.name('/request a.md', 'app-4'))
+        self.assertEqual(self.name('/request a.md', 'other-2'), 'app-1')
+        self.assertEqual(self.name('/request a.md', 'app-x', session_id='me'), 'app-1')
 
     def test_where_the_file_is_read_from(self):
-        self.write('tmp/prompt.md', '**Project:** scratch\n')
+        self.write('tmp/request.md', '**Project:** scratch\n')
         self.write('docs/req.md', '**Project:** by-path\n')
-        self.assertEqual(self.name('/prompt'), 'scratch-1')
-        self.assertEqual(self.name('/prompt docs/req.md', session_id='other'), 'by-path-1')
-        self.assertIsNone(self.name('/prompt missing.md'))
-        self.assertIsNone(self.name('/prompt ../outside.md'))
+        self.assertEqual(self.name('/request'), 'scratch-1')
+        self.assertEqual(self.name('/request docs/req.md', session_id='other'), 'by-path-1')
+        self.assertIsNone(self.name('/request missing.md'))
+        self.assertIsNone(self.name('/request ../outside.md'))
 
     def test_a_request_without_the_project_line_uses_the_first_project_path(self):
-        self.write('custom/prompts/no-line.md', 'Resume `projects/acme/billing-web` and then projects/other.\n')
-        self.write('custom/prompts/none.md', 'No project here, only tools/x and xprojects/y.\n')
-        self.assertEqual(self.name('/prompt no-line.md'), 'billing-web-1')
-        self.assertIsNone(self.name('/prompt none.md'))
+        self.write('custom/requests/no-line.md', 'Resume `projects/acme/billing-web` and then projects/other.\n')
+        self.write('custom/requests/none.md', 'No project here, only tools/x and xprojects/y.\n')
+        self.assertEqual(self.name('/request no-line.md'), 'billing-web-1')
+        self.assertIsNone(self.name('/request none.md'))
+
+    def test_a_request_without_the_project_line_names_the_nearest_repo_of_its_path(self):
+        for repo in ('platform', 'platform/services/billing-api'):
+            os.makedirs(os.path.join(self.root, 'projects', repo, '.git'))
+        self.write('custom/requests/nested.md', 'Fix projects/platform/services/billing-api/src/app first.\n')
+        self.write('custom/requests/parent.md', 'Fix projects/platform/src/app first.\n')
+        self.write('custom/requests/repo.md', 'Fix projects/platform/services/billing-api.\n')
+        self.assertEqual(self.name('/request nested.md', session_id='s1'), 'billing-api-1')
+        self.assertEqual(self.name('/request parent.md', session_id='s2'), 'platform-1')
+        self.assertEqual(self.name('/request repo.md', session_id='s3'), 'billing-api-1')
+
+    def test_the_request_file_is_tmp_request_md_or_custom_requests(self):
+        self.write('tmp/prompt.md', '**Project:** old-default\n')
+        self.write('custom/prompts/a.md', '**Project:** old-folder\n')
+        self.assertIsNone(self.name('/request'))
+        self.assertIsNone(self.name('/request a.md'))
+        self.write('tmp/request.md', '**Project:** new-default\n')
+        self.write('custom/requests/qa/billing-api/a.md', '**Project:** in-qa\n')
+        self.assertEqual(self.name('/request'), 'new-default-1')
+        self.assertEqual(self.name('/request custom/requests/qa/billing-api/a.md', session_id='s2'), 'in-qa-1')
 
     def test_a_bad_project_line_names_nothing(self):
-        self.write('custom/prompts/bad.md', '**Project:** Not_Kebab\n')
-        self.write('custom/prompts/path.md', '**Project:** projects/acme/billing/\n')
-        self.assertIsNone(self.name('/prompt bad.md'))
-        self.assertEqual(self.name('/prompt path.md'), 'billing-1')
+        self.write('custom/requests/bad.md', '**Project:** Not_Kebab\n')
+        self.write('custom/requests/path.md', '**Project:** projects/acme/billing/\n')
+        self.assertIsNone(self.name('/request bad.md'))
+        self.assertEqual(self.name('/request path.md'), 'billing-1')
 
     def test_other_prompts_are_left_alone(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
-        for prompt in ('', 'fix the readme', '/promptx a.md', '/prompt a.md and more', '/draft-prompt ideas'):
+        self.write('custom/requests/a.md', '**Project:** app\n')
+        for prompt in (
+            '',
+            'fix the readme',
+            '/requestx a.md',
+            '/request a.md and more',
+            '/draft-request ideas',
+            '/prompt a.md',
+            '/prompt',
+        ):
             self.assertIsNone(self.name(prompt), prompt)
         self.assertIsNone(title.title_for({}, self.root))
 
     def test_sessions_starting_together_get_different_numbers(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
+        self.write('custom/requests/a.md', '**Project:** app\n')
         ids = [f's{n}' for n in range(8)]
         for session_id in ids:
             self.session(session_id, 'unnamed')
         names = []
         threads = [
-            threading.Thread(target=lambda i=i: names.append(self.name('/prompt a.md', session_id=i))) for i in ids
+            threading.Thread(target=lambda i=i: names.append(self.name('/request a.md', session_id=i))) for i in ids
         ]
         for thread in threads:
             thread.start()
@@ -174,8 +202,8 @@ class SessionTitleTests(unittest.TestCase):
         return out.getvalue()
 
     def test_main_prints_the_output_and_never_fails(self):
-        self.write('custom/prompts/a.md', '**Project:** app\n')
-        printed = self.run_main(json.dumps({'prompt': '/prompt a.md'}), ['x', self.root])
+        self.write('custom/requests/a.md', '**Project:** app\n')
+        printed = self.run_main(json.dumps({'prompt': '/request a.md'}), ['x', self.root])
         self.assertEqual(json.loads(printed)['hookSpecificOutput']['sessionTitle'], 'app-1')
         self.assertEqual(self.run_main(json.dumps({'prompt': 'hello'}), ['x', self.root]), '')
         self.assertEqual(self.run_main('not json', ['x', self.root]), '')
@@ -208,7 +236,7 @@ class ProjectWarningTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        for folder in ('scripts', 'projects', 'custom/pocs', 'custom/prompts'):
+        for folder in ('scripts', 'projects', 'custom/pocs', 'custom/requests'):
             os.makedirs(os.path.join(self.root, folder))
         self.write('scripts/aiwp-project-state.sh', '# replaced by the stub of subprocess.run\n')
         self.rows = {}
@@ -274,13 +302,21 @@ class ProjectWarningTests(unittest.TestCase):
         self.assertEqual(self.calls[-1][0][4:], ['projects/acme/shop-web', 'projects/acme/current'])
         self.assertIsNone(self.warning('the current state of things'))
 
-    def test_poc_project_line_and_the_request_file_of_prompt(self):
+    def test_a_nested_clone_name_maps_to_its_repo(self):
+        """A clone of a nested repo is named after its path with '--' (billing--billing-api), never its first part."""
+        self.repo('billing', 'current', marker='0.2.0')
+        self.repo('billing/billing-api', 'outdated', marker='0.1.0', pending='0.2.0')
+        text = self.warning('see tmp/work/2026-11-17-x/billing--billing-api/src')
+        self.assertIn('(projects/billing/billing-api)', text)
+        self.assertEqual(self.calls[-1][0][4:], ['projects/billing/billing-api'])
+
+    def test_poc_project_line_and_the_request_file_of_request(self):
         os.makedirs(os.path.join(self.root, 'custom/pocs/cache-test'))
         self.rows['custom/pocs/cache-test'] = porcelain('poc', 'custom/pocs/cache-test', 'none')
         self.repo('ledger-app', 'none')
         self.assertIn('/normalize-projects custom/pocs/cache-test', self.warning('see custom/pocs/cache-test'))
-        self.write('custom/prompts/a.md', '# A\n\n**Project:** ledger-app\n')
-        self.assertIn('`/normalize-projects ledger-app`', self.warning('/prompt a.md'))
+        self.write('custom/requests/a.md', '# A\n\n**Project:** ledger-app\n')
+        self.assertIn('`/normalize-projects ledger-app`', self.warning('/request a.md'))
         self.assertIn('`/normalize-projects ledger-app`', self.warning('**Project:** `ledger-app`'))
 
     def test_normalize_command_own_repository_and_up_to_date_stay_silent(self):
@@ -293,10 +329,10 @@ class ProjectWarningTests(unittest.TestCase):
 
     def test_the_hook_output_joins_the_title_and_the_warning(self):
         self.repo('ledger-app', 'none')
-        self.write('custom/prompts/a.md', '**Project:** ledger-app\n')
+        self.write('custom/requests/a.md', '**Project:** ledger-app\n')
         with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': os.path.join(self.root, 'cfg')}):
             os.makedirs(os.path.join(self.root, 'cfg', 'sessions'))
-            output = title.hook_output({'prompt': '/prompt a.md', 'session_id': 's1'}, self.root)
+            output = title.hook_output({'prompt': '/request a.md', 'session_id': 's1'}, self.root)
         spec = output['hookSpecificOutput']
         self.assertEqual(spec['sessionTitle'], 'ledger-app-1')
         self.assertIn('session-title: this session is now named ledger-app-1', spec['additionalContext'])
@@ -330,10 +366,41 @@ class ProjectWarningTests(unittest.TestCase):
             title.main()
         self.assertEqual(printed.getvalue(), '')
 
+    def test_a_repo_inside_another_repo_is_named_by_its_nearest_path(self):
+        self.repo('platform', 'none')
+        self.repo('platform/services/billing-api', 'outdated', marker='0.1.0', pending='0.2.0')
+        os.makedirs(os.path.join(self.root, 'projects', 'platform', 'node_modules', 'dep', '.git'))
+        self.assertEqual(
+            title.workspace_projects(self.root),
+            {'platform': ['projects/platform'], 'billing-api': ['projects/platform/services/billing-api']},
+        )
+        text = self.warning('see projects/platform/services/billing-api/src/app.ts')
+        self.assertIn('`billing-api` (projects/platform/services/billing-api) is on workspace version 0.1.0', text)
+        self.assertIn('`/normalize-projects platform/services/billing-api`', text)
+        self.assertEqual(self.calls[-1][0][4:], ['projects/platform/services/billing-api'])
+        text = self.warning('see projects/platform/docs/setup.md')
+        self.assertIn('`platform` (projects/platform) has no AI-WORKSPACE-PROJECT marker', text)
+        self.assertEqual(self.calls[-1][0][4:], ['projects/platform'])
+        self.warning('billing-api and platform')
+        self.assertEqual(self.calls[-1][0][4:], ['projects/platform', 'projects/platform/services/billing-api'])
+
+    @unittest.skipIf(os.geteuid() == 0, 'root reads every folder')
+    def test_a_folder_the_walk_cannot_read_is_skipped(self):
+        self.repo('zeta', 'none')
+        closed = os.path.join(self.root, 'projects', 'closed')
+        os.makedirs(os.path.join(closed, 'inner', '.git'))
+        os.chmod(closed, 0)
+        try:
+            self.assertEqual(title.workspace_projects(self.root), {'zeta': ['projects/zeta']})
+        finally:
+            os.chmod(closed, 0o755)
+
     def test_the_walk_is_capped(self):
         for n in range(4):
             os.makedirs(
-                os.path.join(self.root, 'projects', f'group-{n}', 'deeper', 'deepest', 'deeper-still', 'x', '.git')
+                os.path.join(
+                    self.root, 'projects', f'group-{n}', 'deeper', 'deepest', 'deeper-still', 'x', 'y', 'z', '.git'
+                )
             )
         self.repo('zeta', 'none')
         self.repo('group-0/deeper/kept', 'none')

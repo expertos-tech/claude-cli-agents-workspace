@@ -190,9 +190,10 @@ generated_skip_dir() {
   esac
 }
 
-# Prints workspace-relative files under the target matching a find name pattern, skipping vendored and local folders.
+# Prints workspace-relative files under the target matching a find name pattern, skipping vendored and local folders
+# (a root scan also skips the person's tmp/, projects/, custom/ and logs/, the prompt log of scripts/prompt-log.py).
 files() {
-  (cd "$root" && find "$target" \( -name .git -o -name node_modules -o -name .terraform -o -name refs -o -name .claude -o -name .history -o -name .data -o -path "*/$CONSOLE_DIST" -o -path "$CONSOLE_DIST" -o -path ./tmp -o -path ./projects -o -path ./custom \) -prune \
+  (cd "$root" && find "$target" \( -name .git -o -name node_modules -o -name .terraform -o -name refs -o -name .claude -o -name .history -o -name .data -o -path "*/$CONSOLE_DIST" -o -path "$CONSOLE_DIST" -o -path ./tmp -o -path ./projects -o -path ./custom -o -path ./logs \) -prune \
     -o -type f -name "$1" -print) | sed 's#^\./##'
 }
 
@@ -213,7 +214,7 @@ listed_files() {
       */.git/*|*/node_modules/*|*/.terraform/*|*/refs/*|*/.claude/*|*/.history/*|*/.data/*|*/tools/container-console-docker-ce/internal/webui/dist/*) continue ;;
     esac
     if [ "$root_scan" -eq 1 ]; then
-      case "$p" in tmp/*|projects/*|custom/*) continue ;; esac
+      case "$p" in tmp/*|projects/*|custom/*|logs/*) continue ;; esac
     else
       case "$p" in "$target"/*) ;; *) continue ;; esac
     fi
@@ -416,13 +417,13 @@ run_check() {
       return "$rc" ;;
     vuln)
       skip_dirs="refs,.history,**/.data,**/node_modules,$(generated_skip_dir)"
-      [ "$root_scan" -eq 1 ] && skip_dirs="$skip_dirs,tmp,projects,custom"
+      [ "$root_scan" -eq 1 ] && skip_dirs="$skip_dirs,tmp,projects,custom,logs"
       skip_files='**/.env'
       [ "$target" != custom ] || skip_files="$skip_files,env/*.env"
       tool trivy fs --quiet --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 --skip-dirs "$skip_dirs" --skip-files "$skip_files" "$work" ;;
     iac)
       skip_dirs=".history,**/.data,**/node_modules,$(generated_skip_dir)"
-      [ "$root_scan" -eq 1 ] && skip_dirs="$skip_dirs,tmp,projects,custom"
+      [ "$root_scan" -eq 1 ] && skip_dirs="$skip_dirs,tmp,projects,custom,logs"
       tool trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 --skip-dirs "$skip_dirs" "$work" ;;
     shell) lint_files shell '*.sh' shellcheck -x ;;
     # info findings are advice (e.g. DL3066 on the USER nonroot:nonroot of distroless): printed, not failed.

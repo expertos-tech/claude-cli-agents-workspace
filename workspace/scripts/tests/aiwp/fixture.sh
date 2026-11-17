@@ -44,6 +44,7 @@ build_fixture() {
   fx_write "$src" workspace/docs/old.md "removed in v0.2.0"
   fx_write "$src" workspace/docs/gone/only.md "removed with its folder in v0.2.0"
   fx_write "$src" workspace/projects/README.md "projects readme"
+  fx_write "$src" workspace/logs/README.md "logs readme"
   fx_write "$src" workspace/tools/observability/compose.yaml "services: {}"
   fx_write "$src" workspace/tools/container-console-colima/internal/webui/dist/placeholder.html "placeholder"
   fx_write "$src" workspace/.gitignore "/custom/"

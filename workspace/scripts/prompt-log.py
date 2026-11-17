@@ -1,20 +1,22 @@
 """Keeps the prompt log of the workspace: every human prompt, per project and per ISO week, with what it produced.
 
 Reads the Claude Code transcripts of the sessions opened at the workspace root, plus the folders listed in
-custom/prompts/log/sources.json ({"<folder whose sessions to read>": "<project>"}, for adjustment sessions opened
-elsewhere). Each human prompt of a main session becomes a record: the session and its title, the time, the text (a
-paste over 40 lines becomes "[pasted: N lines]", known secret patterns become "[secret removed]"), the project its
-tool calls named most until the next prompt (else the project of the source folder, else "workspace"), whether that
-part ran the gate merge, and the agent commits the project received during that turn (from the prompt to the last
-response or tool result before the next prompt, at most 4 h).
-Records live in custom/prompts/log/<project>/<year>-W<week>.md, inside a prompt-log-data comment that a sync only
-adds to: a transcript that expires never takes its records along. The day and week summaries are built from the data.
+custom/config/prompt-log/sources.json ({"<folder whose sessions to read>": "<project>"}, for adjustment sessions opened
+elsewhere; optional, and so is custom/). Each human prompt of a main session becomes a record: the session and its
+title, the time, the text (a paste over 40 lines becomes "[pasted: N lines]", known secret patterns become
+"[secret removed]"), the project its tool calls named most until the next prompt (else the project of the source
+folder, else "workspace"), whether that part ran the gate merge, and the agent commits the project received during
+that turn (from the prompt to the last response or tool result before the next prompt, at most 4 h). The project is
+the top folder of projects/: the commits of every repo under it count, a repo nested in another one included.
+Records live in logs/prompts/<project>/<year>-W<week>.md (logs/ is a writable folder of the workspace, local and never
+versioned), inside a prompt-log-data comment that a sync only adds to: a transcript that expires never takes its
+records along. The day and week summaries are built from the data.
 --context (the SessionStart hook) prints the last day with records before today; any failure there prints nothing and
-exits 0. --commit scans the changed log files with gitleaks in Docker, removes what it finds and commits them in
-custom/ (never pushes); without Docker or with a failed scan the files stay written and uncommitted. Each file is
-written whole (temporary file and rename), under a lock on .history/prompt-log.lock (local state, never in custom/);
---context never waits for it.
-Usage: python3 -I -B scripts/prompt-log.py sync [--context | --commit]
+exits 0. --scan scans every week file of the log with gitleaks in Docker and removes what it finds; without Docker or
+with a failed scan the files stay written and the run exits 1. --commit, its former name, does the same and commits
+nothing. Each file is written whole (temporary file and rename), under a lock on .history/prompt-log.lock; --context
+never waits for it.
+Usage: python3 -I -B scripts/prompt-log.py sync [--context | --scan]
 """
 
 import argparse
@@ -39,6 +41,9 @@ ROOT = os.path.dirname(HERE)
 FORMAT = 1
 DATA_RE = re.compile(r'^<!-- prompt-log-data\n(.*?)\n-->$', re.S | re.M)
 WEEK_FILE = re.compile(r'^\d{4}-W\d{2}\.md$')
+# The folder of the log and the file of its sources, relative to the workspace root.
+LOG_DIR = 'logs/prompts'
+SOURCES_FILE = 'custom/config/prompt-log/sources.json'
 PROJECT_NAME = re.compile(r'^[A-Za-z0-9][\w.-]*$')
 DEFAULT_PROJECT = 'workspace'
 PASTE_LINES = 40
@@ -259,10 +264,10 @@ def moment_of(record):
     return datetime.datetime.fromtimestamp(measure.parse_time(record['timestamp']))
 
 
-def read_sources(root, folder):
-    """Returns [(transcripts folder, fallback project)]: the workspace root, then the folders of sources.json."""
+def read_sources(root):
+    """Returns [(transcripts folder, fallback project)]: the workspace root, then the folders of SOURCES_FILE."""
     sources = [(measure.transcripts_folder(root), DEFAULT_PROJECT)]
-    path = os.path.join(folder, 'sources.json')
+    path = os.path.join(root, SOURCES_FILE)
     if not os.path.exists(path):
         return sources
     try:
@@ -329,14 +334,14 @@ def attach_commits(records, repos):
             record['commits'] = [[sha, subject] for stamp, sha, subject in commits if start <= stamp < record['until']]
 
 
-def collect(root, folder):
+def collect(root):
     """Returns {key: record} of the prompts the transcripts still keep, with their commits when git runs."""
     projects_dir = os.path.join(root, 'projects')
     repos = measure.project_repos(projects_dir) if os.path.isdir(projects_dir) else {}
     aliases = {os.path.basename(repo): top for repo, top in repos.items()}
     aliases.update({top: top for top in repos.values()})
     fresh = {}
-    for transcripts, fallback in read_sources(root, folder):
+    for transcripts, fallback in read_sources(root):
         for path in listed(transcripts, lambda name: name.endswith('.jsonl')):
             for record in session_records(path, aliases, fallback):
                 fresh[key_of(record)] = record
@@ -576,30 +581,8 @@ def context(records, today):
             lines.append(f'  - and {len(commits) - CONTEXT_COMMITS} more')
     if len(lines) > CONTEXT_LINES - 1:
         lines = lines[: CONTEXT_LINES - 2] + ['- (cut; the rest is in the files)']
-    lines.append(f'Details, only if the human asks: custom/prompts/log/<project>/{week}.md.')
+    lines.append(f'Details, only if the human asks: {LOG_DIR}/<project>/{week}.md.')
     return '\n'.join(lines)
-
-
-def changed_log_files(custom):
-    """Returns the week files of the log that git shows as changed in custom/, relative to it; None without git."""
-    command = ['git', '-C', custom, 'status', '--porcelain', '-z', '--untracked-files=all', '--', 'prompts/log']
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, errors='replace')
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    paths = []
-    entries = iter(result.stdout.split('\0'))
-    for entry in entries:
-        if len(entry) < 4:
-            continue
-        if entry[0] in 'RC':
-            next(entries, None)
-        path = entry[3:]
-        if WEEK_FILE.match(os.path.basename(path)):
-            paths.append(path)
-    return sorted(paths)
 
 
 def run_gitleaks(root, target, report_dir):
@@ -668,7 +651,7 @@ def scan(root, files):
         )
     report_dir = tempfile.mkdtemp(prefix='prompt-log-scan-')
     try:
-        code, error = run_gitleaks(root, 'custom/prompts/log', report_dir)
+        code, error = run_gitleaks(root, LOG_DIR, report_dir)
         if code is None:
             raise LogError(f'no Docker for gitleaks ({error})')
         try:
@@ -717,32 +700,13 @@ def redact(records, secrets):
     return changed
 
 
-def git_commit(custom, files, message):
-    """Stages and commits only the files in custom/; returns (ok, error text)."""
-    for command in (
-        ['git', '-C', custom, 'add', '--', *files],
-        ['git', '-C', custom, 'commit', '-q', *message, '--', *files],
-    ):
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, errors='replace')
-        except OSError as error:
-            return False, str(error)
-        if result.returncode != 0:
-            return False, (result.stderr or result.stdout).strip()
-    return True, ''
-
-
-def commit_log(root, folder, records, today):
-    """Scans the changed week files, removes what gitleaks finds, rescans and commits them; returns the exit code."""
-    custom = os.path.join(root, 'custom')
-    changed = changed_log_files(custom)
-    if changed is None:
-        print('prompt-log: log written, no commit: custom/ is not a readable git repository', file=sys.stderr)
-        return 1
-    if not changed:
-        print('prompt-log: nothing new to commit')
+def scan_log(root, folder, records, today):
+    """Scans every week file of the log with gitleaks, removes what it finds, rewrites and rescans; returns the exit
+    code. The log is local (logs/ is not versioned): nothing is committed."""
+    files = {os.path.relpath(path, root) for path in week_files(folder)}
+    if not files:
+        print('prompt-log: nothing to scan')
         return 0
-    files = {os.path.join('custom', path) for path in changed}
     try:
         found = scan(root, files)
         if found:
@@ -752,29 +716,10 @@ def commit_log(root, folder, records, today):
             if again:
                 raise LogError('gitleaks still finds a secret in ' + ', '.join(sorted(again)) + '; review by hand')
             print(f'prompt-log: secret removed from {", ".join(sorted(found))}')
-            # With the secret gone a file may equal its committed version again: commit only what still differs.
-            changed = changed_log_files(custom)
-            if changed is None:
-                raise LogError('custom/ is not a readable git repository')
     except LogError as error:
-        print(f'prompt-log: log written, no commit: {error}', file=sys.stderr)
+        print(f'prompt-log: log written, not scanned: {error}', file=sys.stderr)
         return 1
-    if not changed:
-        print('prompt-log: nothing new to commit')
-        return 0
-    message = [
-        '-m',
-        'docs(prompts): record the prompt log',
-        '-m',
-        'Adds the prompts of the sessions and what each one produced to the weekly files of the prompt log.',
-        '-m',
-        measure.AGENT_COMMIT,
-    ]
-    ok, error = git_commit(custom, changed, message)
-    if not ok:
-        print(f'prompt-log: log written, no commit: git refused ({error})', file=sys.stderr)
-        return 1
-    print('prompt-log: committed in custom/: ' + ', '.join(changed))
+    print(f'prompt-log: {plural(len(files), "file", "files")} scanned, no secret left')
     return 0
 
 
@@ -782,13 +727,14 @@ def parse_args(argv):
     """Returns the parsed command line."""
     parser = argparse.ArgumentParser(
         prog='prompt-log.py',
-        description='Records the human prompts per project and week in custom/prompts/log/, with the result of each.',
+        description='Records the human prompts per project and week in logs/prompts/, with the result of each.',
     )
     commands = parser.add_subparsers(dest='command', required=True)
     sync = commands.add_parser('sync', help='records what the log is missing from the transcripts')
     mode = sync.add_mutually_exclusive_group()
     mode.add_argument('--context', action='store_true', help='prints the summary of the last day (SessionStart hook)')
-    mode.add_argument('--commit', action='store_true', help='scans with gitleaks and commits in custom/')
+    mode.add_argument('--scan', action='store_true', help='scans the log with gitleaks and removes what it finds')
+    mode.add_argument('--commit', action='store_true', dest='scan', help=argparse.SUPPRESS)
     sync.add_argument('--root', default=ROOT, help=argparse.SUPPRESS)
     sync.add_argument('--today', type=datetime.date.fromisoformat, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -806,14 +752,12 @@ def lock(handle, wait):
 def run(args):
     """Syncs the log under its lock and does what the mode asks; returns the exit code.
 
-    --context does not wait: with another sync running it prints the context from what is on disk. --commit keeps the
-    lock until the commit is done.
+    --context does not wait: with another sync running it prints the context from what is on disk. --scan keeps the
+    lock until the scan is done.
     """
     root = os.path.realpath(args.root)
-    if not os.path.isdir(os.path.join(root, 'custom')):
-        raise LogError('no custom layer (custom/)')
     today = args.today or datetime.date.today()
-    folder = os.path.join(root, 'custom', 'prompts', 'log')
+    folder = os.path.join(root, LOG_DIR)
     os.makedirs(folder, exist_ok=True)
     state = os.path.join(root, '.history')
     os.makedirs(state, exist_ok=True)
@@ -821,7 +765,7 @@ def run(args):
         if not lock(handle, wait=not args.context):
             records, added, written = load_log(folder), 0, []
         else:
-            records, added = merge(load_log(folder), collect(root, folder))
+            records, added = merge(load_log(folder), collect(root))
             written = write_log(folder, records, today)
         if args.context:
             text = context(list(records.values()), today)
@@ -833,7 +777,7 @@ def run(args):
             f'{plural(len(written), "file", "files")} updated'
             + ''.join(f'\n  {os.path.relpath(p, root)}' for p in written)
         )
-        return commit_log(root, folder, records, today) if args.commit else 0
+        return scan_log(root, folder, records, today) if args.scan else 0
 
 
 def main(argv=None):

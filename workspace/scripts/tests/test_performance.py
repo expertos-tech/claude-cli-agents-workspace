@@ -154,7 +154,12 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(measure.classify('Grep', {'path': '/ws/.claude/skills'}), 'rules-read')
         self.assertEqual(measure.classify('Read', {'file_path': '/ws/projects/a/rules/x.md'}), 'work-read')
         self.assertEqual(measure.classify('Read', {}), 'work-read')
+        self.assertEqual(measure.classify('Write', {'file_path': '/ws/custom/requests/a.md'}), 'prompt-write')
+        self.assertEqual(measure.classify('Edit', {'file_path': '/ws/custom/requests/qa/billing/a.md'}), 'prompt-write')
+        self.assertEqual(measure.classify('Write', {'file_path': '/ws/tmp/request.md'}), 'prompt-write')
         self.assertEqual(measure.classify('Write', {'file_path': '/ws/custom/prompts/a.md'}), 'prompt-write')
+        self.assertEqual(measure.classify('Write', {'file_path': '/ws/tmp/request.md.bak'}), 'work-write')
+        self.assertEqual(measure.classify('Write', {'file_path': '/ws/logs/prompts/a/2026-W46.md'}), 'work-write')
         self.assertEqual(measure.classify('Edit', {'file_path': '/ws/rules/git.md'}), 'rules-write')
         self.assertEqual(measure.classify('NotebookEdit', {'notebook_path': '/ws/tmp/work/a/b.ipynb'}), 'work-write')
         self.assertEqual(measure.classify('Agent', {'subagent_type': 'Reviewer'}), 'validation')
@@ -470,6 +475,13 @@ class ProjectTests(unittest.TestCase):
         data = measure.measure([os.path.join(folder, 's.jsonl')], float('-inf'), measure.parse_time(stamp(59)))
         # The turn with no project is left out; the 10 h turn counts as 4 h.
         self.assertEqual(data['project_hours'], {'api': 4.0, 'billing': round(600 / 3600, 2)})
+
+    def test_a_repo_inside_another_counts_for_the_top_folder(self):
+        os.makedirs(os.path.join(self.projects, 'billing', 'plugins', 'tax', '.git'))
+        repos = measure.project_repos(self.projects)
+        names = {os.path.relpath(r, self.projects): top for r, top in repos.items()}
+        self.assertEqual(names['billing/plugins/tax'], 'billing')
+        self.assertNotIn('billing/node_modules/dep', names)
 
     def test_repos_and_aliases(self):
         repos = measure.project_repos(self.projects)

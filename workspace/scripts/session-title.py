@@ -1,22 +1,27 @@
-"""UserPromptSubmit hook: names the session <project>-<n> when the human runs /prompt, and warns when a message names
+"""UserPromptSubmit hook: names the session <project>-<n> when the human runs /request, and warns when a message names
 a project that is not a workspace project or is out of date.
 
 The model cannot run /rename, so the title comes from here, with the same effect (hookSpecificOutput.sessionTitle).
-The project is the "**Project:** <name>" line of the request file (written by /draft-prompt); a file without it
-gives the last folder of the first projects/<path> it names. <n> is one more than the highest <project>-<n> among the
-running sessions of the workspace (Claude Code's registry of running sessions, plus the claims this hook keeps under
-the git-ignored .history/session-numbers/, for the names the registry does not show yet). A session already named
-<project>-<n> keeps its name.
-The warning: a message (and, on /prompt, its request file) that names a repo of projects/ or a POC of custom/pocs/, by
-its folder name, by a path (projects/<path>, custom/pocs/<poc>, tmp/work/<work>/<clone>) or by the "**Project:**" line,
-gets the state of each (scripts/aiwp-project-state.sh) added to the context when it has no marker or is out of date,
-with the order to warn the person and ask for authorization to run /normalize-projects. It never blocks: the request
-goes on either way. A message that runs /normalize-projects gets no warning.
+The request file is the one /request reads: tmp/request.md with no argument, custom/requests/<name> for a bare file
+name, else a path relative to the root. The project is the "**Project:** <name>" line of that file (written by
+/draft-request); a file without it gives the repo that holds the first projects/<path> it names: the nearest folder
+of that path, itself included, that holds a .git (any folder at any depth of projects/ may be a repo, inside another
+one too), else the last folder of the path. <n> is one more than the highest <project>-<n> among the running sessions
+of the workspace (Claude Code's registry of running sessions, plus the claims this hook keeps under the git-ignored
+.history/session-numbers/, for the names the registry does not show yet). A session already named <project>-<n> keeps
+its name.
+The warning: a message (and, on /request, its request file) that names a repo of projects/ or a POC of custom/pocs/, by
+its folder name, by a path (projects/<path>, which names its nearest repo only; custom/pocs/<poc>;
+tmp/work/<work>/<clone>) or by the "**Project:**" line, gets the state of each (scripts/aiwp-project-state.sh) added
+to the context when it has no marker or is out of date, with the order to warn the person and ask for authorization to
+run /normalize-projects. It never blocks: the request goes on either way. A message that runs /normalize-projects gets
+no warning.
 Any failure stays silent and the time is bounded (a capped walk, a state script with a deadline): the prompt always
 goes on.
 Usage: python3 -I session-title.py <workspace-root>   (hook JSON on stdin)
 """
 
+import collections
 import fcntl
 import json
 import os
@@ -25,17 +30,21 @@ import subprocess
 import sys
 import time
 
-PROMPT_COMMAND = re.compile(r'^\s*/prompt(?:\s+(\S+))?\s*$')
+REQUEST_COMMAND = re.compile(r'^\s*/request(?:\s+(\S+))?\s*$')
 PROJECT_LINE = re.compile(r'^\s*\*\*Project:\*\*\s*`?([^`\s]+)`?\s*$', re.M)
 PROJECT_PATH = re.compile(r'(?<![\w./-])projects/((?:[a-z0-9]+(?:-[a-z0-9]+)*/)*[a-z0-9]+(?:-[a-z0-9]+)*)')
 KEBAB = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
 MAX_READ = 200_000
 NORMALIZE_COMMAND = re.compile(r'^\s*/normalize-projects\b')
 POC_PATH = re.compile(r'(?<![\w./-])custom/pocs/([a-z0-9]+(?:-[a-z0-9]+)*)')
-CLONE_PATH = re.compile(r'(?<![\w./-])tmp/work/[^/\s]+/([a-z0-9]+(?:-[a-z0-9]+)*)')
-# The walk of projects/ for the warning: how deep a grouping folder may sit, and how many folders it reads at most.
-WALK_DEPTH = 4
+# A clone's folder is its repo path relative to projects/ with each '/' written as '--' (scripts/aiwp-cmds.sh open).
+CLONE_PATH = re.compile(r'(?<![\w./-])tmp/work/[^/\s]+/([a-z0-9]+(?:--?[a-z0-9]+)*)')
+# The walk of projects/ for the warning, breadth first so the shallow repos come first: how deep a repo may sit (a repo
+# inside another one included), how many folders it reads at most, and the folder names it never enters (dependencies
+# and build outputs, never a project's own repo).
+WALK_DEPTH = 6
 WALK_BUDGET = 2000
+WALK_SKIP = frozenset({'node_modules', 'vendor', 'target', 'dist', 'build', '__pycache__'})
 MAX_NAMED = 5
 # A folder name counts as named by itself only when it is distinctive: with a hyphen or a digit, or this long. A short
 # plain name (api, web, docs) is named only by a path or the **Project:** line, never by an ordinary word.
@@ -46,22 +55,36 @@ CLAIM_TTL_SECONDS = 12 * 3600
 
 
 def request_file(root, argument):
-    """Returns the file /prompt reads: tmp/prompt.md, custom/prompts/<name>, or a path relative to the root."""
+    """Returns the file /request reads: tmp/request.md, custom/requests/<name>, or a path relative to the root."""
     if not argument:
-        return os.path.join(root, 'tmp', 'prompt.md')
+        return os.path.join(root, 'tmp', 'request.md')
     if '/' not in argument:
-        return os.path.join(root, 'custom', 'prompts', argument)
+        return os.path.join(root, 'custom', 'requests', argument)
     return os.path.join(root, argument)
 
 
-def project_of(text):
-    """Returns the project name of a request text, or None."""
+def nearest_repo(root, path):
+    """Returns the folder of projects/ that holds projects/<path>: the nearest one, the path itself included, with a
+    .git entry; None when none has one (or there is no root)."""
+    parts = path.split('/')
+    for end in range(len(parts), 0, -1):
+        folder = '/'.join(parts[:end])
+        if root and os.path.lexists(os.path.join(root, 'projects', folder, '.git')):
+            return folder
+    return None
+
+
+def project_of(text, root=None):
+    """Returns the project name of a request text, or None: the **Project:** line, else the repo that holds the first
+    projects/<path> it names (the nearest .git under root), else the last folder of that path."""
     found = PROJECT_LINE.search(text)
     if found:
         name = found.group(1).strip().rstrip('/').split('/')[-1].lower()
         return name if KEBAB.match(name) else None
     found = PROJECT_PATH.search(text)
-    return found.group(1).split('/')[-1] if found else None
+    if not found:
+        return None
+    return (nearest_repo(root, found.group(1)) or found.group(1)).split('/')[-1]
 
 
 def registry_folder():
@@ -143,14 +166,14 @@ def next_number(root, project, session_id):
 
 def title_for(data, root):
     """Returns the hook output for one UserPromptSubmit input, or None to leave the title as it is."""
-    command = PROMPT_COMMAND.match(data.get('prompt') or '')
+    command = REQUEST_COMMAND.match(data.get('prompt') or '')
     if not command:
         return None
     path = os.path.realpath(request_file(root, command.group(1)))
     if not path.startswith(os.path.realpath(root) + os.sep) or not os.path.isfile(path):
         return None
     with open(path, encoding='utf-8', errors='replace') as handle:
-        project = project_of(handle.read(MAX_READ))
+        project = project_of(handle.read(MAX_READ), root)
     if not project:
         return None
     current = data.get('session_title') or ''
@@ -167,30 +190,31 @@ def title_for(data, root):
 
 
 def workspace_projects(root):
-    """Returns {folder name: [targets]}: each repo of projects/ as 'projects/<path>' (any depth up to WALK_DEPTH, never
-    inside a repo, a hidden folder or a link, at most WALK_BUDGET folders read) and each POC folder as
-    'custom/pocs/<name>'."""
+    """Returns {folder name: [targets]}: each repo of projects/ as 'projects/<path>' and each POC folder as
+    'custom/pocs/<name>'. The walk is breadth first, up to WALK_DEPTH and at most WALK_BUDGET folders; it goes on inside
+    a repo (a repo inside another one is a repo too) and never enters a hidden folder, a link, a WALK_SKIP folder or a
+    folder it cannot read."""
     found = {}
-    budget = [WALK_BUDGET]
-
-    def walk(folder, rel, depth):
-        """Records the repos under one folder of projects/."""
-        with os.scandir(folder) as entries:
-            children = sorted(entries, key=lambda entry: entry.name)
+    budget = WALK_BUDGET
+    queue = collections.deque([(os.path.join(root, 'projects'), 'projects', 1)])
+    while queue and budget > 0:
+        folder, rel, depth = queue.popleft()
+        try:
+            with os.scandir(folder) as entries:
+                children = sorted(entries, key=lambda entry: entry.name)
+        except OSError:
+            continue
         for entry in children:
-            if budget[0] <= 0:
-                return
+            if budget <= 0:
+                break
             if entry.name.startswith('.') or not entry.is_dir(follow_symlinks=False):
                 continue
-            budget[0] -= 1
+            budget -= 1
             path = f'{rel}/{entry.name}'
             if os.path.lexists(os.path.join(entry.path, '.git')):
                 found.setdefault(entry.name, []).append(path)
-            elif depth < WALK_DEPTH:
-                walk(entry.path, path, depth + 1)
-
-    if os.path.isdir(os.path.join(root, 'projects')):
-        walk(os.path.join(root, 'projects'), 'projects', 1)
+            if depth < WALK_DEPTH and entry.name not in WALK_SKIP:
+                queue.append((entry.path, path, depth + 1))
     pocs = os.path.join(root, 'custom', 'pocs')
     if os.path.isdir(pocs):
         with os.scandir(pocs) as entries:
@@ -202,8 +226,8 @@ def workspace_projects(root):
 
 def named_targets(text, projects):
     """Returns the targets of the projects a text names, in order, at most MAX_NAMED: by the **Project:** line, by a
-    path (projects/<path>, custom/pocs/<poc>, tmp/work/<work>/<clone>) or by a distinctive folder name as a word, in
-    the same case."""
+    path (projects/<path>, its nearest repo only; custom/pocs/<poc>; tmp/work/<work>/<clone>) or by a distinctive
+    folder name as a word, in the same case."""
     every = [target for targets in projects.values() for target in targets]
     named = []
 
@@ -215,11 +239,16 @@ def named_targets(text, projects):
         add(projects.get(found.group(1).strip().rstrip('/').split('/')[-1].lower(), []))
     for found in PROJECT_PATH.finditer(text):
         path = f'projects/{found.group(1)}/'
-        add([target for target in every if path.startswith(target + '/')])
+        holders = [target for target in every if path.startswith(target + '/')]
+        add(sorted(holders, key=len)[-1:])
     for found in POC_PATH.finditer(text):
         add([target for target in every if target == f'custom/pocs/{found.group(1)}'])
     for found in CLONE_PATH.finditer(text):
-        add(projects.get(found.group(1), []))
+        clone = found.group(1)
+        if '--' in clone:
+            add([target for target in every if target == 'projects/' + clone.replace('--', '/')])
+        else:
+            add(projects.get(clone, []))
     for name, targets in projects.items():
         distinctive = len(name) >= MIN_PLAIN_NAME or re.search(r'[-0-9]', name)
         if distinctive and re.search(r'(?<![\w./-])' + re.escape(name) + r'(?![\w-])', text):
@@ -281,12 +310,12 @@ def warning_text(rows):
 
 
 def project_warning(data, root):
-    """Returns the warning for the projects a prompt names (and, on /prompt, its request file), or None."""
+    """Returns the warning for the projects a prompt names (and, on /request, its request file), or None."""
     prompt = data.get('prompt') or ''
     if not isinstance(prompt, str) or NORMALIZE_COMMAND.match(prompt):
         return None
     text = prompt[:MAX_READ]
-    command = PROMPT_COMMAND.match(prompt)
+    command = REQUEST_COMMAND.match(prompt)
     if command:
         path = os.path.realpath(request_file(root, command.group(1)))
         if path.startswith(os.path.realpath(root) + os.sep) and os.path.isfile(path):

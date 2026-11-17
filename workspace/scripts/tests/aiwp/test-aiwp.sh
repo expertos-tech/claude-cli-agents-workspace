@@ -197,7 +197,7 @@ open_by_hand() { chmod u+w "$1"; }
 
 # Every file of the workspace outside the writable folders and .aiwp/, relative and sorted.
 core_files_on_disk() {
-  (cd "$WS" && find . \( -path ./custom -o -path ./projects -o -path ./tmp -o -path ./.claude -o -path ./.history \
+  (cd "$WS" && find . \( -path ./custom -o -path ./projects -o -path ./tmp -o -path ./logs -o -path ./.claude -o -path ./.history \
     -o -path ./.aiwp -o -path ./tools/observability/.data -o -path ./tools/container-console-colima/.data \
     -o -path ./tools/container-console-colima/web \) -prune -o -type f -print | sed 's|^\./||' | sort)
 }
@@ -525,13 +525,16 @@ test_new_layout_and_modes() {
   mode_is "$WS/scripts/aiwp.sh" 555
   mode_is "$WS/scripts/setup-claude.sh" 555
   local d
-  for d in custom projects tmp .claude .history tools/observability/.data; do
+  for d in custom projects tmp logs .claude .history tools/observability/.data; do
     [ -d "$WS/$d" ]; check "writable folder $d" $?
     [ -w "$WS/$d" ]; check "$d is writable" $?
   done
   mode_is "$WS/tmp" 755
+  mode_is "$WS/logs" 755
+  ! manifest_paths | grep -q '^logs/'; check "logs/ is never in the manifest" $?
   mode_is "$WS/tools/observability/.data" 755
   absent "$WS/projects/README.md"
+  absent "$WS/logs/README.md"
   mode_is "$WS/tools/container-console-colima/internal/webui/dist" 755
   mode_is "$WS/tools/container-console-colima/internal/webui/dist/placeholder.html" 444
   absent "$WS/tools/azurite-console"
@@ -541,14 +544,14 @@ test_new_layout_and_modes() {
   local f
   for f in CLAUDE.md LICENSE install.sh maintainers tests i18n .claude/settings.json; do absent "$WS/$f"; done
   [ "$(core_files_on_disk)" = "$(git --git-dir="$T/remote.git" ls-tree -r --name-only v0.1.0 -- workspace/ |
-    sed 's|^workspace/||' | grep -v '^projects/' | sort)" ]
+    sed 's|^workspace/||' | grep -Ev '^(projects|logs)/' | sort)" ]
   check "the core on disk is exactly the tracked files of workspace/" $?
   # The manifest.
   [ "$(manifest_field version)" = 0.1.0 ]; check "manifest version" $?
   [ "$(manifest_field tag)" = v0.1.0 ]; check "manifest tag" $?
   [ "$(manifest_field commit)" = "$(git -C "$DATA" rev-parse HEAD)" ]; check "manifest commit" $?
   [ "$(manifest_paths | sort)" = "$(git --git-dir="$T/remote.git" ls-tree -r --name-only v0.1.0 -- workspace/ |
-    sed 's|^workspace/||' | grep -v '^projects/' | sort)" ]
+    sed 's|^workspace/||' | grep -Ev '^(projects|logs)/' | sort)" ]
   check "manifest paths are exactly workspace/, without the user folders" $?
   python3 -I - "$WS" <<'PY'
 import hashlib, json, os, sys
@@ -870,6 +873,7 @@ test_update_swaps_only_what_changed() {
   echo mine >"$WS/custom/mine.txt"
   echo mine >"$WS/projects/mine.txt"
   echo mine >"$WS/tmp/mine.txt"
+  echo mine >"$WS/logs/mine.txt"
   local keep_before agents_before custom_before
   keep_before="$(inode_mtime "$WS/docs/keep.md")"
   agents_before="$(inode_mtime "$WS/AGENTS.md")"
@@ -887,6 +891,7 @@ test_update_swaps_only_what_changed() {
   [ "$(inode_mtime "$WS/custom/mine.txt")" = "$custom_before" ]; check "custom untouched" $?
   content_is "$WS/projects/mine.txt" mine
   content_is "$WS/tmp/mine.txt" mine
+  content_is "$WS/logs/mine.txt" mine
   content_is "$WS/docs/change.md" "change v2"
   mode_is "$WS/docs/change.md" 444
   content_is "$WS/docs/new.md" "new in v0.2.0"
@@ -980,6 +985,7 @@ test_repair_restores_missing_files_and_folders() {
   fixture
   setup_ws || return
   echo mine >"$WS/custom/mine.txt"
+  echo mine >"$WS/logs/mine.txt"
   open_by_hand "$WS/docs"
   rm -f "$WS/docs/keep.md"
   chmod -R u+w "$WS/docs/gone"
@@ -997,6 +1003,7 @@ test_repair_restores_missing_files_and_folders() {
   mode_is "$WS/tools/observability/.data" 755
   mode_is "$WS/tools/observability" 555
   content_is "$WS/custom/mine.txt" mine
+  content_is "$WS/logs/mine.txt" mine
   run_aiwp_in "$WS" repair
   has "nothing to repair"
 }

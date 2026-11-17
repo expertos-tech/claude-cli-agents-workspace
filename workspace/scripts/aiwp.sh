@@ -8,10 +8,11 @@ set -euo pipefail
 # The closed list of writable folders of an installed workspace, the only place it is defined: guard-bash reads it
 # through the hidden command "aiwp.sh _writable". Everything else the core holds is read-only: folders and
 # executables 555, other files 444.
-# 1. At the workspace root: the custom layer, the projects, scratch and work clones, the generated .claude/ and the
-#    state of the hooks. They belong to the person: a file the repository tracks under one of them (projects/README.md)
-#    is never installed, so no aiwp command ever writes there.
-AIWP_WRITABLE_ROOT="custom projects tmp .claude .history"
+# 1. At the workspace root: the custom layer, the projects, scratch and work clones, the logs (the prompt log of
+#    scripts/prompt-log.py in logs/prompts/), the generated .claude/ and the state of the hooks. They belong to the
+#    person: a file the repository tracks under one of them (projects/README.md) is never installed, so no aiwp command
+#    ever writes there.
+AIWP_WRITABLE_ROOT="custom projects tmp logs .claude .history"
 # 2. Outputs of the tools, created only when the tool's folder exists in the core version installed:
 #    .data            Grafana data of observability; the console binaries built by make (.data/bin)
 #    web/node_modules the front-end dependencies (npm ci)
@@ -69,8 +70,9 @@ folder above with .aiwp/manifest.json).
                 added to it.
   new <folder>  Create a workspace in a missing or empty folder and add it to the registry: copy the tracked files
                 of workspace/ at the checked-out release (nothing else of the repository, and nothing under the
-                writable folders custom/, projects/, tmp/, .claude/, .history/), write .aiwp/manifest.json, create
-                the writable folders, make the core read-only, set up custom/ and run scripts/setup-claude.sh.
+                writable folders custom/, projects/, tmp/, logs/, .claude/, .history/), write .aiwp/manifest.json,
+                create the writable folders, make the core read-only, set up custom/ and run
+                scripts/setup-claude.sh.
                 custom/: --custom <url> clones that repository (an empty one gets a skeleton and a first commit);
                 without it a terminal asks for the URL (empty: a new local repository); with no terminal a local
                 skeleton is created.
@@ -92,7 +94,7 @@ folder above with .aiwp/manifest.json).
   rollback      Go back to the version of the newest backup and pin the workspace to it (.aiwp/pin), so aiwp
                 update --all leaves it alone; aiwp update <folder>, or choosing it by number, updates it again.
   repair        Restore every core file and folder to the manifest's version and permission, from the data
-                folder. Never touches custom/, projects/, tmp/, .claude/, .history/ or the tool outputs.
+                folder. Never touches custom/, projects/, tmp/, logs/, .claude/, .history/ or the tool outputs.
   check         Print one line when a newer release exists (one-day cache); never updates. --quiet: print only
                 that line. Always exits 0.
   version       Print the installed and the workspace versions.
@@ -1217,6 +1219,8 @@ It is a git repository of its own. Put here:
 - `rules/<name>.md`: your own rules; each one reaches the next sessions as `.claude/rules/custom-<name>.md`.
 - `core-terms.txt`: terms that must never reach a public repository (company and customer names).
 - `projects.md`: the list of your projects.
+- `requests/`: your requests: pending at its root, `qa/<project>/` once on `developer`, `done/<project>/` once released.
+- `config/prompt-log/sources.json`: other folders whose sessions the prompt log reads (the log itself is in `logs/`).
 - `env/<tool>.env`: the filled `.env` files of the tools. Git ignores `env/`: they are never committed.
 EOF
   cat >"$dir/core-terms.txt" <<'EOF'
