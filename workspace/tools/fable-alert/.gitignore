@@ -1,0 +1,4 @@
+*.bin
+*.log
+plugin/.claude-plugin/types/
+plugin/tsconfig.json

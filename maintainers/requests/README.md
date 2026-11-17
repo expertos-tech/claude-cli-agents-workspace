@@ -1,0 +1,31 @@
+# Requests
+
+Functional requests for the workspace itself, ready to run at the repository root, where the project is maintained. Each one
+has the objective, the business rules (RN-n), the acceptance criteria (AC-n), what is out of scope, and the stages with
+the effort of each. The design behind each request is in `maintainers/plans/`.
+
+Run them in this order; each one depends on the ones before it:
+
+| # | Request | Design | State |
+| --- | --- | --- | --- |
+| 0 | `import-from-fork.md` | — | Pending; first after the publication, with its own release |
+| 1 | `normalize-projects.md` | `plans/normalize-projects.md` | Built in 0.1.0; first run pending in the test installation |
+| 2 | `rules.md` | `plans/rules-config.md` | Pending |
+| 3 | `normalize-rules.md` | `plans/normalize-rules.md` | Pending; needs `rules` |
+| 4 | `run-tools.md` | `plans/run-tools.md` | Pending |
+| 5 | `tools-hub.md` | `plans/tools-hub.md` | Pending; needs `run-tools` |
+| 6 | `fork-my-rules.md` | `plans/fork-my-rules.md` | Pending; needs `rules` |
+| 7 | `final-review.md` | — | Pending; runs last, in a new session |
+
+Requests in the same round run in parallel sessions, each in its own worktree (`claude --worktree <request>` from the
+repository root), merged into `main` one at a time:
+
+| Round | Requests |
+| --- | --- |
+| 0 | `import-from-fork`, alone, with its own minor release: the first real test of `aiwp update` |
+| 1 | `rules`, `run-tools` |
+| 2 | `normalize-rules`, `fork-my-rules`, `tools-hub` |
+| 3 | `final-review`, which releases the next version once, and tests the update of a real installed workspace dedicated to it |
+
+Run a request in a new session opened at the repository root, one stage per session when a stage is large. A finished
+request keeps its file; update the State column here.

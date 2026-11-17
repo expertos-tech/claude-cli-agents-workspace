@@ -1,0 +1,9 @@
+{
+  "console.not_found": "não existe no Azurite",
+  "console.conflict": "já existe ou está sendo excluído",
+  "console.precondition": "mudou desde a leitura; recarregue antes de tentar de novo",
+  "console.bad_request": "o Azurite recusou o pedido",
+  "console.unavailable": "Azurite fora do ar ou inacessível",
+  "console.entity_invalid": "a entidade precisa ser um objeto JSON com PartitionKey e RowKey em texto",
+  "console.azurite_answer": "o Azurite respondeu %d %s"
+}

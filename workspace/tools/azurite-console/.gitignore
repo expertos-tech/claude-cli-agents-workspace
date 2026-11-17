@@ -1,0 +1,8 @@
+node_modules/
+dist/
+bin/
+coverage.out
+golangci-lint.xml
+*.test
+.env
+local.settings.json

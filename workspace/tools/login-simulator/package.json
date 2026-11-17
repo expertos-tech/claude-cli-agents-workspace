@@ -1,0 +1,14 @@
+{
+  "name": "login-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local stand-in for Auth0: click-to-login with fictitious users, OpenID Connect with PKCE",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/"
+  }
+}

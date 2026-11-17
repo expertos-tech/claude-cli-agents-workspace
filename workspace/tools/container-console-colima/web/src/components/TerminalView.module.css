@@ -1,0 +1,35 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* The padding lives here because FitAddon measures the size of the element xterm opens in. */
+.frame {
+  height: min(60dvh, 36rem);
+  min-height: 16rem;
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--terminal-bg);
+}
+
+.frame:focus-within {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+.host {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}

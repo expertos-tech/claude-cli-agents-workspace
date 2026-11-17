@@ -1,0 +1,4 @@
+# Lock file of the coverage check, installed with pip --require-hashes. Hashes: cp314 musllinux_1_2 x86_64 and aarch64 wheels.
+coverage==7.17.0 \
+    --hash=sha256:e8a72b26dc5c9a9422e45472b1d67ba5caf273c524c8668cc04b23062663755e \
+    --hash=sha256:4343a9378b964eb3cb80fa90406385de91c7e982a769ca9314d848f93bc0d3f2

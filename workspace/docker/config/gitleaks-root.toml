@@ -1,0 +1,17 @@
+# Config of the secrets check when scripts/validate.sh scans the workspace root (target "."): everything in
+# gitleaks.toml, plus the top-level tmp/ folder, which holds the worktrees of prompts. A worktree is scanned
+# on its own, with --path tmp/worktrees/<repo>/<branch> and the normal config.
+[extend]
+path = "/work/docker/config/gitleaks.toml"
+
+[[allowlists]]
+description = "Top-level tmp/: worktrees and scratch files, scanned on their own"
+paths = ['''^(/work/)?tmp/''']
+
+[[allowlists]]
+description = "projects/: independent git repos, each scanned on its own with --path projects/<name>"
+paths = ['''^(/work/)?projects/''']
+
+[[allowlists]]
+description = "custom/: the git repo of the custom layer, scanned on its own with --path custom"
+paths = ['''^(/work/)?custom/''']

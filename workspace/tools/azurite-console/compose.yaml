@@ -1,0 +1,57 @@
+# Azurite and the console, on their own. Host ports only on 127.0.0.1.
+# AZURITE_ACCOUNT_KEY and DOCKER_SOCKET_GID come from the environment or custom/env/azurite-console.env, passed with
+# --env-file (template: .env.example here); see README.md.
+name: azurite-console
+
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5
+    # The Blob SDK of go.mod sends an API version newer than this Azurite knows.
+    command: ["azurite", "--location", "/data", "--blobHost", "0.0.0.0", "--queueHost", "0.0.0.0", "--tableHost", "0.0.0.0", "--skipApiVersionCheck"]
+    environment:
+      AZURITE_ACCOUNTS: "devstoreaccount1:${AZURITE_ACCOUNT_KEY:?set AZURITE_ACCOUNT_KEY in custom/env/azurite-console.env}"
+    ports:
+      - "127.0.0.1:30000:10000"
+      - "127.0.0.1:30001:10001"
+      - "127.0.0.1:30002:10002"
+    volumes:
+      - azurite-data:/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 10000 && nc -z 127.0.0.1 10001 && nc -z 127.0.0.1 10002"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  azurite-console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AZURITE_ACCOUNT_KEY: "${AZURITE_ACCOUNT_KEY:?set AZURITE_ACCOUNT_KEY in custom/env/azurite-console.env}"
+    ports:
+      - "127.0.0.1:28091:28091"
+    # The docker CLI reads the access log of the azurite container through the socket.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    group_add:
+      - "${DOCKER_SOCKET_GID:-0}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      azurite:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/azurite-console", "-healthcheck", "-addr", ":28091"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  azurite-data:

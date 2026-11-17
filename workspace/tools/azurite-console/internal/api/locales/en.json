@@ -1,0 +1,9 @@
+{
+  "console.not_found": "does not exist in Azurite",
+  "console.conflict": "already exists or is being deleted",
+  "console.precondition": "changed since it was read; reload before trying again",
+  "console.bad_request": "Azurite refused the request",
+  "console.unavailable": "Azurite is down or unreachable",
+  "console.entity_invalid": "the entity must be a JSON object with string PartitionKey and RowKey",
+  "console.azurite_answer": "Azurite answered %d %s"
+}

@@ -1,0 +1,13 @@
+**/.git
+**/bin/
+**/node_modules/
+**/dist/
+**/coverage.out
+**/golangci-lint.xml
+**/*.test
+**/.env
+**/.env.*
+**/local.settings.json
+compose.yaml
+history.txt
+*.md

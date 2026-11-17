@@ -1,0 +1,78 @@
+{
+  "issuer": "http://localhost:28080/",
+  "applications": [
+    {
+      "name": "Example (local)",
+      "clientId": "example-local",
+      "callbackUrls": ["http://localhost:4200/auth"],
+      "logoutUrls": ["http://localhost:4200/"]
+    },
+    {
+      "name": "Example with administration (local)",
+      "clientId": "example-admin-web",
+      "callbackUrls": ["http://localhost:4500/callback"],
+      "logoutUrls": ["http://localhost:4500/"]
+    }
+  ],
+  "users": [
+    {
+      "id": "local|ana",
+      "givenName": "Ana",
+      "familyName": "Test",
+      "email": "ana@example.local",
+      "roles": ["admin"],
+      "permissions": ["links:read", "links:write"]
+    },
+    {
+      "id": "local|bruno",
+      "givenName": "Bruno",
+      "familyName": "Test",
+      "email": "bruno@example.local",
+      "roles": ["user"],
+      "permissions": ["links:read", "links:write"]
+    },
+    {
+      "id": "local|carla",
+      "givenName": "Carla",
+      "familyName": "New",
+      "email": "carla@example.local",
+      "roles": [],
+      "permissions": []
+    },
+    {
+      "id": "auth0|hub-admin-mfa",
+      "givenName": "Helena",
+      "familyName": "Admin",
+      "email": "helena.admin@example-admin.local",
+      "permissions": ["hub:admin"],
+      "amr": ["mfa"]
+    },
+    {
+      "id": "auth0|hub-admin-no-mfa",
+      "givenName": "Igor",
+      "familyName": "Admin",
+      "email": "igor.admin@example-admin.local",
+      "permissions": ["hub:admin"]
+    },
+    {
+      "id": "google-oauth2|100000000000000000001",
+      "givenName": "Júlia",
+      "familyName": "Customer",
+      "email": "julia@example-admin.local",
+      "picture": "http://172.31.250.10:8080/avatars/Z29vZ2xlLW9hdXRoMnwxMDAwMDAwMDAwMDAwMDAwMDAwMDE.svg"
+    },
+    {
+      "id": "auth0|hub-julia",
+      "givenName": "Júlia",
+      "familyName": "Customer",
+      "email": "julia@example-admin.local"
+    },
+    {
+      "id": "auth0|hub-unverified",
+      "givenName": "Lucas",
+      "familyName": "Pending",
+      "email": "lucas@example-admin.local",
+      "emailVerified": false
+    }
+  ]
+}

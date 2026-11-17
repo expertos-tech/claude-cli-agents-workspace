@@ -1,0 +1,273 @@
+# Using the workspace
+
+Day-to-day guide. The design and its reasons are in [overview.md](overview.md) and in [decision 0001](decisions/0001-base-design.md).
+
+- [The idea in one sentence](#the-idea-in-one-sentence)
+- [Before the first session](#before-the-first-session)
+- [Opening a session](#opening-a-session)
+- [The registry and updating](#the-registry-and-updating)
+- [Making a request](#making-a-request)
+- [Where the work happens](#where-the-work-happens)
+- [Waves: checkpoint, merge and resume](#waves-checkpoint-merge-and-resume)
+- [What Claude asks you](#what-claude-asks-you)
+- [Commands](#commands)
+- [Review](#review)
+- [Tests a human would run by hand](#tests-a-human-would-run-by-hand)
+- [Projects](#projects)
+- [Several sessions at once](#several-sessions-at-once)
+- [Validating](#validating)
+- [Changing the workspace itself](#changing-the-workspace-itself)
+- [When something goes wrong](#when-something-goes-wrong)
+- [Where everything is](#where-everything-is)
+
+## The idea in one sentence
+
+You say **what** you want; Claude decides **how** and does it in an isolated clone, where everything is allowed. The heavy checks and the questions stay in one place: the gate that takes the work to the base.
+
+## Before the first session
+
+Once per workspace:
+
+| Step | Command |
+| --- | --- |
+| Create the workspace: the read-only core, the custom layer in `custom/` and the `.claude/` folder | the installer does it (it asks for the folder); another one: `aiwp new <folder>` (asks for the URL of the custom layer's repository, or `--custom <url>`; an empty answer starts a local one) |
+| Check Docker, used by the validations | `docker info` |
+| Create the filled `.env` of the validation tools, `custom/env/docker.env` | `/local-env docker`, in a session; then fill the values in an editor |
+| Optional: install the single-agent mode | `ln -sf "<workspace>/scripts/single-claude.sh" ~/.local/bin/single-claude` |
+
+From then on `.claude/` keeps itself up to date: a session start hook runs `setup-claude.sh`.
+
+To remove a workspace, give write permission back first, since the core is read only: `chmod -R u+w <folder> && rm -rf <folder>`. Push `custom/` and your projects before: they go with it.
+
+## Opening a session
+
+```bash
+cd <workspace> && aiwp
+```
+
+`aiwp` checks for a new release (at most once a day, 5 s limit; offline it goes on) and, when there is one, prints "A new workspace version X was detected (this workspace: Y). Run `aiwp update` to update; opening this workspace on Y." Then it runs `setup-claude.sh` and starts `claude` on the current version, with the arguments you give after `--` (`aiwp -- --resume`). Opening never updates. After an update that was interrupted, it refuses to open until `aiwp repair` (or `aiwp update`) restores the workspace. `claude` alone also opens the workspace: when a new release exists, the session start says so, and Claude tells you to close the session and run `aiwp update` in a terminal.
+
+**Never inside a session.** From a Claude Code session (its Bash tool, a hook) `aiwp` refuses `update`, `rollback`, `repair`, `forget`, the opening and a `new` over a registered folder, and `guard-bash` denies them too: they change the rules of the open session or start `claude` inside it. `aiwp list`, `check`, `version` and `--help` work anywhere. An unknown command is a usage error; arguments for `claude` go after `--`.
+
+- **Always at the workspace root**, even to work on a project: that is where `AGENTS.md`, the rules and the hooks apply.
+- **One session per request.** When the subject is over, use `/clear` or open another session. A long session gets expensive: each step reads the whole context again.
+- **Effort:** `medium` fits work with a clear scope. Raise it to `high` with `/effort high` when the change touches a hook, a permission, a merge or security, or to debug a hard failure. For a single hard step, write `ultrathink` in the prompt.
+- **Session name:** `/prompt <file>` names the session after the project, numbered (`billing-api-1`, `billing-api-2`...), from the request's `**Project:**` line: the number is one more than the highest among the open sessions of that project. Without `/prompt`, Claude Code picks a title on its own; `/rename <name>` changes it.
+- **Language:** Claude replies in the language you write in.
+
+## The registry and updating
+
+The data folder keeps `workspaces.json`, with every installed workspace (path, version, created, updated). `aiwp new` registers a workspace, and the first `aiwp` run in one that is not registered adds it.
+
+| Command | Does |
+| --- | --- |
+| `aiwp list` | Each registered workspace with its version and state: up to date, update available (X), core changed, folder missing, pinned at X, stopped halfway |
+| `aiwp forget <folder>` | Removes the entry (for a folder that is gone, or one you no longer update); never touches the folder |
+| `aiwp update` | Lists the registered workspaces (number, version, state, path) and asks `[1] Update all` (the default), `[2] Choose which` (numbers) or `[3] Cancel` |
+| `aiwp update <folder>` | Updates only that workspace, without asking |
+| `aiwp update --all` | Updates every registered workspace, without asking |
+
+Updating happens only by command, in a terminal, with no session open. `aiwp update` moves the data folder to the newest release once, then updates each chosen workspace: it verifies it against its manifest, backs up what it replaces in `.aiwp/backup/<version>/`, writes a journal, swaps files by rename and shows the changelog. A workspace whose core changed or whose folder is missing is skipped and reported, and the others go on; a summary table ends the run.
+
+- **Pinned workspaces** (after `aiwp rollback`) are left as they are by `--all` and by Update all; choosing one by number or by folder updates it and clears the pin.
+- **No terminal:** `--all` or a folder is required; otherwise it is a usage error (exit 2).
+- **A running `claude`:** before swapping a workspace where a `claude` process runs (its current folder inside the workspace), it names the pid and asks. With `--all` it skips that workspace unless you add `--force`.
+- **Exit code 1** when a workspace was skipped for a changed core, a running `claude` or an error.
+
+## Making a request
+
+**A simple request:** write it in words.
+
+```text
+fix the broken link in the README of my-project
+```
+
+**A functional request (a feature, a system):** the form is `templates/request.md`. Its headings and bold labels stay in English; the content is in your language. There are two ways to fill it in.
+
+| Way | How |
+| --- | --- |
+| From loose ideas | `/draft-prompt I want a monthly report of...`; Claude asks only what blocks, marks the rest as "assumed decision" and saves it in `custom/prompts/` |
+| Yourself | copy `templates/request.md` to `tmp/prompt.md` and fill it in |
+
+Then `/prompt <file>` reads `custom/prompts/<file>`; `/prompt` alone reads `tmp/prompt.md`.
+
+- The requests of `/draft-prompt` live in `custom/prompts/`, inside the custom layer, a git repository of its own: the history of the requests is versioned there.
+- A delivered request moves to `custom/prompts/archive/`. What is at the root of `custom/prompts/` still has to run.
+- `/draft-prompt` commits and pushes the request it created, at every version. The rest (archiving the delivered request, the resume request of a wave) goes into the wave's checkpoint ([Waves](#waves-checkpoint-merge-and-resume)).
+- `aiwp new` sets up `custom/`: it clones the repository whose URL you give (an empty one gets a skeleton), or starts a local one. If the folder is missing later, the session says so at the start, and `bash scripts/setup-claude.sh --custom-repo <url>` in a terminal clones it.
+
+The written request is as large as what you asked for. `/draft-prompt` picks one of three sizes before writing, and says which one:
+
+| Size | When | What comes out | Ceiling |
+| --- | --- | --- | --- |
+| Adjustment | changes a behavior of something that exists ("add a confirmation overlay") | a few lines: what, where, done when, effort | about 120 words |
+| Feature | a new capability in a system that exists | objective, rules, acceptance criteria, out of scope, steps and effort | about 400 words, at most 8 rules |
+| System | a new system, architecture, infra, external integration, personal data | the full form | no ceiling |
+
+- A rule you did not state is not written, unless without it two different things could be built.
+- Too large or too small? Answer "smaller" or "bigger".
+- A request of the adjustment size can go straight into the session, with no file.
+
+**Effort per step.** Every written request carries the effort each step asks for: one line in the adjustment size, and the "Steps and effort" table in the others. You set the session with `/effort <level>` before each step; Claude says at the start of each one which level it asks for and passes that level to the step's subagents.
+
+| Effort | When |
+| --- | --- |
+| `low` | a mechanical change: a text, a label, a rename |
+| `medium` | a clear scope; the default |
+| `high` | where verification matters: security, personal data, money, permissions, migration, a destructive step, a bug in code that exists |
+
+What to expect:
+
+- Claude asks the **functional gaps**, all at once, before starting. It does not ask your approval for technical decisions.
+- A question or a read-only request is answered directly, with no branch and no test.
+- At the end, a short summary: what changed, what was verified and how, what is left. A failing check is reported as a failure, with its output.
+
+## Where the work happens
+
+- **A question or reading:** Claude answers; nothing is opened.
+- **A change to a project or a POC:** Claude opens a clone in `tmp/work/<date>-<subject>/<repo>/` (`bash scripts/aiwp-cmds.sh open`), says the path and works only there. In the clone everything is allowed: commit, rebase, reset, delete, start Docker. Each commit goes to the remote by itself, after a secret scan of the commits that leave; a commit with a secret or a `.env` stays in the clone.
+- **Taking it to the base:** `/merge <work>/<clone>`. The gate brings `developer` up to date, runs the full suite and the complete `validate.sh`, scans every incoming commit for secrets, writes the audit of what leaves the base (files deleted or renamed away, tests removed or disabled, destructive SQL, infra, dependencies) and asks for a review against the request. You are asked only about what the request does not explain. Then `developer` moves by fast-forward to exactly the commit that passed, and the clone can be closed (`aiwp-cmds.sh close`).
+- **`projects/` always stays on `developer`.** Nobody edits there; only the gate moves the base.
+
+## Waves: checkpoint, merge and resume
+
+A wave is each step of a plan in steps (the request's "Steps and effort" table). A request with one step, or none, is one wave, closed when it ends. A question or reading opens no wave.
+
+- **A mature part goes to the base at once**, through the gate, without waiting for the end of the wave. A base that publishes to production: the gate asks before merging. A migration branch also waits for your order.
+- **When the wave closes**, Claude:
+  1. makes the checkpoint: a commit in the clone, which goes to the remote by itself (`aiwp-cmds.sh status` shows `not-pushed=0`);
+  2. writes the resume request in `custom/prompts/`, in the format of `templates/request.md`: where it stopped (the work, the clone, the branch and the sha), decisions taken, open items and the next steps with their effort. The request that was running moves to `custom/prompts/archive/`;
+  3. ends the reply with a highlighted board: what was done, what was verified, what is left and the path of the resume request. After the board the session stops; the next wave starts in a new session, with `/prompt <file>`.
+- The session does not end its reply with a commit missing from the remote: a hook makes it try again or say why it could not.
+
+Full rule: `rules/git.md`, sections "Gate" and "Waves".
+
+## What Claude asks you
+
+The rest follows Claude Code's permission mode: auto mode judges what is destructive.
+
+| Situation | What happens |
+| --- | --- |
+| A gate with something the request does not explain, destruction outside the machine, or a base that publishes to production | one question, in one round, before merging |
+| Deleting a database: `docker volume rm`, `docker compose down -v`, `DROP`/`TRUNCATE`, deleting a `.data/` folder | Claude says what goes, and the hook asks for your confirmation |
+| `aiwp-cmds.sh release` (`main` moves) | confirmation, and only at your request |
+| `aiwp-cmds.sh apply --apply` (Terraform in the cloud) | confirmation of the plan shown, and only at your request |
+| `aiwp-cmds.sh close --discard` (deleting work not merged) | confirmation |
+| A git write in `projects/` or in the core, Terraform outside `apply`, `git push --no-verify` | refused by the hook, with the right way |
+| A subagent on Fable | the hook asks for your confirmation |
+| Deleting a whole project, POC or tool | Claude shows the command; **you** run it |
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| `/merge <work>/<clone>` | Takes the work of a clone to `developer`, through the gate |
+| `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
+| `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
+| `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
+| `/draft-prompt [ideas \| file]` | Builds a functional request from ideas |
+| `/prompt [name \| path]` | Runs the request written in a file |
+| `/pilot [auto\|manual]` | Shows or changes who runs the manual tests |
+| `/local-env [folder]` | Creates or completes a filled `.env` without showing values (`custom/env/<name>.env` for `docker/`, `docker/sonar/` and a tool) |
+| `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
+
+The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `apply`, `developer`, `checkpoint`, `bring`).
+
+Claude Code's own commands that help most here:
+
+| Command | For |
+| --- | --- |
+| `/rewind` (or Esc twice) | undo file edits and take the conversation back to an earlier point |
+| `/clear` | start another request with a clean context |
+| `/effort`, `/model` | change the effort and the model |
+| `/usage` | see the cost and usage of the session |
+
+## Review
+
+- One round per gate, between the two phases, by the `reviewer` subagent: clean context, read only.
+- It classifies each item of the audit and each acceptance criterion (requested, a consequence of the request, unexplained) and reports only correctness, security or data-loss defects, a criterion not met or not proven, a test removed with no reason and a weaker protection.
+- A **BLOCKER** is fixed in the clone, and the gate runs again. A **RECOMMENDED** never sends the branch back.
+- If Claude disagrees with a finding, it brings both positions and you decide.
+
+## Tests a human would run by hand
+
+The mode belongs to the session and changes with `/pilot`.
+
+| Mode | Who tests | When to use |
+| --- | --- | --- |
+| `auto` (default) | Claude, visual checks included, with the browser the session has | almost always |
+| `manual` | you: Claude gives a numbered list with what changed, where to see it, the steps and what to report back, and waits | when the test needs your eye, a real login or a physical device |
+
+In both modes, unit tests, coverage, lint and the secret scan are Claude's.
+
+## Projects
+
+- Each project is an independent git repository in `projects/`, never part of the core. The list is in `custom/projects.md`.
+- **Creating:** ask ("create the project X in projects/client-y"). Claude uses `scripts/init-repo.sh`. The folder of a new project is your decision; if you do not say it, Claude asks.
+- **Branches:** the checkout in `projects/` stays on `developer`; the work happens in a clone under `tmp/work/`, on a branch that leaves it and comes back through the gate. `main` moves only when you ask for the release (`aiwp-cmds.sh release`): a fast-forward to `developer`. Terraform applies only from `main`, with `aiwp-cmds.sh apply`, at your request and with the plan confirmed.
+- **Local Docker:** `aiwp-cmds.sh up` publishes and first tags the images it will replace; `aiwp-cmds.sh rollback` goes back to them.
+- **Workspace projects:** the first line of each project's `README.md` (and of each POC folder's) is a marker with the workspace version it was last normalized with: `<!-- AI-WORKSPACE-PROJECT 0.1.0 -->`. `bash scripts/aiwp-project-state.sh` shows the state of each one. When a message names a project without the marker, or one that a newer workspace version asks something of (`migrations/`), Claude says so and asks whether to run `/normalize-projects <project>`. Saying no never blocks the request; the warning comes back the next time you name the project. `aiwp-cmds.sh open` and the gate show the same warning.
+- **Bringing in an existing project:** `/normalize-projects --from <url | folder>` clones it into `projects/` (from a folder, its local branches come along and `origin` points to its real remote; uncommitted changes there are listed, since a clone does not carry them). A project cloned by hand or a POC moved into `custom/pocs/` is normalized the same way: `/normalize-projects <project>`.
+- **How a normalization goes:** first, four analysts read a fresh clone and Claude writes a plan in `custom/migrations/`, one line per finding: what goes to your custom layer (company and environment knowledge), what stays in the project as documentation, what changes in it (marker, "How to test", `.env` ignored, instruction files of other tools removed), and the gaps and security alerts it only reports. You approve, edit or drop each line and choose the language of the documentation. Then, after you confirm each push: `developer` on the remote, checkpoint tags `ai-workspace-migration/<date>/developer` and `.../main` on the old heads, a branch `feat/ai-workspace-migration` with the plan in commits and the complete documentation, a test of the branch with you, `/merge` into `developer` and the release of `main` (a pull request when `main` is protected). It never rewrites code, writes tests or fixes a security gap: the gaps go to `AI-WORKSPACE-MIGRATION.md` at the project root, and the security alerts (file, line and type, never the value) are shown to you at the end. A POC gets the same analysis and approval, with the changes committed in `custom/`.
+- **POC or local tool:** a POC lives in `custom/pocs/` and is worked on in a clone of `custom/`, with the gate using its build as the test. A tool lives in `tools/`, part of the core, and changes only with the product. Both only need to compile, pass the secret scan and have a README.
+- **Ports:** POCs and `docker/` stacks from 20000 up; tools and projects on their conventional port.
+- **Language:** English code is recommended in your projects, not required (`rules/rules.md` "Language").
+- **Infrastructure:** you do not size it. Without a number from you, it starts at the smallest size that runs the delivery (consumption plan, one node, one region) and ready to grow: the limits are Terraform variables, and the project's docs say which signal tells it is time to scale and how much the next step costs. If you have a real requirement (a volume, a deadline, a budget ceiling), say it in the request and it becomes a requirement. Before creating a resource that is billed, Claude gives the monthly estimate.
+- **Backlog:** ideas not yet turned into a request go to `custom/backlog/`, one item per file, from `templates/backlog-item.md`.
+
+## Several sessions at once
+
+- **One clone per work.** Each session works in its own clone under `tmp/work/`; two sessions share nothing but the remote. Two cannot open the same branch.
+- **The gate by fast-forward.** If another session merged first, phase 2 refuses and the gate starts again with the new base.
+- **`scripts/heavy-run.sh`.** Before a task heavy on CPU or GPU (graphics, 3D rendering), it reads the temperature: at 88 °C or more, it waits for 85 °C. Tests, builds and containers run directly, with no queue.
+- **A shared resource** (a port, a Compose project in use): two clones of the same project compete for the same ports. Start the stack of one at a time, and tell the session what is already running.
+
+## Validating
+
+| What | Command |
+| --- | --- |
+| A clone or a folder | `/validate tmp/work/<work>/<clone>`, or `bash scripts/validate.sh --path <folder>` |
+| Only some checks | `bash scripts/validate.sh --path <dir> --only secrets,markdown` |
+| SonarQube, when you want it | `/validate <dir> --sonar` |
+
+The checks live in `docker/compose.yaml`, with a fixed version and digest. A check that already passed for the same content shows as `CACHED` and does not run again; `--no-cache` forces it.
+
+## Changing the workspace itself
+
+- **A session never changes the core.** `AGENTS.md`, `rules/`, `scripts/`, `docker/`, `docs/` and `tools/` are read only: in an installed workspace their files are read only on disk, Claude Code refuses the edit and the hook refuses the write, a `chmod`, a `chown` and a `git init` there. The workspace root is not a git repository: `custom/` and each project are. Your own tools go to `custom/tools/` (`bash scripts/init-repo.sh --type tool`). When a rule gets in the way, Claude writes the proposal in `custom/docs/lessons.md` and tells you.
+- **Updates:** a new release reaches the workspace only through `aiwp update`, in a terminal with no session open, which replaces only the core files that changed ([The registry and updating](#the-registry-and-updating)). Opening with `aiwp` only says that one exists.
+- **Who changes the product:** a pull request to the product repository, maintained from its root.
+- **Your own rules:** add them to `custom/rules/`; they reach the next sessions.
+- **Lessons:** when something goes wrong because of how the work was done, Claude writes one dated line in `custom/docs/lessons.md`. That file is not loaded in sessions. Review it from time to time and decide, line by line: it becomes a hook (no exception allowed), a sentence in a rule, or it goes.
+- **Before adding a rule, ask:** does Claude already do it right without it? Can a hook guarantee it? If the answer to either is yes, the rule does not go in.
+
+## When something goes wrong
+
+| Symptom | What to do |
+| --- | --- |
+| Claude edited what it should not | `/rewind`, or Esc twice; in a clone, `git restore <file>` as a last resort |
+| A command, a skill or a subagent does not show | `bash scripts/setup-claude.sh` and restart the session |
+| The hook asks or refuses where it should not | write it in `custom/docs/lessons.md`; the set is in `scripts/guard-bash.py` (`bash scripts/guard-bash.sh --help`) |
+| "NOT pushed" in the clone | the pre-push hook refused (a secret, a `.env`) or the remote did not answer: read the output, rewrite the branch in the clone if needed, and `aiwp-cmds.sh push` |
+| "The secret scan did not run" | Docker did not answer: start Docker and run `aiwp-cmds.sh push`; the commit stays in the clone until then |
+| The publication to Docker went wrong | `bash scripts/aiwp-cmds.sh rollback <work>/<clone>` (or `<repo>`) goes back to the previous image |
+| `heavy-run.sh` exited with 75 | nothing ran: the machine did not reach 85 °C in 30 minutes. The output has the last reading; run it again later |
+| The gate refused phase 2 | the base moved, or the clone changed after phase 1: the gate runs again |
+| A rule blocks the simplest solution | Claude stops and shows the options. You can override any rule |
+
+## Where everything is
+
+| What | Where |
+| --- | --- |
+| What applies in every session | `AGENTS.md` |
+| Rules by topic | `rules/*.md` |
+| Subagents and commands | `rules/agents/`, `rules/skills/` |
+| Hooks and permissions | `rules/agents/settings.json`, `scripts/guard-bash.sh`, `scripts/guard-subagent-model.sh`, `scripts/aiwp-cmds.sh` (the clones' hooks and `Stop`) |
+| Scripts | `scripts/README.md` |
+| Validation tools | `docker/README.md` |
+| Decisions | `docs/decisions/` |
+| Lessons | `custom/docs/lessons.md` |
+| Written requests | `custom/prompts/` (in the custom layer) |
+| Backlog | `custom/backlog/` |
+| Company: cloud, visual identity, projects and ports | `custom/` (`custom/README.md`) |
+| Work clones | `tmp/work/<work>/` (outside git; `aiwp-cmds.sh status`) |

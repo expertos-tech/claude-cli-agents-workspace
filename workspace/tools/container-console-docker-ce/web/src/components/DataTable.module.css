@@ -1,0 +1,236 @@
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.scroller {
+  container-type: inline-size;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.caption {
+  padding-bottom: var(--space-2);
+  color: var(--color-muted-foreground);
+  font-size: var(--text-secondary);
+  text-align: left;
+}
+
+.head th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--table-border);
+  color: var(--table-header-fg);
+  font-size: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table td,
+.identity {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--table-border);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+
+.row:hover > * {
+  background: var(--table-row-hover);
+}
+
+.row:hover a {
+  color: var(--table-row-hover-link);
+}
+
+tbody:last-child > .row:last-child > * {
+  border-bottom: 0;
+}
+
+/* A closed group keeps its rows in the page, out of sight and of the accessibility tree. */
+.table tbody[hidden] {
+  display: none;
+}
+
+.groupCell {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--table-border);
+  background: var(--table-group-bg);
+  text-align: left;
+}
+
+.groupHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.groupToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--target-min);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--button-radius);
+  background: transparent;
+  color: var(--table-group-fg);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupToggle svg {
+  flex: none;
+}
+
+.groupToggle:disabled {
+  cursor: default;
+}
+
+.groupTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.groupSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* Rows of a group sit under its header. */
+.memberRow > .identity {
+  padding-left: calc(var(--space-3) + var(--space-5));
+}
+
+.identityValue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.stacked {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-size: var(--text-secondary);
+  font-weight: 400;
+}
+
+.stackedItem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.stackedItem dt {
+  color: var(--color-muted-foreground);
+}
+
+.stackedItem dd {
+  min-width: 0;
+}
+
+.status {
+  white-space: nowrap;
+}
+
+.actionList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.empty {
+  color: var(--color-muted-foreground);
+  text-align: center;
+}
+
+/* Without room for every column, the secondary ones stack in the first cell. */
+@container (max-width: 60rem) {
+  .secondary {
+    display: none;
+  }
+
+  .stacked {
+    display: flex;
+  }
+}
+
+/* On phones each row becomes a block: identification, status and then the actions. */
+@container (max-width: 34rem) {
+  .table,
+  .table tbody,
+  .row,
+  .emptyRow,
+  .empty {
+    display: block;
+    width: 100%;
+  }
+
+  .caption {
+    display: block;
+  }
+
+  .head {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .row {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--table-border);
+  }
+
+  tbody:last-child > .row:last-child {
+    border-bottom: 0;
+  }
+
+  .groupHead,
+  .groupRow,
+  .table .groupCell {
+    display: block;
+    width: 100%;
+  }
+
+  .table .memberRow > .identity {
+    padding-left: var(--space-4);
+  }
+
+  .row:hover > * {
+    background: transparent;
+  }
+
+  .table .identity,
+  .table .status,
+  .table .actions {
+    display: block;
+    padding: var(--space-1) 0;
+    border-bottom: 0;
+    white-space: normal;
+  }
+}

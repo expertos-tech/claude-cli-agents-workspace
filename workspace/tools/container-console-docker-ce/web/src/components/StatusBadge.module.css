@@ -1,0 +1,47 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.125rem var(--space-2) 0.125rem 0.125rem;
+  border-radius: var(--badge-radius);
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  font-size: var(--text-secondary);
+  font-weight: 500;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: calc(var(--badge-radius) - 0.125rem);
+}
+
+.good {
+  background: var(--color-status-good);
+  color: var(--color-status-good-glyph);
+}
+
+.warning,
+.progress {
+  background: var(--color-status-warning);
+  color: var(--color-status-warning-glyph);
+}
+
+.serious {
+  background: var(--color-status-serious);
+  color: var(--color-status-serious-glyph);
+}
+
+.critical {
+  background: var(--color-status-critical);
+  color: var(--color-status-critical-glyph);
+}
+
+.neutral {
+  background: var(--color-status-neutral);
+  color: var(--color-status-neutral-glyph);
+}

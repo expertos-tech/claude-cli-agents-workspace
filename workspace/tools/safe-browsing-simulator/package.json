@@ -1,0 +1,14 @@
+{
+  "name": "safe-browsing-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local stand-in for the Google Safe Browsing Lookup API v4: dangerous URLs and out-of-service domains from a file",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/"
+  }
+}

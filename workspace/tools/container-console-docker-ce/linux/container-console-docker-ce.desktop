@@ -1,0 +1,12 @@
+# Installed by container-console-docker-ce (linux/install-console.sh); a reinstall overwrites this file.
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Container Console (Docker CE)
+Comment=Local Docker CE console: containers, images, Compose and Kubernetes
+Comment[pt_BR]=Console local do Docker CE: contêineres, imagens, Compose e Kubernetes
+Exec=sh -c "systemctl --user start container-console-docker-ce.service; exec xdg-open http://127.0.0.1:27850/"
+Icon=@ICON_PATH@
+Terminal=false
+Categories=Development;
+StartupNotify=false

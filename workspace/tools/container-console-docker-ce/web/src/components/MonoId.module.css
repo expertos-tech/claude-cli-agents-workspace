@@ -1,0 +1,17 @@
+.id {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: bottom;
+  white-space: nowrap;
+  font-size: var(--text-secondary);
+}
+
+.truncated {
+  display: block;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-secondary);
+}

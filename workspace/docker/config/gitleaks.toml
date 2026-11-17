@@ -1,0 +1,15 @@
+# Default gitleaks rules; local git-ignored env files, data folders and generated front-end output are excluded from file scans.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local git-ignored env files, and the filled ones of the custom layer (custom/env/<name>.env)"
+paths = ['''(^|/)\.env$''', '''(^|/)local\.settings\.json$''', '''^(/work/)?(\.history/validate-secrets\.[^/]+/)?custom/env/[^/]+\.env$''']
+
+[[allowlists]]
+description = "Local git-ignored data folders"
+paths = ['''(^|/)\.data/''', '''(^|/)azurite-data/''']
+
+[[allowlists]]
+description = "Generated front-end dependencies and build output"
+paths = ['''(^|/)node_modules/''', '''(^|/)tools/container-console-docker-ce/internal/webui/dist/''']

@@ -1,0 +1,21 @@
+# Replaces the dashboard provisioning shipped in the otel-lgtm image (RED Metrics and
+# JVM). The same providers point to an empty folder and, without disableDeletion,
+# Grafana removes those dashboards at start.
+apiVersion: 1
+
+providers:
+  - name: "RED Metrics (classic histogram)"
+    type: file
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/empty
+      foldersFromFilesStructure: false
+  - name: "RED Metrics (exponential/native histogram)"
+    type: file
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/empty
+      foldersFromFilesStructure: false
+  - name: "JVM Metrics"
+    type: file
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/empty
+      foldersFromFilesStructure: false

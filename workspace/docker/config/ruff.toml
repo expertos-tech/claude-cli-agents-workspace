@@ -1,0 +1,9 @@
+# Shared Ruff config of the python check in scripts/validate.sh. Workspace tools run on the host Python 3.9.
+target-version = "py39"
+line-length = 120
+
+[lint]
+select = ["E", "W", "F", "I", "B", "UP"]
+
+[format]
+quote-style = "single"

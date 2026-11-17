@@ -1,0 +1,45 @@
+# Local telemetry stack of the workspace. Run from the workspace root:
+#   docker compose -f tools/observability/compose.yaml up -d
+# Details in README.md.
+name: observability
+
+services:
+  # OpenTelemetry Collector, Tempo (traces), Loki (logs), Prometheus (metrics)
+  # and Grafana in one image, for development.
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.39.0@sha256:4c8056c9c05fcb3c8fd93800e85334bfd79b4d0271b47a54a121a64af41fe1fe
+    command: ["bash", "/observability/start.sh"]
+    restart: unless-stopped   # telemetry must survive a Docker daemon restart
+    ports:
+      - "127.0.0.1:3000:3000"   # Grafana
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
+    environment:
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"   # anonymous Admin access is the image default
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /dashboards/workspace/claude-code.json
+      GF_USERS_DEFAULT_THEME: system   # follows the operating system theme
+      LGTM_SHUTDOWN_TIMEOUT_SECONDS: "40"   # time for Tempo, Loki and Prometheus to write their WAL
+      LOKI_EXTRA_ARGS: -store.max-query-length=0   # default: 30d1h per query
+      PROMETHEUS_EXTRA_ARGS: --storage.tsdb.retention.time=365d   # default: 15d
+      TEMPO_EXTRA_ARGS: -backend-scheduler.provider.work.compaction.block-retention=8760h -backend-worker.compaction.block-retention=8760h   # 365d; default: 336h
+    volumes:
+      - ./.data:/data
+      - ./dashboards/workspace:/dashboards/workspace:ro
+      - ./grafana/providers.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/workspace.yaml:ro
+      - ./grafana/image-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml:ro   # drops the dashboards of the image
+      - ./grafana/empty:/otel-lgtm/grafana/conf/provisioning/dashboards/empty:ro
+      - ./grafana/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro   # drops personal data from new telemetry
+      - ./grafana/start.sh:/observability/start.sh:ro
+      - ../../projects:/projects:ro
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 60s
+
+# Fixed name, so other local stacks can attach to it as external and reach otel-lgtm:4317.
+networks:
+  default:
+    name: observability

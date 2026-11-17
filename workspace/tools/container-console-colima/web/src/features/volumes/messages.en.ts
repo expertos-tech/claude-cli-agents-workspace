@@ -1,0 +1,27 @@
+export const messages = {
+  nav: 'Volumes',
+  eyebrow: 'Docker',
+  title: 'Volumes',
+  description: 'Volumes keep container data outside the containers.',
+  caption: { one: '{count} volume', other: '{count} volumes' },
+  empty: 'No volume exists right now.',
+  createTitle: 'Create volume',
+  nameLabel: 'Volume name',
+  nameHint: 'Letters, digits, dot, hyphen and underscore, starting with a letter or digit.',
+  nameInvalid:
+    'The name must start with a letter or digit and contain only letters, digits, dot, hyphen or underscore, up to 255 characters.',
+  create: 'Create',
+  remove: 'Remove',
+  removeAria: 'Remove volume {name}',
+  removeTitle: 'Remove volume {name}?',
+  removeBody:
+    'The data of volume {name} is deleted. The removal does not use force: if it is in use, it stays here and the Docker error shows in the actions panel.',
+  detailsBack: 'Back to the list',
+  detailsMissing: 'This volume no longer shows in the list. It may have been removed.',
+  columnName: 'Name',
+  columnDriver: 'Driver',
+  columnScope: 'Scope',
+  columnMountpoint: 'Path in the VM',
+  columnProject: 'Compose project',
+  noProject: 'None',
+} as const

@@ -1,0 +1,19 @@
+# Installed by container-console-docker-ce (linux/install-console.sh); a reinstall overwrites this file.
+[Unit]
+Description=Container Console (Docker CE): local console of the Docker environment
+# The file dialog needs the display variables the desktop session exports to the user manager.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart=%h/.local/bin/container-console-docker-ce
+# Optional CONSOLE_* settings, one VAR=value per line.
+EnvironmentFile=-%h/.config/container-console-docker-ce/env
+Restart=on-failure
+RestartSec=2
+# Only the service gets the signal: a CLI call already running is not interrupted by a restart.
+KillMode=process
+
+[Install]
+WantedBy=graphical-session.target

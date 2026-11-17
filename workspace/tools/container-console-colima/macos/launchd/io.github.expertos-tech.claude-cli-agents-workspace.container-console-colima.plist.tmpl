@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Installed by container-console-colima/macos/install-console.sh. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.github.expertos-tech.claude-cli-agents-workspace.container-console-colima</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@BINARY_PATH@</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <!-- A colima start begun by the console must survive a service restart. -->
+  <key>AbandonProcessGroup</key>
+  <true/>
+  <!-- The native file dialog needs the graphical session. -->
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <!-- Startup errors, such as a busy port, reach only stderr: console.log is for the running service. -->
+  <key>StandardErrorPath</key>
+  <string>@STDERR_LOG@</string>
+</dict>
+</plist>

@@ -1,0 +1,28 @@
+---
+name: check
+description: "Run the repository suite (tests/check.sh) with the right flags for the change and explain each failure: what failed, where, and the likely fix. Use after every change and before a commit."
+argument-hint: "[--base <ref>] [--floor] [extra check.sh options]"
+model: claude-opus-5-5
+effort: medium
+---
+
+Arguments: `$ARGUMENTS`, passed to `tests/check.sh` after the defaults below.
+
+1. Pick the flags:
+   - always `--all`, so every check reports instead of stopping at the first failure;
+   - `--base <ref>`: the base of the change. Default: `main` when the current branch is another one; on `main`, the
+     commit before this session's first commit, or `$(git rev-list --max-parents=0 HEAD)` to judge every file;
+   - anything the owner gave in the arguments (`bash tests/check.sh --help` lists them).
+2. Run `bash tests/check.sh <flags>` from the repository root, in the background when it may pass 3 minutes. A long
+   noisy run may go through the `verifier` agent (model claude-haiku-5-5, effort low) with the exact command.
+3. Report the `PASS`, `CACHED`, `SKIP` and `FAIL` lines. For each `FAIL`: the file and line, the cause in one sentence,
+   and the fix. A `CACHED` line is a result: never rerun to confirm it.
+4. Typical fixes:
+   - `validate` python format: run ruff format through the product container with `workspace/docker/config/ruff.toml`;
+   - `validate` markdown: fix the rule markdownlint names, with `workspace/.markdownlint-cli2.jsonc`;
+   - `i18n` outdated or missing: translate the change, then set the source line hash (`.claude/rules/docs.md`);
+   - `repo-terms` or `custom-terms`: reword without the company term; never print the term in the report.
+5. Never weaken a check, skip it or add an exemption to make it pass. A fix goes back through `/check`.
+
+The suite does not lint Markdown outside `workspace/` (the root, `.claude/`, `maintainers/`): when those changed, also run
+markdownlint-cli2 from the pinned image of `workspace/docker/compose.yaml` with `workspace/.markdownlint-cli2.jsonc`.

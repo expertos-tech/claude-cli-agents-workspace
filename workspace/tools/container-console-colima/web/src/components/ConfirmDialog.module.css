@@ -1,0 +1,49 @@
+.dialog {
+  border: 0;
+  background: var(--dialog-bg);
+  color: var(--dialog-fg);
+}
+
+.dialog::backdrop {
+  background: var(--dialog-backdrop);
+}
+
+.center[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(32rem, calc(100vw - 2 * var(--space-3)));
+  max-height: calc(100dvh - 2 * var(--space-3));
+  overflow-y: auto;
+  padding: var(--space-5);
+  border-radius: var(--card-radius);
+}
+
+.drawer[open] {
+  width: min(18rem, 85vw);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-fg);
+}
+
+.title {
+  font-size: var(--text-card-title);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

@@ -1,0 +1,4 @@
+# Secret scan of git history (rules/security.md): the default rules only. docker/config/gitleaks.toml leaves
+# .env, local.settings.json and the local data folders out of file scans, which would hide them in a history.
+[extend]
+useDefault = true

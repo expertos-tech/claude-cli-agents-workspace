@@ -1,0 +1,87 @@
+import type { Translation } from '../../i18n'
+import type { messages as en } from './messages.en'
+
+/** The Brazilian Portuguese translation of messages.en.ts. */
+export const messages: Translation<typeof en> = {
+  nav: 'Kubernetes',
+  title: 'Kubernetes',
+  description: 'Namespaces, pods, deployments e services do cluster do contexto atual do kubeconfig.',
+  tabsLabel: 'Recursos do Kubernetes',
+  tabNamespaces: 'Namespaces',
+  tabPods: 'Pods',
+  tabDeployments: 'Deployments',
+  tabServices: 'Services',
+  tabApply: 'Aplicar YAML',
+
+  filterNamespace: 'Namespace',
+  filterAll: 'Todos',
+
+  columnName: 'Nome',
+  columnStatus: 'Estado',
+  columnNamespace: 'Namespace',
+  columnCreated: 'Criado em',
+  columnReady: 'Prontos',
+  columnRestarts: 'Reinícios',
+  columnIp: 'IP',
+  columnContainers: 'Contêineres',
+  columnReplicas: 'Réplicas',
+  columnUpdated: 'Atualizadas',
+  columnAvailable: 'Disponíveis',
+  columnType: 'Tipo',
+  columnClusterIp: 'IP do cluster',
+  columnPorts: 'Portas',
+  noIp: 'Sem IP',
+  noPorts: 'Nenhuma',
+
+  namespacesCaption: { one: '{count} namespace', other: '{count} namespaces' },
+  namespacesEmpty: 'Nenhum namespace aparece agora.',
+  podsCaption: { one: '{count} pod', other: '{count} pods' },
+  podsEmpty: 'Nenhum pod aparece neste filtro.',
+  deploymentsCaption: { one: '{count} deployment', other: '{count} deployments' },
+  deploymentsEmpty: 'Nenhum deployment aparece neste filtro.',
+  servicesCaption: { one: '{count} service', other: '{count} services' },
+  servicesEmpty: 'Nenhum service aparece neste filtro.',
+
+  replicasReady: '{ready} de {replicas} prontas',
+
+  remove: 'Remover',
+  removeAria: 'Remover {name}',
+  removeNamespaceTitle: 'Remover o namespace {name}?',
+  removeNamespaceBody: 'Tudo o que existe dentro do namespace {name} é apagado junto.',
+  removePodTitle: 'Remover o pod {name}?',
+  removePodBody: 'O pod {namespace}/{name} é apagado. Se um deployment for dono dele, outro pod é criado no lugar.',
+  removeDeploymentTitle: 'Remover o deployment {name}?',
+  removeDeploymentBody: 'O deployment {namespace}/{name} é apagado, junto com os pods dele.',
+  removeServiceTitle: 'Remover o service {name}?',
+  removeServiceBody: 'O service {namespace}/{name} é apagado, e o endereço dele deixa de responder.',
+
+  scale: 'Escalar',
+  scaleAria: 'Escalar o deployment {name}',
+  scaleTitle: 'Escalar o deployment {name}',
+  scaleLabel: 'Número de réplicas',
+  scaleHint: 'De 0 a {max}. Zero para todos os pods do deployment.',
+  scaleInvalid: 'Informe um número inteiro entre 0 e {max}.',
+  scaleSubmit: 'Aplicar',
+  cancel: 'Cancelar',
+
+  back: 'Voltar para a lista',
+  missing: 'Este recurso não aparece mais na lista. Ele pode ter sido removido.',
+  detailsTitle: 'Detalhes',
+  viewsLabel: 'Vistas do pod',
+  viewSummary: 'Resumo',
+  viewLogs: 'Logs',
+  viewTerminal: 'Terminal',
+  containerLabel: 'Contêiner do pod',
+  logsLabel: 'Logs ao vivo do pod {name}',
+  terminalLabel: 'Terminal do pod {name}',
+
+  applyTitle: 'Aplicar YAML',
+  applyDescription:
+    'O serviço ensaia o arquivo no cluster antes de aplicar. Um recurso inválido bloqueia o arquivo inteiro, e nada muda. O erro aparece no painel de ações, abaixo da tela.',
+  applyNamespaceNote:
+    'Um arquivo que cria um namespace e recursos dentro dele é recusado no ensaio: aplique o namespace antes.',
+  yamlLabel: 'Conteúdo YAML',
+  yamlEmpty: 'O YAML está vazio.',
+  yamlTooLarge: 'O YAML passa do limite de 1 MiB.',
+  apply: 'Aplicar',
+}

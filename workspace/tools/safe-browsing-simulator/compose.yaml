@@ -1,0 +1,30 @@
+# Safe Browsing simulator in place of the Google Lookup API v4, always on. Run once from the workspace root; Docker
+# starts it again at boot:
+#   docker compose --env-file custom/env/safe-browsing-simulator.env -f tools/safe-browsing-simulator/compose.yaml up -d --build
+# The threats come from SAFE_BROWSING_THREATS (a path relative to this folder), set in
+# custom/env/safe-browsing-simulator.env (template: .env.example here), else the example config/threats.json. Without
+# that file, pass --env-file tools/safe-browsing-simulator/.env.example. A change to the threats file takes effect on
+# restart:
+#   docker compose --env-file custom/env/safe-browsing-simulator.env -f tools/safe-browsing-simulator/compose.yaml restart
+# Details in README.md.
+name: safe-browsing-simulator
+
+services:
+  safe-browsing-simulator:
+    build: .
+    image: safe-browsing-simulator:0.1.0   # also the image a project's test stack runs, with its own threats file
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 0.5
+    mem_limit: 128m
+    ports:
+      - "127.0.0.1:28090:8080"   # host: http://localhost:28090
+    volumes:
+      - ${SAFE_BROWSING_THREATS:-./config/threats.json}:/config/threats.json:ro   # README "Threats file"
+
+# Fixed name, so other local stacks can attach to it as external and reach safe-browsing-simulator:8080.
+networks:
+  default:
+    name: safe-browsing-simulator

@@ -1,0 +1,10 @@
+{
+  "threats": [
+    { "url": "http://malware.testing.google.test/testing/malware/", "threatType": "MALWARE" },
+    { "url": "http://testsafebrowsing.appspot.com/s/malware.html", "threatType": "MALWARE" },
+    { "url": "http://testsafebrowsing.appspot.com/s/phishing.html", "threatType": "SOCIAL_ENGINEERING" },
+    { "url": "http://testsafebrowsing.appspot.com/s/unwanted.html", "threatType": "UNWANTED_SOFTWARE" },
+    { "url": "http://pha.safe-browsing-simulator.test/app.apk", "threatType": "POTENTIALLY_HARMFUL_APPLICATION" }
+  ],
+  "unavailableDomains": ["unavailable.safe-browsing-simulator.test", "pending.example.test"]
+}

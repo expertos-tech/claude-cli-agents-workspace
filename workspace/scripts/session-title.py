@@ -1,0 +1,328 @@
+"""UserPromptSubmit hook: names the session <project>-<n> when the human runs /prompt, and warns when a message names
+a project that is not a workspace project or is out of date.
+
+The model cannot run /rename, so the title comes from here, with the same effect (hookSpecificOutput.sessionTitle).
+The project is the "**Project:** <name>" line of the request file (written by /draft-prompt); a file without it
+gives the last folder of the first projects/<path> it names. <n> is one more than the highest <project>-<n> among the
+running sessions of the workspace (Claude Code's registry of running sessions, plus the claims this hook keeps under
+the git-ignored .history/session-numbers/, for the names the registry does not show yet). A session already named
+<project>-<n> keeps its name.
+The warning: a message (and, on /prompt, its request file) that names a repo of projects/ or a POC of custom/pocs/, by
+its folder name, by a path (projects/<path>, custom/pocs/<poc>, tmp/work/<work>/<clone>) or by the "**Project:**" line,
+gets the state of each (scripts/aiwp-project-state.sh) added to the context when it has no marker or is out of date,
+with the order to warn the person and ask for authorization to run /normalize-projects. It never blocks: the request
+goes on either way. A message that runs /normalize-projects gets no warning.
+Any failure stays silent and the time is bounded (a capped walk, a state script with a deadline): the prompt always
+goes on.
+Usage: python3 -I session-title.py <workspace-root>   (hook JSON on stdin)
+"""
+
+import fcntl
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+PROMPT_COMMAND = re.compile(r'^\s*/prompt(?:\s+(\S+))?\s*$')
+PROJECT_LINE = re.compile(r'^\s*\*\*Project:\*\*\s*`?([^`\s]+)`?\s*$', re.M)
+PROJECT_PATH = re.compile(r'(?<![\w./-])projects/((?:[a-z0-9]+(?:-[a-z0-9]+)*/)*[a-z0-9]+(?:-[a-z0-9]+)*)')
+KEBAB = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
+MAX_READ = 200_000
+NORMALIZE_COMMAND = re.compile(r'^\s*/normalize-projects\b')
+POC_PATH = re.compile(r'(?<![\w./-])custom/pocs/([a-z0-9]+(?:-[a-z0-9]+)*)')
+CLONE_PATH = re.compile(r'(?<![\w./-])tmp/work/[^/\s]+/([a-z0-9]+(?:-[a-z0-9]+)*)')
+# The walk of projects/ for the warning: how deep a grouping folder may sit, and how many folders it reads at most.
+WALK_DEPTH = 4
+WALK_BUDGET = 2000
+MAX_NAMED = 5
+# A folder name counts as named by itself only when it is distinctive: with a hyphen or a digit, or this long. A short
+# plain name (api, web, docs) is named only by a path or the **Project:** line, never by an ordinary word.
+MIN_PLAIN_NAME = 7
+STATE_TIMEOUT_SECONDS = 4
+# Without the session registry, a claim counts for this long.
+CLAIM_TTL_SECONDS = 12 * 3600
+
+
+def request_file(root, argument):
+    """Returns the file /prompt reads: tmp/prompt.md, custom/prompts/<name>, or a path relative to the root."""
+    if not argument:
+        return os.path.join(root, 'tmp', 'prompt.md')
+    if '/' not in argument:
+        return os.path.join(root, 'custom', 'prompts', argument)
+    return os.path.join(root, argument)
+
+
+def project_of(text):
+    """Returns the project name of a request text, or None."""
+    found = PROJECT_LINE.search(text)
+    if found:
+        name = found.group(1).strip().rstrip('/').split('/')[-1].lower()
+        return name if KEBAB.match(name) else None
+    found = PROJECT_PATH.search(text)
+    return found.group(1).split('/')[-1] if found else None
+
+
+def registry_folder():
+    """Returns the folder where Claude Code keeps one file per running session (not a documented interface)."""
+    base = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.join(os.path.expanduser('~'), '.claude')
+    return os.path.join(base, 'sessions')
+
+
+def pid_alive(pid):
+    """True when a process with that pid runs."""
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, ValueError, TypeError):
+        return False
+    return True
+
+
+def active_sessions(root):
+    """Returns {session id: name} of the running Claude Code sessions opened in the workspace, or None when the
+    registry cannot be read."""
+    folder = registry_folder()
+    if not os.path.isdir(folder):
+        return None
+    base = os.path.realpath(root)
+    sessions = {}
+    for entry in os.listdir(folder):
+        if not entry.endswith('.json'):
+            continue
+        try:
+            with open(os.path.join(folder, entry), encoding='utf-8') as handle:
+                info = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(info, dict) or not pid_alive(info.get('pid')):
+            continue
+        if os.path.realpath(str(info.get('cwd') or '')) != base:
+            continue
+        sessions[str(info.get('sessionId') or '')] = str(info.get('name') or '')
+    return sessions
+
+
+def numbers_of(project, names):
+    """Returns the numbers n of the names that are exactly <project>-<n>."""
+    pattern = re.compile(re.escape(project) + r'-(\d+)')
+    return {int(found.group(1)) for found in map(pattern.fullmatch, names) if found}
+
+
+def next_number(root, project, session_id):
+    """Returns the next number of a project: one more than the highest in use among the running sessions of the
+    workspace, counting the names this hook gave that the registry may not show yet. Records the claim under a lock,
+    so two sessions starting together get different numbers."""
+    folder = os.path.join(root, '.history', 'session-numbers')
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, project + '.json'), 'a+', encoding='utf-8') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        handle.seek(0)
+        try:
+            claims = json.loads(handle.read() or '{}')
+        except ValueError:
+            claims = {}
+        claims = claims if isinstance(claims, dict) else {}
+        active = active_sessions(root)
+        now = time.time()
+        if active is None:
+            # No registry: a claim counts while it is younger than the longest a session is expected to run.
+            claims = {k: v for k, v in claims.items() if isinstance(v, list) and now - v[1] < CLAIM_TTL_SECONDS}
+        else:
+            claims = {k: v for k, v in claims.items() if k in active and k != session_id and isinstance(v, list)}
+        taken = {v[0] for v in claims.values() if isinstance(v[0], int)}
+        if active:
+            taken |= numbers_of(project, [name for key, name in active.items() if key != session_id])
+        number = max(taken, default=0) + 1
+        claims[session_id or f'unknown-{now}'] = [number, now]
+        handle.seek(0)
+        handle.truncate()
+        json.dump(claims, handle)
+    return number
+
+
+def title_for(data, root):
+    """Returns the hook output for one UserPromptSubmit input, or None to leave the title as it is."""
+    command = PROMPT_COMMAND.match(data.get('prompt') or '')
+    if not command:
+        return None
+    path = os.path.realpath(request_file(root, command.group(1)))
+    if not path.startswith(os.path.realpath(root) + os.sep) or not os.path.isfile(path):
+        return None
+    with open(path, encoding='utf-8', errors='replace') as handle:
+        project = project_of(handle.read(MAX_READ))
+    if not project:
+        return None
+    current = data.get('session_title') or ''
+    if re.fullmatch(re.escape(project) + r'-\d+', current):
+        return None
+    name = f'{project}-{next_number(root, project, str(data.get("session_id") or ""))}'
+    return {
+        'hookSpecificOutput': {
+            'hookEventName': 'UserPromptSubmit',
+            'sessionTitle': name,
+            'additionalContext': f'session-title: this session is now named {name} (set by the hook, like /rename).',
+        }
+    }
+
+
+def workspace_projects(root):
+    """Returns {folder name: [targets]}: each repo of projects/ as 'projects/<path>' (any depth up to WALK_DEPTH, never
+    inside a repo, a hidden folder or a link, at most WALK_BUDGET folders read) and each POC folder as
+    'custom/pocs/<name>'."""
+    found = {}
+    budget = [WALK_BUDGET]
+
+    def walk(folder, rel, depth):
+        """Records the repos under one folder of projects/."""
+        with os.scandir(folder) as entries:
+            children = sorted(entries, key=lambda entry: entry.name)
+        for entry in children:
+            if budget[0] <= 0:
+                return
+            if entry.name.startswith('.') or not entry.is_dir(follow_symlinks=False):
+                continue
+            budget[0] -= 1
+            path = f'{rel}/{entry.name}'
+            if os.path.lexists(os.path.join(entry.path, '.git')):
+                found.setdefault(entry.name, []).append(path)
+            elif depth < WALK_DEPTH:
+                walk(entry.path, path, depth + 1)
+
+    if os.path.isdir(os.path.join(root, 'projects')):
+        walk(os.path.join(root, 'projects'), 'projects', 1)
+    pocs = os.path.join(root, 'custom', 'pocs')
+    if os.path.isdir(pocs):
+        with os.scandir(pocs) as entries:
+            for entry in entries:
+                if not entry.name.startswith('.') and entry.is_dir(follow_symlinks=False):
+                    found.setdefault(entry.name, []).append(f'custom/pocs/{entry.name}')
+    return found
+
+
+def named_targets(text, projects):
+    """Returns the targets of the projects a text names, in order, at most MAX_NAMED: by the **Project:** line, by a
+    path (projects/<path>, custom/pocs/<poc>, tmp/work/<work>/<clone>) or by a distinctive folder name as a word, in
+    the same case."""
+    every = [target for targets in projects.values() for target in targets]
+    named = []
+
+    def add(targets):
+        """Adds targets not named yet."""
+        named.extend(target for target in targets if target not in named)
+
+    for found in PROJECT_LINE.finditer(text):
+        add(projects.get(found.group(1).strip().rstrip('/').split('/')[-1].lower(), []))
+    for found in PROJECT_PATH.finditer(text):
+        path = f'projects/{found.group(1)}/'
+        add([target for target in every if path.startswith(target + '/')])
+    for found in POC_PATH.finditer(text):
+        add([target for target in every if target == f'custom/pocs/{found.group(1)}'])
+    for found in CLONE_PATH.finditer(text):
+        add(projects.get(found.group(1), []))
+    for name, targets in projects.items():
+        distinctive = len(name) >= MIN_PLAIN_NAME or re.search(r'[-0-9]', name)
+        if distinctive and re.search(r'(?<![\w./-])' + re.escape(name) + r'(?![\w-])', text):
+            add(targets)
+    return named[:MAX_NAMED]
+
+
+def project_states(root, targets):
+    """Returns the porcelain rows of scripts/aiwp-project-state.sh for the targets, as lists of fields; [] when it
+    fails or passes its deadline."""
+    script = os.path.join(root, 'scripts', 'aiwp-project-state.sh')
+    if not targets or not os.path.isfile(script):
+        return []
+    try:
+        done = subprocess.run(
+            ['bash', script, '--porcelain', '--', *targets],
+            capture_output=True,
+            text=True,
+            timeout=STATE_TIMEOUT_SECONDS,
+            cwd=root,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [line.split('\t') for line in done.stdout.splitlines() if line.count('\t') == 9]
+
+
+def warning_text(rows):
+    """Returns the context to add for the rows that need normalizing, or None."""
+    notes, commands = [], []
+    for kind, name, path, state, marker, version, pending, *_ in rows:
+        target = path[len('projects/') :] if kind == 'project' else path
+        if state == 'none':
+            notes.append(
+                f'`{name}` ({path}) has no AI-WORKSPACE-PROJECT marker in its README.md: it is not a Claude CLI Agents '
+                'Workspace project yet and needs normalizing.'
+            )
+        elif state == 'outdated':
+            notes.append(
+                f'`{name}` ({path}) is on workspace version {marker}; the workspace is on {version}, with the '
+                f'migrations {pending.replace(",", ", ")} pending.'
+            )
+        else:
+            continue
+        commands.append(f'`/normalize-projects {target}`')
+    if not notes:
+        return None
+    return (
+        'Project state (scripts/aiwp-project-state.sh): '
+        + ' '.join(notes)
+        + ' If the request is about this project, tell the person this before working on it and ask for '
+        'authorization to run '
+        + ', '.join(commands)
+        + '. Yes: run it before the request. No: go on with the request as asked; nothing is blocked, and this '
+        'warning comes back at the next message that names the project. If the name only matched an ordinary word, '
+        'ignore this note.'
+    )
+
+
+def project_warning(data, root):
+    """Returns the warning for the projects a prompt names (and, on /prompt, its request file), or None."""
+    prompt = data.get('prompt') or ''
+    if not isinstance(prompt, str) or NORMALIZE_COMMAND.match(prompt):
+        return None
+    text = prompt[:MAX_READ]
+    command = PROMPT_COMMAND.match(prompt)
+    if command:
+        path = os.path.realpath(request_file(root, command.group(1)))
+        if path.startswith(os.path.realpath(root) + os.sep) and os.path.isfile(path):
+            with open(path, encoding='utf-8', errors='replace') as handle:
+                text += '\n' + handle.read(MAX_READ)
+    targets = named_targets(text, workspace_projects(root))
+    return warning_text(project_states(root, targets)) if targets else None
+
+
+def hook_output(data, root):
+    """Returns the hook output: the session title and the project warning, each one left out when it fails."""
+    try:
+        output = title_for(data, root)
+    except Exception:  # noqa: BLE001 - a naming failure must never stop the human's prompt
+        output = None
+    try:
+        warning = project_warning(data, root)
+    except Exception:  # noqa: BLE001 - a warning failure must never stop the human's prompt
+        warning = None
+    if warning:
+        output = output or {'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit'}}
+        spec = output['hookSpecificOutput']
+        spec['additionalContext'] = '\n'.join(filter(None, [spec.get('additionalContext'), warning]))
+    return output
+
+
+def main():
+    """Entry point: prints the hook output, or nothing; never fails the prompt."""
+    try:
+        data = json.loads(sys.stdin.read() or '{}')
+        output = hook_output(data if isinstance(data, dict) else {}, sys.argv[1])
+    except Exception:  # noqa: BLE001 - a hook failure must never stop the human's prompt
+        return
+    if output:
+        print(json.dumps(output))
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,9 @@
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+    plugin/*
+
+[report]
+include_namespace_packages = True

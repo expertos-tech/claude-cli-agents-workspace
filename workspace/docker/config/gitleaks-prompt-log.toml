@@ -1,0 +1,12 @@
+# Config of the secret scan of scripts/prompt-log.py over custom/prompts/log/: everything in gitleaks.toml, plus the
+# password in the user info of a URL, which the default rules miss. Only this scan uses it: the tools' own test
+# fixtures hold such URLs on purpose.
+[extend]
+path = "/work/docker/config/gitleaks.toml"
+
+[[rules]]
+id = "url-credentials"
+description = "Password in the user info of a URL"
+regex = '''[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]*:([^\s"'<>]+)@'''
+secretGroup = 1
+keywords = ["://"]

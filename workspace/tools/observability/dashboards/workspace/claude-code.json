@@ -1,0 +1,2377 @@
+{
+  "uid": "claude-code",
+  "title": "Claude Code: usage",
+  "description": "Claude Code usage in the selected period. Totals come from the api_request events in Loki; only lines, commits and active time come from Prometheus counters.",
+  "tags": [
+    "claude-code",
+    "local"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "links": [],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "model",
+        "label": "Models with usage",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "Approximate list of the models used in the period, from the Prometheus counter: usage in the last 60 seconds may not show yet.",
+        "query": {
+          "qryType": 3,
+          "query": "query_result(sum by (model) (increase(claude_code_token_usage_tokens_total[$__range]) > 0 or (last_over_time(claude_code_token_usage_tokens_total[$__range]) unless on (session_id, model, type) last_over_time(claude_code_token_usage_tokens_total[$__range] offset $__range))))",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "definition": "query_result(sum by (model) (increase(claude_code_token_usage_tokens_total[$__range]) > 0 or (last_over_time(claude_code_token_usage_tokens_total[$__range]) unless on (session_id, model, type) last_over_time(claude_code_token_usage_tokens_total[$__range] offset $__range))))",
+        "regex": "/model=\"([^\"]+)\"/",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Summary",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Cost",
+      "description": "Sum of the api_request events of the period. Cost in dollars as reported by Claude Code. The model filter applies.",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 8,
+        "h": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cost_usd | __error__=\"\" [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#059669"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Total tokens",
+      "description": "Sum of the api_request events of the period. Input, output, cache read and cache creation. The model filter applies.",
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 8,
+        "h": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap input_tokens | __error__=\"\" [$__range])) + sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap output_tokens | __error__=\"\" [$__range])) + sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_read_tokens | __error__=\"\" [$__range])) + sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_creation_tokens | __error__=\"\" [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "sishort",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0284c7"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "API calls",
+      "description": "Number of api_request events of the period. The model filter applies.",
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum (count_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8b5cf6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Active sessions",
+      "description": "Sessions with at least one api_request in the period. Sessions that only report counters are left out. The model filter applies.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "count(sum by (session_id) (count_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#ec4899"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 5
+    },
+    {
+      "type": "stat",
+      "title": "Prompts (all models)",
+      "description": "user_prompt events of the period, including commands such as /model. The model filter does not apply.",
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"claude-code\"} | event_name=\"user_prompt\" [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#b58900"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 6
+    },
+    {
+      "type": "stat",
+      "title": "Cache read",
+      "description": "Cache read / (cache read + input + cache creation), in the api_request events of the period. The model filter applies.",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_read_tokens | __error__=\"\" [$__range])) / (sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_read_tokens | __error__=\"\" [$__range])) + sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap input_tokens | __error__=\"\" [$__range])) + sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_creation_tokens | __error__=\"\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "percentunit",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0891b2"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 7
+    },
+    {
+      "type": "row",
+      "title": "Usage",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 24,
+        "h": 1
+      },
+      "id": 8
+    },
+    {
+      "type": "bargauge",
+      "title": "Cost by model",
+      "description": "Sum of the api_request events of the period. The model filter applies.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sort_desc(sum by (model) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cost_usd | __error__=\"\" [$__range])))",
+          "queryType": "instant",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3b82f6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0891b2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-8"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b58900"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-7"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5c9a0b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-6"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec4899"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-sonnet-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b5cf6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-haiku-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-fable-5-1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8a8a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 16,
+        "maxVizHeight": 36
+      },
+      "id": 9,
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              {
+                "fieldName": "model",
+                "handlerKey": "field.name"
+              },
+              {
+                "fieldName": "Value #A",
+                "handlerKey": "field.value"
+              },
+              {
+                "fieldName": "Time",
+                "handlerKey": "__ignore"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Tokens by model",
+      "description": "Sum of the api_request events of the period. Input, output, cache read and cache creation. The model filter applies.",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sort_desc(sum by (model) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap input_tokens | __error__=\"\" [$__range])) + sum by (model) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap output_tokens | __error__=\"\" [$__range])) + sum by (model) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_read_tokens | __error__=\"\" [$__range])) + sum by (model) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_creation_tokens | __error__=\"\" [$__range])))",
+          "queryType": "instant",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "sishort",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3b82f6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0891b2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-8"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b58900"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-7"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5c9a0b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-6"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec4899"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-sonnet-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b5cf6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-haiku-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-fable-5-1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8a8a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 16,
+        "maxVizHeight": 36
+      },
+      "id": 10,
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              {
+                "fieldName": "model",
+                "handlerKey": "field.name"
+              },
+              {
+                "fieldName": "Value #A",
+                "handlerKey": "field.value"
+              },
+              {
+                "fieldName": "Time",
+                "handlerKey": "__ignore"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Cost over time by model",
+      "description": "Cost of the api_request events in each interval. The sum of the bars may differ from the total, up or down: the first bar may include events from up to one interval before the start of the period, and the browser splitting the query into parts may leave events out. For exact values, use the totals. The model filter applies.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (model) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cost_usd | __error__=\"\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": -1,
+            "lineWidth": 0,
+            "fillOpacity": 100,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3b82f6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0891b2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-8"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b58900"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-7"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5c9a0b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-6"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec4899"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-sonnet-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b5cf6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-haiku-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-fable-5-1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8a8a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "maxDataPoints": 800,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11
+    },
+    {
+      "type": "timeseries",
+      "title": "Tokens over time by type",
+      "description": "Tokens of the api_request events in each interval. The sum of the bars may differ from the total, up or down: the first bar may include events from up to one interval before the start of the period, and the browser splitting the query into parts may leave events out. For exact values, use the totals. The model filter applies.",
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap input_tokens | __error__=\"\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "Input"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap output_tokens | __error__=\"\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "Output"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "C",
+          "editorMode": "code",
+          "expr": "sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_read_tokens | __error__=\"\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "Cache read"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "D",
+          "editorMode": "code",
+          "expr": "sum (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_creation_tokens | __error__=\"\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "Cache creation"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "sishort",
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": -1,
+            "lineWidth": 0,
+            "fillOpacity": 100,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Input"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0284c7"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Output"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d97706"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cache read"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cache creation"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#a855f7"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "maxDataPoints": 800,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12
+    },
+    {
+      "type": "row",
+      "title": "Where the cost goes",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 1
+      },
+      "id": 13
+    },
+    {
+      "type": "table",
+      "title": "Sessions with the highest cost",
+      "description": "The 15 sessions with the highest cost in the period, by api_request events. The id identifies the session and carries no other data. The model filter applies.",
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 10,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (session_id) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cost_usd | __error__=\"\" [$__range]))",
+          "queryType": "instant"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "sum by (session_id) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap input_tokens | __error__=\"\" [$__range])) + sum by (session_id) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap output_tokens | __error__=\"\" [$__range])) + sum by (session_id) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_read_tokens | __error__=\"\" [$__range])) + sum by (session_id) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cache_creation_tokens | __error__=\"\" [$__range]))",
+          "queryType": "instant"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "C",
+          "editorMode": "code",
+          "expr": "sum by (session_id) (count_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tokens"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "sishort"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Calls"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "session_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(session_id|Value #.)$"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "limit",
+          "options": {
+            "limitField": 15
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "session_id": "Session",
+              "Value #A": "Cost",
+              "Value #B": "Tokens",
+              "Value #C": "Calls"
+            }
+          }
+        }
+      ],
+      "id": 14
+    },
+    {
+      "type": "bargauge",
+      "title": "Cost by source",
+      "description": "Cost of the api_request events by query_source: main thread, agents, summaries and titles. The model filter applies.",
+      "gridPos": {
+        "x": 10,
+        "y": 25,
+        "w": 8,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sort_desc(sum by (query_source) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cost_usd | __error__=\"\" [$__range])))",
+          "queryType": "instant",
+          "legendFormat": "{{query_source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 16,
+        "maxVizHeight": 36
+      },
+      "id": 15,
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              {
+                "fieldName": "query_source",
+                "handlerKey": "field.name"
+              },
+              {
+                "fieldName": "Value #A",
+                "handlerKey": "field.value"
+              },
+              {
+                "fieldName": "Time",
+                "handlerKey": "__ignore"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Cost by effort",
+      "description": "Cost of the api_request events by effort level. The model filter applies.",
+      "gridPos": {
+        "x": 18,
+        "y": 25,
+        "w": 6,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sort_desc(sum by (effort) (sum_over_time({service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap cost_usd | __error__=\"\" [$__range])))",
+          "queryType": "instant",
+          "legendFormat": "{{effort}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0284c7"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "high"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b5cf6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "xhigh"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec4899"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 16,
+        "maxVizHeight": 36
+      },
+      "id": 16,
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              {
+                "fieldName": "effort",
+                "handlerKey": "field.name"
+              },
+              {
+                "fieldName": "Value #A",
+                "handlerKey": "field.value"
+              },
+              {
+                "fieldName": "Time",
+                "handlerKey": "__ignore"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Activity",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      },
+      "id": 17
+    },
+    {
+      "type": "table",
+      "title": "Most used tools (all models)",
+      "description": "The 15 most used tools in the period, by tool_result events. Failures are the events with success=false. The model filter does not apply.",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 10,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (tool_name) (count_over_time({service_name=\"claude-code\"} | event_name=\"tool_result\" [$__range]))",
+          "queryType": "instant"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "sum by (tool_name) (count_over_time({service_name=\"claude-code\"} | event_name=\"tool_result\" | success=\"false\" [$__range])) or 0 * sum by (tool_name) (count_over_time({service_name=\"claude-code\"} | event_name=\"tool_result\" [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "none in the period"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Uses"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Failures"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "tool_name",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(tool_name|Value #.)$"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "limit",
+          "options": {
+            "limitField": 15
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "tool_name": "Tool",
+              "Value #A": "Uses",
+              "Value #B": "Failures"
+            }
+          }
+        }
+      ],
+      "id": 18
+    },
+    {
+      "type": "timeseries",
+      "title": "API errors and refusals",
+      "description": "api_error and api_refusal events in each interval. The model filter applies.",
+      "gridPos": {
+        "x": 10,
+        "y": 36,
+        "w": 7,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"claude-code\"} | event_name=\"api_error\" | model=~\"$model\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "Errors"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"claude-code\"} | event_name=\"api_refusal\" | model=~\"$model\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "Refusals"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "none in the period",
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": -1,
+            "lineWidth": 0,
+            "fillOpacity": 100,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Errors"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d03b3b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Refusals"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d97706"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "maxDataPoints": 800,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 19
+    },
+    {
+      "type": "bargauge",
+      "title": "Completed subagents",
+      "description": "subagent_completed events of the period, by agent type. The model is the one the subagent used last. The model filter applies.",
+      "gridPos": {
+        "x": 17,
+        "y": 36,
+        "w": 7,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sort_desc(sum by (agent_type) (count_over_time({service_name=\"claude-code\"} | event_name=\"subagent_completed\" | model=~\"$model\" [$__range])))",
+          "queryType": "instant",
+          "legendFormat": "{{agent_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "none in the period",
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 16,
+        "maxVizHeight": 36
+      },
+      "id": 20,
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              {
+                "fieldName": "agent_type",
+                "handlerKey": "field.name"
+              },
+              {
+                "fieldName": "Value #A",
+                "handlerKey": "field.value"
+              },
+              {
+                "fieldName": "Time",
+                "handlerKey": "__ignore"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Lines changed (approx.)",
+      "description": "Lines added and removed in the period. Delta per session: last value of the period minus the last one before it, with a new session starting from 0. Approximate: it underestimates a resumed session, because the counter restarts. The model filter applies.",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(clamp_min(max by (session_id, model) (last_over_time(claude_code_lines_of_code_count_total{type=\"added\",model=~\"$model\"}[$__range])) - max by (session_id, model) (last_over_time(claude_code_lines_of_code_count_total{type=\"added\",model=~\"$model\"}[30d] offset $__range)), 0) or max by (session_id, model) (last_over_time(claude_code_lines_of_code_count_total{type=\"added\",model=~\"$model\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Added"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "sum(clamp_min(max by (session_id, model) (last_over_time(claude_code_lines_of_code_count_total{type=\"removed\",model=~\"$model\"}[$__range])) - max by (session_id, model) (last_over_time(claude_code_lines_of_code_count_total{type=\"removed\",model=~\"$model\"}[30d] offset $__range)), 0) or max by (session_id, model) (last_over_time(claude_code_lines_of_code_count_total{type=\"removed\",model=~\"$model\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Removed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "locale",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Added"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Removed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec4899"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "id": 21
+    },
+    {
+      "type": "stat",
+      "title": "Commits (all models) (approx.)",
+      "description": "Commits made in the period. Delta per session: last value of the period minus the last one before it, with a new session starting from 0. Approximate: it underestimates a resumed session, because the counter restarts. The model filter does not apply.",
+      "gridPos": {
+        "x": 8,
+        "y": 46,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(clamp_min(max by (session_id) (last_over_time(claude_code_commit_count_total{}[$__range])) - max by (session_id) (last_over_time(claude_code_commit_count_total{}[30d] offset $__range)), 0) or max by (session_id) (last_over_time(claude_code_commit_count_total{}[$__range])))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#b58900"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 22
+    },
+    {
+      "type": "stat",
+      "title": "Active time (all models) (approx.)",
+      "description": "Active time in the period. Delta per session: last value of the period minus the last one before it, with a new session starting from 0. Approximate: it underestimates a resumed session, because the counter restarts. The model filter does not apply.",
+      "gridPos": {
+        "x": 16,
+        "y": 46,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(clamp_min(max by (session_id, type) (last_over_time(claude_code_active_time_seconds_total{}[$__range])) - max by (session_id, type) (last_over_time(claude_code_active_time_seconds_total{}[30d] offset $__range)), 0) or max by (session_id, type) (last_over_time(claude_code_active_time_seconds_total{}[$__range])))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "dtdurations",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0891b2"
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "id": 23
+    },
+    {
+      "type": "row",
+      "title": "Performance",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 1
+      },
+      "id": 24
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency by model",
+      "description": "95th percentile of duration_ms of the api_request events in each interval. The model filter applies.",
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (model)",
+          "queryType": "range",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 5,
+            "spanNulls": true
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3b82f6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0891b2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-8"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b58900"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-7"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5c9a0b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-6"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec4899"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-sonnet-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b5cf6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-haiku-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-fable-5-1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8a8a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "maxDataPoints": 800,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 25
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 time to first token by model",
+      "description": "95th percentile of ttft_ms of the api_request events in each interval. The model filter applies.",
+      "gridPos": {
+        "x": 12,
+        "y": 51,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service_name=\"claude-code\"} | event_name=\"api_request\" | model=~\"$model\" | unwrap ttft_ms | __error__=\"\" [$__auto]) by (model)",
+          "queryType": "range",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data",
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 5,
+            "spanNulls": true
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3b82f6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0891b2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-8"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b58900"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-7"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5c9a0b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-opus-4-6"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec4899"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-sonnet-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b5cf6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-haiku-5-5"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#059669"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "claude-fable-5-1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8a8a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "maxDataPoints": 800,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 26
+    }
+  ]
+}

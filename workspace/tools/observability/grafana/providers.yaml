@@ -1,0 +1,15 @@
+# Dashboards of Claude Code, the workspace and POCs. A POC dashboard is a file
+# named after the POC in this same folder. An interval above 10 s makes Grafana poll by
+# timer: at 10 s or less it only reacts to file events, which a bind mount can lose.
+apiVersion: 1
+
+providers:
+  - name: workspace
+    folder: workspace
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 15
+    options:
+      path: /dashboards/workspace
+      foldersFromFilesStructure: false

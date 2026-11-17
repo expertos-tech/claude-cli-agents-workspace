@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "opus",
+  "effortLevel": "medium",
+  "availableModels": [
+    "opus",
+    "sonnet",
+    "haiku",
+    "fable"
+  ],
+  "fallbackModel": [
+    "claude-sonnet-5-5"
+  ],
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "claudeMdExcludes": [
+    "**/tmp/work/**",
+    "**/tmp/normalize/**",
+    "**/tmp/worktrees/**",
+    "**/.claude/worktrees/**"
+  ],
+  "permissions": {
+    "allow": [],
+    "deny": [
+      "Read(**/SINGLE-AGENT.md)",
+      "Read(/custom/env/**)",
+      "Edit(/custom/env/**)",
+      "Read(**/.env)",
+      "Edit(**/.env)",
+      "Edit(/.git/**)",
+      "Edit(/AGENTS.md)",
+      "Edit(/CLAUDE.md)",
+      "Edit(/README.md)",
+      "Edit(/CHANGELOG.md)",
+      "Edit(/.gitignore)",
+      "Edit(/.gitattributes)",
+      "Edit(/.markdownlint-cli2.jsonc)",
+      "Edit(/rules/**)",
+      "Edit(/scripts/**)",
+      "Edit(/docker/**)",
+      "Edit(/docs/**)",
+      "Edit(/tools/**)",
+      "Edit(/templates/**)",
+      "Edit(/.claude/**)",
+      "Edit(/projects/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/guard-subagent-model.sh\"",
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/guard-bash.sh\"",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/setup-claude.sh\" --quiet"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/release-notice.sh\"",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "matcher": "startup|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I -B \"$CLAUDE_PROJECT_DIR/scripts/prompt-log.py\" sync --context",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/aiwp-cmds.sh\" _stop-check",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I -B \"$CLAUDE_PROJECT_DIR/scripts/session-title.py\" \"$CLAUDE_PROJECT_DIR\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

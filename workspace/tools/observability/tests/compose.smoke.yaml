@@ -1,0 +1,20 @@
+# Merged over ../compose.yaml by tests/run-smoke.sh. Keeps each smoke run away from the ports,
+# the data and the network of the real stack and of other runs: compose merges volumes by
+# container path, and an empty host port lets Docker pick a free one.
+services:
+  otel-lgtm:
+    restart: "no"
+    environment:
+      ENABLE_LOGS_GRAFANA: "true"   # the image discards them by default; run-smoke.sh prints them on failure
+      GF_LOG_FILTERS: provisioning.dashboard:debug   # includes each file polling pass
+    ports: !override
+      - "127.0.0.1::3000"
+      - "127.0.0.1::4318"
+    volumes:
+      - ${SMOKE_DATA_DIR:?set by tests/run-smoke.sh}:/data
+      - ${SMOKE_DASHBOARDS_DIR:?set by tests/run-smoke.sh}:/dashboards/workspace:ro
+      - ${SMOKE_PROJECTS_DIR:?set by tests/run-smoke.sh}:/projects:ro
+
+networks:
+  default:
+    name: ${SMOKE_NETWORK:?set by tests/run-smoke.sh}

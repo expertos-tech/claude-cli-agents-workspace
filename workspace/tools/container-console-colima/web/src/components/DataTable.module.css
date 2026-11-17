@@ -1,0 +1,198 @@
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.scroller {
+  container-type: inline-size;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.caption {
+  padding-bottom: var(--space-2);
+  color: var(--color-muted-foreground);
+  font-size: var(--text-secondary);
+  text-align: left;
+}
+
+.head th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--table-border);
+  color: var(--table-header-fg);
+  font-size: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table td,
+.identity {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--table-border);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+
+.row:hover > * {
+  background: var(--table-row-hover);
+}
+
+.row:last-child > * {
+  border-bottom: 0;
+}
+
+.group + .group .groupHeader {
+  border-top: 1px solid var(--table-border);
+}
+
+.table .groupHeader {
+  padding: var(--space-4) var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--table-border);
+  color: var(--table-header-fg);
+  font-weight: 500;
+  text-align: left;
+}
+
+.groupToggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupToggle > svg {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+.groupToggle:hover {
+  color: var(--color-foreground);
+}
+
+.identityValue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.stacked {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-size: var(--text-secondary);
+  font-weight: 400;
+}
+
+.stackedItem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.stackedItem dt {
+  color: var(--color-muted-foreground);
+}
+
+.stackedItem dd {
+  min-width: 0;
+}
+
+.status {
+  white-space: nowrap;
+}
+
+.actionList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.empty {
+  color: var(--color-muted-foreground);
+  text-align: center;
+}
+
+/* Without room for every column, the secondary ones stack in the first cell. */
+@container (max-width: 60rem) {
+  .secondary {
+    display: none;
+  }
+
+  .stacked {
+    display: flex;
+  }
+}
+
+/* On phones each row becomes a block: identification, status and then the actions. */
+@container (max-width: 34rem) {
+  .table,
+  .table tbody,
+  .row,
+  .groupRow,
+  .groupHeader,
+  .emptyRow,
+  .empty {
+    display: block;
+    width: 100%;
+  }
+
+  .caption {
+    display: block;
+  }
+
+  .head {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .row {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--table-border);
+  }
+
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  .row:hover > * {
+    background: transparent;
+  }
+
+  .table .groupHeader {
+    padding: var(--space-4) 0 var(--space-2);
+  }
+
+  .table .identity,
+  .table .status,
+  .table .actions {
+    display: block;
+    padding: var(--space-1) 0;
+    border-bottom: 0;
+    white-space: normal;
+  }
+}

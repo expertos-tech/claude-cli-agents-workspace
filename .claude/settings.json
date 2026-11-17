@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "claudeMdExcludes": [
+    "**/claude-cli-agents-workspace/workspace/**",
+    "**/claude-cli-agents-workspace/tmp/**",
+    "**/claude-cli-agents-workspace/.claude/worktrees/*/workspace/**",
+    "**/claude-cli-agents-workspace/.claude/worktrees/*/tmp/**"
+  ],
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(!.env.example)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.azure/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.netrc)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.config/gh/**)",
+      "Edit(/.git/**)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(gh release *)",
+      "Bash(gh pr merge *)"
+    ]
+  }
+}

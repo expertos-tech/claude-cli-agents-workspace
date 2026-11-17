@@ -1,0 +1,71 @@
+/* Layer 3, components: repeated on [data-surface] so that each token resolves against the
+   semantic values of that surface instead of inheriting what :root computed. */
+:root,
+[data-surface="ink"] {
+  --button-primary-bg: var(--color-primary);
+  --button-primary-bg-hover: var(--color-primary-hover);
+  --button-primary-fg: var(--color-primary-foreground);
+  --button-primary-border: var(--color-primary-border);
+  --button-secondary-bg: transparent;
+  --button-secondary-bg-hover: var(--color-muted);
+  --button-secondary-fg: var(--color-foreground);
+  --button-secondary-border: var(--color-input-border);
+  --button-disabled-bg: var(--color-muted);
+  --button-disabled-fg: var(--color-muted-foreground);
+  --button-radius: var(--radius-control);
+
+  --badge-bg: var(--color-muted);
+  --badge-fg: var(--color-foreground);
+  --badge-radius: var(--radius-control);
+
+  --input-bg: var(--color-card);
+  --input-fg: var(--color-card-foreground);
+  --input-border: var(--color-input-border);
+  --input-radius: var(--radius-control);
+
+  --card-bg: var(--color-card);
+  --card-fg: var(--color-card-foreground);
+  --card-border: var(--color-border);
+  --card-radius: var(--radius-card);
+  --card-shadow: 0 1px 2px var(--color-shadow);
+
+  --table-border: var(--color-border);
+  --table-header-fg: var(--color-muted-foreground);
+  --table-row-hover: var(--color-muted);
+  --table-row-hover-link: var(--color-link-on-muted);
+  --table-group-bg: var(--color-muted);
+  --table-group-fg: var(--color-foreground);
+
+  --meter-track: var(--color-chart-track);
+  --meter-fill: var(--color-chart-1);
+
+  --notice-bg: var(--color-muted);
+  --notice-fg: var(--color-foreground);
+  --notice-border: var(--color-border);
+  --notice-link: var(--color-link-on-muted);
+
+  --pre-bg: var(--color-muted);
+  --pre-fg: var(--color-foreground);
+
+  --dialog-bg: var(--color-card);
+  --dialog-fg: var(--color-card-foreground);
+  --dialog-backdrop: var(--color-backdrop);
+
+  --topbar-bg: var(--color-sidebar);
+  --topbar-fg: var(--color-sidebar-foreground);
+  --sidebar-bg: var(--color-sidebar);
+  --sidebar-fg: var(--color-sidebar-foreground);
+  --sidebar-muted-fg: var(--color-muted-foreground);
+  --sidebar-border: var(--color-border);
+  --sidebar-item-hover: var(--color-muted);
+  --sidebar-item-active-bg: var(--color-sidebar-active);
+  --sidebar-item-active-fg: var(--color-sidebar-active-foreground);
+
+  --dock-bg: var(--color-card);
+  --dock-fg: var(--color-card-foreground);
+  --dock-border: var(--color-border);
+
+  --terminal-bg: var(--color-terminal-background);
+  --terminal-fg: var(--color-terminal-foreground);
+  --terminal-selection: var(--color-terminal-selection);
+}

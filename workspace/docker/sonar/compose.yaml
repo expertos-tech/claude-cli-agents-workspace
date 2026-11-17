@@ -1,0 +1,52 @@
+# Optional SonarQube Community Build for maintainability analysis. Run with scripts/sonar.sh, which passes
+# custom/env/docker-sonar.env (template: .env.example here) with --env-file.
+name: ai-workspace-sonar
+
+services:
+  sonarqube:
+    image: sonarqube:26.10.0.133078-community@sha256:f95aaa9016dd4e92c7d70691167a6d96dbb5d8acffd61eba1cb4335d364a7840
+    depends_on:
+      sonar-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD:?set SONAR_DB_PASSWORD in custom/env/docker-sonar.env}
+    ports:
+      - "127.0.0.1:29000:9000"
+    volumes:
+      - sonar-data:/opt/sonarqube/data
+      - sonar-extensions:/opt/sonarqube/extensions
+      - sonar-logs:/opt/sonarqube/logs
+
+  sonar-db:
+    image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:?set SONAR_DB_PASSWORD in custom/env/docker-sonar.env}
+      POSTGRES_DB: sonar
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 5s
+      retries: 20
+    volumes:
+      - sonar-db:/var/lib/postgresql/data
+
+  sonar-scanner:
+    profiles: ["scan"]
+    image: sonarsource/sonar-scanner-cli:12.3.0.4285_8.1.0@sha256:47956b669bf486bdad919e1cbd0533223515aa0b6d1d31763e5a3754942df6d7
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+    # Read-only: the scanner runs as root, which would get past the read-only core of an installed workspace. Its
+    # working folder (.scannerwork) goes to the container's /tmp (scripts/sonar.sh sets sonar.working.directory).
+    volumes:
+      - ${WORKSPACE_DIR:-../..}:/usr/src:ro
+    tmpfs:
+      - /tmp
+
+volumes:
+  sonar-data:
+  sonar-extensions:
+  sonar-logs:
+  sonar-db:

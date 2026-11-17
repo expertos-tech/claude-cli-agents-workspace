@@ -1,0 +1,6 @@
+{
+  "name": "fable-alert",
+  "version": "0.1.0",
+  "description": "Tints the whole terminal dark red and shows a red-bordered band while the session runs on Fable",
+  "types": "./types/index.d.ts"
+}

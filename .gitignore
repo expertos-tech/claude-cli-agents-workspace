@@ -1,0 +1,14 @@
+# The repository root: its maintenance. The product keeps its own workspace/.gitignore, which git applies inside workspace/
+# Personal Claude Code settings of this clone
+.claude/settings.local.json
+CLAUDE.local.md
+# Scratch files, test installations (tmp/test-install/), private analyses of real use and tmp/prompt.md
+/tmp/
+# Check ledger and hook state of the gate (scripts/check-ledger.sh writes it at the git root)
+/.history/
+# Python bytecode
+__pycache__/
+# macOS Finder metadata
+.DS_Store
+# The registry of installed workspaces, written by aiwp in the data folder (a clone of this repository)
+/workspaces.json

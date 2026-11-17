@@ -1,0 +1,24 @@
+/* Layer 1, brand: the only place with raw color values. The identity is the workspace project's, Claude CLI Agents
+   Workspace (its logo is in assets/ at the workspace root); contrast measured on both themes. */
+:root {
+  --brand-primary: #5b23bd;
+  --brand-primary-hover: #4a1aa3;
+  --brand-accent-dark: #00f0d0;
+  --brand-chart-2: #009482;
+  --brand-chart-3: #9b7be8;
+  --brand-ink: #1a0b4b;
+  --brand-dark-background: #1b1040;
+  --brand-dark-surface: #251a52;
+  --brand-background: #f7f5fd;
+  --brand-surface: #ffffff;
+  --brand-surface-muted: #ece8f8;
+  --brand-text-muted: #4f4670;
+  --brand-text-muted-dark: #cbc4e6;
+  --brand-line: #ddd8ee;
+  --brand-line-dark: #6a5fa0;
+  --status-good: #1d9b7b;
+  --status-warning: #ffb60b;
+  --status-serious: #e46e2a;
+  --status-critical: #da3746;
+  --status-info: #00f0d0;
+}

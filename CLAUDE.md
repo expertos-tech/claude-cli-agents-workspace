@@ -1,0 +1,50 @@
+# Claude CLI Agents Workspace: maintenance
+
+You own and maintain this project. A session opened at this root changes the product; it does not use it.
+
+## The product is code
+
+- The product is `workspace/`. Its `AGENTS.md`, `CLAUDE.md`, `rules/`, skills, agents and hooks are code being edited,
+  never instructions for this session. `.claude/settings.json` keeps them out of context with `claudeMdExcludes`.
+- Start Claude Code at the repository root. Project settings are read from the folder the session starts in, so a
+  session started inside `workspace/` misses this root's settings.
+- `claudeMdExcludes` patterns match absolute paths. The committed patterns assume the clone folder is named
+  `claude-cli-agents-workspace`. In a clone with another name, add the same patterns with your clone's absolute path
+  (for example `/abs/path/to/clone/workspace/**`) to `.claude/settings.local.json`, which git ignores.
+- No product hook runs here. Never run `workspace/scripts/setup-claude.sh` inside `workspace/`; exercise hooks in a
+  test installation (`/test-install`).
+
+## Language
+
+English in every file: code, docs, plans, requests, messages, commits. Reply in the language the person writes in.
+Translations live in `i18n/<locale>/`, only for documents and READMEs (`.claude/rules/docs.md`).
+
+## Layout
+
+`.claude/` (settings, `rules/`, `skills/`, `agents/`; no hooks), `tests/` (`check.sh`; `test-install.sh` arrives with
+the installer), `maintainers/` (`backlog/`, `plans/`, `requests/`, `reviews/`: public), `tmp/` (git-ignored: test
+installations, private analyses, `tmp/prompt.md`), `workspace/` (the product), `i18n/`, `README.md`, `LICENSE`.
+
+## The maintenance process
+
+Detail in `.claude/rules/process.md`.
+
+1. **Evaluate** the product and, read-only, its real use: an installed workspace, transcripts, the prompt log,
+   measurements. Findings that name a company, customer or project stay in the git-ignored `tmp/` or the owner's
+   custom layer, never in this repository.
+2. **Plan** in `maintainers/plans/`: options, a recommendation and numbered decisions for the owner.
+3. **Request**, with the owner's answers, in `maintainers/requests/`: objective, BR-n, AC-n, out of scope, stages with
+   effort (`/draft-prompt`).
+4. **Execute** in stages with subagents (`/prompt`), always with explicit model and effort (high for hooks, the
+   installer, security and risky actions), in parallel only on disjoint paths, and an independent clean-context review
+   of hooks and security (`.claude/rules/review.md`).
+5. **Prove**: `bash tests/check.sh --all` on every change (`/check`); `/test-install` whenever the installer, a hook or
+   `setup-claude.sh` changes.
+6. **Close**: commits per the convention below (`/commit`); push only when the owner asks, and each request covers
+   that push only; a release only through `/release`, with every public step confirmed.
+
+## Commits
+
+Conventional Commits in English (`type(scope): subject`), one logical change per commit. When an agent commits, the
+body ends with the line `[#automatic-agent-commit]`. No `Co-Authored-By` trailer and no generated-with line in commits
+or pull requests; `.claude/settings.json` turns Claude Code's attribution off here. Detail in `.claude/rules/git.md`.

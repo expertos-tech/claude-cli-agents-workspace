@@ -1,0 +1,141 @@
+/* Layer 2, semantic: what a color means, as light-dark(light value, dark value). The color-scheme
+   of the root picks the side, so the operating system decides. A copy of the file of
+   tools/container-console-docker-ce/web; this page has no theme selector, so data-theme is never set here. */
+:root {
+  color-scheme: light dark;
+
+  --color-background: light-dark(var(--brand-background), var(--brand-dark-background));
+  --color-foreground: light-dark(var(--brand-ink), var(--brand-background));
+  --color-card: light-dark(var(--brand-surface), var(--brand-dark-surface));
+  --color-card-foreground: light-dark(var(--brand-ink), var(--brand-background));
+  /* Primary only as a fill, always under primary-foreground. */
+  --color-primary: var(--brand-primary);
+  --color-primary-hover: var(--brand-primary-hover);
+  --color-primary-foreground: var(--brand-surface);
+  /* Primary on the dark surfaces is below 3:1: the dark fill takes a border to reach the 3:1 of UI parts. */
+  --color-primary-border: light-dark(transparent, var(--brand-accent-dark));
+  /* Primary as text or a thin part over a surface, where primary lacks contrast on dark. */
+  --color-primary-on-surface: light-dark(var(--brand-primary), var(--brand-accent-dark));
+  --color-muted: light-dark(
+    var(--brand-surface-muted),
+    color-mix(in srgb, var(--brand-dark-surface), var(--brand-text-muted-dark) 10%)
+  );
+  --color-muted-foreground: light-dark(var(--brand-text-muted), var(--brand-text-muted-dark));
+  --color-border: light-dark(var(--brand-line), var(--brand-line-dark));
+  /* Input borders use the muted text color, because `line` stays below the 3:1 of UI parts. */
+  --color-input-border: light-dark(var(--brand-text-muted), var(--brand-text-muted-dark));
+  --color-ring: light-dark(var(--brand-primary), var(--brand-accent-dark));
+  --color-link: var(--color-primary-on-surface);
+  /* The link color on muted is below 4.5:1 in both themes. */
+  --color-link-on-muted: light-dark(var(--brand-primary-hover), var(--brand-background));
+  --color-chart-1: var(--color-primary-on-surface);
+  --color-chart-track: var(--color-muted);
+  /* The top bar and the side menu stay on ink in both themes, as does the drawer. */
+  --color-sidebar: var(--brand-ink);
+  --color-sidebar-foreground: var(--brand-background);
+  --color-sidebar-active: var(--brand-accent-dark);
+  --color-sidebar-active-foreground: var(--brand-ink);
+  --color-backdrop: color-mix(in srgb, var(--brand-ink) 70%, transparent);
+  --color-shadow: light-dark(
+    color-mix(in srgb, var(--brand-ink) 8%, transparent),
+    color-mix(in srgb, var(--brand-ink) 40%, transparent)
+  );
+
+  /* One dark surface in both themes: xterm reads these once and cannot parse light-dark(). */
+  --color-terminal-background: var(--brand-ink);
+  --color-terminal-foreground: var(--brand-background);
+  --color-terminal-selection: var(--brand-primary);
+
+  /* Each glyph is the side of ink or white with the higher contrast on its fill, as measured in docs/arquitetura.md. */
+  --color-status-good: var(--status-good);
+  --color-status-good-glyph: var(--brand-surface);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-glyph: var(--brand-ink);
+  --color-status-serious: var(--status-serious);
+  --color-status-serious-glyph: var(--brand-ink);
+  --color-status-critical: var(--status-critical);
+  --color-status-critical-glyph: var(--brand-surface);
+  /* Critical alone on the dark card is below 3:1, so a bare icon there uses the foreground. */
+  --color-status-critical-on-surface: light-dark(var(--status-critical), var(--brand-background));
+  --color-status-neutral: light-dark(var(--brand-text-muted), var(--brand-text-muted-dark));
+  --color-status-neutral-glyph: light-dark(var(--brand-surface), var(--brand-ink));
+
+  --font-sans: "Roboto", system-ui, sans-serif;
+  --font-heading: "Poppins", var(--font-sans);
+  --font-heading-weight: 700;
+  --font-mono: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", monospace;
+
+  --text-secondary: 0.75rem;
+  --text-body: 0.875rem;
+  --text-card-title: 1rem;
+  --text-figure: 1.75rem;
+  --text-page-title: 1.75rem;
+  --text-input: 1rem;
+
+  --radius-control: 0.3125rem;
+  --radius-card: 1.25rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  --target-min: 2.25rem;
+  --target-compact: 2rem;
+  --target-icon: 2.25rem;
+  --sidebar-width: 15rem;
+
+  --motion-data: 200ms;
+}
+
+/* An explicit choice of the user wins over the operating system. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Form inputs stay at 14 px only where there is room; 16 px on phones avoids the zoom on focus. */
+@media (min-width: 48rem) {
+  :root {
+    --text-input: 0.875rem;
+    --text-page-title: 2rem;
+  }
+}
+
+@media (pointer: coarse) {
+  :root {
+    --target-min: 2.75rem;
+    --target-compact: 2.5rem;
+    --target-icon: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-data: 0ms;
+  }
+}
+
+/* The user toggle of the side menu writes this attribute. */
+:root[data-motion="off"] {
+  --motion-data: 0ms;
+}
+
+/* Elements on brand-ink rebind what depends on the surface below them. */
+[data-surface="ink"] {
+  --color-foreground: var(--brand-background);
+  --color-muted: color-mix(in srgb, var(--brand-ink), var(--brand-background) 12%);
+  --color-muted-foreground: var(--brand-text-muted-dark);
+  --color-border: var(--brand-line-dark);
+  --color-input-border: var(--brand-text-muted-dark);
+  --color-ring: var(--brand-accent-dark);
+  --color-link: var(--brand-accent-dark);
+  --color-primary-on-surface: var(--brand-accent-dark);
+  --color-status-neutral: var(--brand-text-muted-dark);
+  --color-status-neutral-glyph: var(--brand-ink);
+}
