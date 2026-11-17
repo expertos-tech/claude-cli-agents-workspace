@@ -41,10 +41,18 @@ the fork in the person's GitHub account and opens the pull requests, with descri
   sent and when, so the next round does not repeat it.
 - RN-9: without a GitHub account or an authenticated `gh`, it writes the patch and the pull request text in
   `tmp/work/` for sending by hand.
+- RN-11: the evaluation (the filters, the reviewer, the reasons, the approval and the final scan) is one reusable
+  piece, separate from the delivery. Delivery modes: fork and pull request (the default), or `--local <clone>`: a
+  branch `rules/<subject>` in a local clone of the repository, with `tests/check.sh` run, a commit, and a short
+  request in `maintainers/requests/` as the description; nothing leaves the machine. Maintainers use the local mode
+  from their own installed workspace (for example through a private skill of their own).
 - RN-10: after the merge, `/rules` recognizes the rule that entered the core and proposes removing the copy from
   `my-rules/`.
 
 ## 4. Acceptance criteria
+
+- AC-0: Given an approved rule, when `/fork-my-rules --local <clone>` runs, then the clone has a `rules/<subject>`
+  branch with the rule, the suite green and a request in `maintainers/requests/`, and nothing was pushed or forked.
 
 - AC-1: Given an own rule that cites the company's tenant, when the skill runs, then it shows as "does not go up" in
   the local summary and never reaches the fork.

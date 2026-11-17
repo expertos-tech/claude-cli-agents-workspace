@@ -39,11 +39,20 @@ cannot be turned off.
   turned off) and the warnings; `exclude`, `include`, `add <subject>` (writes an own rule in the format of the core
   rules), `replace <rule>` (copies the core rule to `my-rules/` as a starting point). After a change, it builds
   `.claude/`, commits in `custom/` and says that open sessions pick the change up only when reopened.
+- RN-9: `/rules lessons`: reads the tagged lines of `custom/docs/lessons.md` (weight `grave`/`attention`/`suggestion`,
+  scope `general`/`project <name>`, recurrence `recurring`/`rare`, added by `import-from-fork`) and shows only the
+  candidates: `grave` ones and suggestions that recur. Same two tables as `/normalize-rules`: what the core or
+  `my-rules` already covers (no question), then a numbered decision table with assessment, status (`import` or
+  `reject`) and why; `rare` lines are never proposed. An approved row becomes an own rule through `/rules add`
+  (scoped with `paths:` for a project lesson), covering only the kind of case that caused it; the skill prefers
+  adjusting an existing own rule over adding a new one. No chain of reviewers, no new step in the sessions.
 
 ## 4. Acceptance criteria
 
 - AC-1: Given `"exclude": ["frontend.md"]`, when the session opens, then `frontend.md` is not in `.claude/rules/` and
   the effective `AGENTS.md` does not tell the model to read it.
+- AC-1a: Given three lessons (one `grave general`, one `suggestion` seen twice, one `rare`), when `/rules lessons`
+  runs, then the table lists the first two only, and the approved row becomes an own rule in `custom/my-rules/`.
 - AC-2: Given `"exclude": ["git.md"]`, when the session opens, then `git.md` still applies and the session start warns
   that it is mandatory.
 - AC-3: Given `"replace": {"review.md": "review.md"}` with the file in `my-rules/`, then the own version applies
