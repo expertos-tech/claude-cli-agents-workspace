@@ -151,3 +151,48 @@ The agents of each stage run with the stage's effort, passed in the call.
   decision; the gate and the review keep the shared branch safe.
 - Open: how `open` starts from `main`. Decided: an option of `aiwp-cmds.sh open`. Reason: one way to open a clone.
 - Open: the acceptance criteria. Decided: AC-1 to AC-10, derived from the rules. Reason: the ideas give only the rules.
+
+---
+
+## Execution — 2026-11-17, merged into developer (this merge)
+
+- **Done:** stage 1, the product scripts: `open --from-main`, the gate against `main`, `hotfix`, `hotfix-tag`,
+  `hotfix-down`, the blocker computed from git in the gate, `release`, `aiwp-project-state.sh` and the
+  `session-title.py` warning, `guard-bash` asks for the three commands, scenario tests (4da0107); stage 2,
+  `/merge --hotfix`, the rules and the product docs (5a30a63); stage 3, `/caw-merge --hotfix` and `--down`, the
+  "Blocked" check of `/caw-merge` and `/caw-request`, `docs/releases.md` (4b250b0); stage 4, the suite, the test
+  installation and two independent reviews, whose findings were fixed (338dc4d, e79a155, 5a41ccd).
+- **Decisions taken while running:** `open --from-main` refuses a repo without `developer` (its base is already
+  `main`: the normal flow works) and a remote without `main`, and never falls back to a local `main` when the fetch
+  fails; the default branch is `fix/<slug of the work without "hotfix-">`; a hotfix clone holds only its fix branch;
+  every repo of one `open` is checked before the first clone, so a refusal creates nothing; a second hotfix may start
+  while one is pending, and `hotfix-down` then merges both; `hotfix-down` builds the merge with
+  `git merge-tree --write-tree` (git 2.38 or later), pushes it, and only then moves the checkout; `hotfix-tag` tags the
+  head of `main` only while a hotfix is pending and does not check the patch number (the skill decides it); after a
+  pull request into a protected `main` no command tags (the known limit), and the script no longer suggests
+  `hotfix-tag` there. Here the request lives only on `developer`, so `/caw-merge --hotfix` moves it straight to
+  `done/` with the merge down.
+- **Deviations:** none from the business rules.
+- **Acceptance criteria:**
+  - AC-1: proven (test-aiwp-cmds `test_open_from_main_starts_from_the_remote_main`,
+    `test_open_from_main_without_a_local_main`; test-aiwp-gate refuses a developer commit brought in by a merge; the
+    run in the test installation).
+  - AC-4: proven at script level (test-aiwp-gate: no record, sha moved, `main` moved, push refused: `main` unchanged
+    and not pushed); the human's OK is skill text, pending a real run.
+  - AC-6: proven (test-aiwp-gate: the clean merge with two parents, a conflict in `CHANGELOG.md` that changes nothing,
+    the `fix/<slug>-developer` clone through the gate; the test installation, both cases, `Unreleased` kept on top).
+  - AC-7: proven at script level (the gate into `developer` and `release` refused while blocked, the resolution clone
+    passes, both work again after the merge down, `aiwp-project-state.sh` shows it); the request in `qa/` marked
+    pending is skill text, pending a real run.
+  - AC-8: proven (test-aiwp-cmds: no `main`, no `developer`, nothing created for any repo; the test installation).
+  - AC-2, AC-3, AC-5, AC-9: pending: skill behavior (the review's classification, the cherry-pick dependency, the order
+    of the "publish?" question for both kinds of `main`, the maintenance-only refusal); the owner chose to prove them
+    at the first real hotfix.
+  - AC-10: the scenario suites are proven; the whole flow in a session of a test installation, with both kinds of
+    `main`, is pending (as above). The scripts ran end to end in the test installation (29 checks), before the
+    review fixes.
+- **Checks:** `tests/check.sh --base origin/developer --i18n-pending`; the suites aiwp-gate, aiwp-cmds,
+  aiwp-project-state, guard-bash, test_guard_bash.py, test_session_title.py; `tests/test-install.sh`; two independent
+  reviews (the range: 1 BLOCKER and 2 RECOMMENDED, fixed; the fix: 1 RECOMMENDED, fixed).
+- **Left:** the pending acceptance criteria above; the git 2.38 check of `hotfix-down` has no test (it needs a fake
+  git); 30 translations pending for the release.

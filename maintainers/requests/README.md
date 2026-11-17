@@ -25,7 +25,6 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 | Round | Request | State | Notes |
 | --- | --- | --- | --- |
 | 0 | `import-from-fork.md` | ready | The first release after the publication: the first real test of `aiwp update` |
-| 1 | `hotfix-from-main.md` | ready | A patch release from `main`, down to `developer`; product and here |
 | 1 | `rules.md` | ready | Design: `plans/rules-config.md` |
 | 1 | `run-tools.md` | ready | Design: `plans/run-tools.md` |
 | 1 | `prompt-log-results.md` | idea | Two decisions open |
@@ -69,6 +68,7 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 | `qa/request-lifecycle.md` | this merge | AC-1, AC-2, AC-4 and part of AC-3 pending; AC-5, AC-6 failed in part (requests) |
 | `qa/merge-release-step-reference.md` | this merge | Met |
 | `qa/review-final-brief-unreleased.md` | this merge | Met |
+| `qa/hotfix-from-main.md` | this merge | AC-1, AC-6, AC-8 proven; AC-4, AC-7 at script level; AC-2, AC-3, AC-5, AC-9 and the session run of AC-10 pending |
 
 ## Done
 
