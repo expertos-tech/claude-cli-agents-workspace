@@ -25,7 +25,7 @@ From zero to the first merged work, in six steps.
 - **Linux.** On Windows, only through **WSL2**: install a Linux distribution (Ubuntu, for example) and do everything inside it, with the same layout as on Linux. The workspace, the projects, Docker and `claude` live in the WSL file system (`~/...`), never in `/mnt/c`. There is no native Windows version.
 - The Claude Code CLI installed and logged in: `claude` opens a session.
 - `git`, Docker Engine, `bash` and `python3`.
-- **Optional, but very important: the observability stack** (`tools/observability/`, a local Grafana on <http://localhost:3000>). The workspace works without it, but it is what shows what each session costs, in tokens, time and model, and `scripts/performance/measure.py` only measures with it up. Without measuring, there is no way to know whether a change to the rules made the work better or worse. Start it once and follow its README to turn on the Claude Code telemetry.
+- **Optional, but very important: the observability stack** (`tools/observability/`, a local Grafana on <http://localhost:3000>). The workspace works without it, but it is what shows what each session costs, in tokens, time and model, and `scripts/performance/measure.py` only measures with it up. Without measuring, there is no way to know whether a change to the rules made the work better or worse. Once your session is open (step 4), run `/run-tools` and tick Observability, then follow its README to turn on the Claude Code telemetry.
 - **Recommended: [Claude in Chrome](https://claude.com/chrome)**, the extension that lets Claude open pages in your Chrome, click, read the console and take screenshots. With it, Claude checks layouts and screen flows on its own, as a person would by hand (`/pilot auto`). Install the extension in Chrome and connect it to the session with `/chrome` ([how to use it](https://code.claude.com/docs/en/chrome)). It does not work in WSL: on Windows, those tests stay with you (`/pilot manual`).
 
 ### 1. Create your workspace
@@ -115,6 +115,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/request [name \| path]` | Runs a written request, gives the session the project's name, numbered; `/merge` moves it to qa, and the release to done |
 | `/pilot [auto\|manual]` | Shows or changes who runs the tests a human would run by hand: Claude (`auto`, the default) or you (`manual`) |
 | `/local-env [folder]` | Creates or completes the filled `.env` from `.env.example`, without showing values: for `docker/`, `docker/sonar/` and a tool of `tools/`, in `custom/env/<name>.env` |
+| `/run-tools [--down [tool...]]` | Checkboxes with the local tools of this machine (observability, the simulators, the Azurite console, this machine's container console); starts the ones you tick, in one compose group, after saying what each one lacks; `--down` stops |
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lists the state of every project and POC; or analyses one (four analysts, a plan you approve, the language of its docs) and migrates it on a tested branch, with checkpoint tags, into `developer` and `main` |
 
 The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `apply`, and `developer`, `checkpoint`, `bring` for the normalization). Claude Code's own commands still apply: `/rewind`, `/rename`, `/usage`.
@@ -132,7 +133,7 @@ To write requests outside the development session, create a project in Claude ju
 - Validation in Docker: `bash scripts/validate.sh --help`. SonarQube, optional: `bash scripts/sonar.sh --help`.
 - Measuring the workspace's performance: `python3 -I -B scripts/performance/measure.py --name <name>` (with observability up) writes `custom/performance/<date>-<name>.md`, compared with the previous measurement and the last five.
 - Tasks heavy on CPU or GPU (graphics, 3D rendering) go through `bash scripts/heavy-run.sh`, which waits for the machine to cool down; tests and builds run directly.
-- Tools in `tools/`: the local Grafana for the Claude Code telemetry (`tools/observability/`, on <http://localhost:3000>), the container consoles, login and Safe Browsing simulators, the Azurite console, the usage report and the Fable alert. Each one has its README ([tools/README.md](tools/README.md)); the ones that take settings read `custom/env/<name>.env` (`/local-env tools/<name>`). Your own tools live in `custom/tools/` (`bash scripts/init-repo.sh --type tool`).
+- Tools in `tools/`: the local Grafana for the Claude Code telemetry (`tools/observability/`, on <http://localhost:3000>), the container consoles, login and Safe Browsing simulators, the Azurite console, the usage report and the Fable alert. Each one has its README ([tools/README.md](tools/README.md)); `/run-tools` starts them, the container tools in one compose project, `claude-cli-agents-tools`. The ones that take settings read `custom/env/<name>.env` (`/local-env tools/<name>`) and `custom/config/<name>/`. Your own tools live in `custom/tools/` (`bash scripts/init-repo.sh --type tool`).
 
 ## Layout
 
