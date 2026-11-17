@@ -15,3 +15,11 @@ Step 2: a failure is fixed in the clone and step 2 runs again before step 3.
 ## Effort
 
 low
+
+---
+
+## Execution — 2026-11-17, merged into developer (with `request-lifecycle.md`)
+
+- **Done:** the "Release" section of `workspace/rules/skills/merge/SKILL.md` was rewritten (327598a): a failing check
+  is a BLOCKER gathered in step 5 with the other findings, with no reference to a wrong step.
+- **Done when:** met.

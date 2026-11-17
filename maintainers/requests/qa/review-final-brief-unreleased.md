@@ -19,3 +19,11 @@ The brief names the changelog sections of the version being released, and the or
 ## Effort
 
 low
+
+---
+
+## Execution — 2026-11-17, merged into developer (with `request-lifecycle.md`)
+
+- **Done:** `.claude/rules/review.md` "Final review" (d8af7de) runs after the translations, the version and dates
+  commit and the strict suite, and its brief names every qa request and the changelog sections of the version.
+- **Done when:** met.

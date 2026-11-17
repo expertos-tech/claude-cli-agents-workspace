@@ -102,3 +102,29 @@ the product's skills instead of copies.
 | 6. Suite, test installation, independent review, commits, `/caw-merge` | high | Proof of a core change |
 
 Stages 2 and 3 run in parallel (disjoint paths); 4 needs both; 5 needs 4.
+
+---
+
+## Execution — 2026-11-17, merged into developer (this merge)
+
+- **Done:** stage 1 (`@` checked in the official docs: not documented as an import inside a skill, so each layer keeps
+  it as a marker and says to read the file); stage 2, the free layout (d574970); stage 3, `custom/requests/`, `logs/`
+  and the renamed hooks (1e6068a); stage 4, the product skills, rules and docs (327598a); stage 5, the maintenance
+  layers, the `caw-layers` check, the lifecycle and no backlog (d8af7de, 68d767c).
+- **Decisions taken while running:** a clone of a nested repo is named with `--` (`billing--billing-api`); the prompt
+  log is no longer committed (`sync --scan` only cleans it), since `logs/` is not a repository; a wave that stops
+  appends its resume point to the request instead of writing a new one; here the Execution block and the move to qa
+  are committed before the suite, so the company-terms scan judges them (the review's BLOCKER).
+- **Deviations:** none from the business rules.
+- **Acceptance criteria:**
+  - AC-1, AC-2, AC-4: pending: no run of `/merge` or `/merge --main` in a session (`release-per-project-proof.md`).
+  - AC-3: the layout part proven (test-aiwp-gate `test_nested_repos_are_handled_at_their_depth`, guard-bash D22, the
+    test installation with `billing/billing-api`); the release part pending (`release-per-project-proof.md`).
+  - AC-5: failed in part: old names remain in a decision record and in pending requests (`old-names-leftovers.md`).
+  - AC-6: failed in part: a layer whose product skill is missing passes (`caw-layers-missing-target.md`).
+  - AC-7: proven (the suite, every changed suite, `tests/test-install.sh` 23 PASS, an independent review: one BLOCKER
+    fixed).
+- **Checks:** `tests/check.sh --base origin/developer --i18n-pending`; the suites of every changed script; the test
+  installation; two independent reviews (the change, then its fix).
+- **Left:** `release-per-project-proof`, `old-names-leftovers`, `caw-layers-missing-target`, `merge-project-name`;
+  30 translations pending for the release.

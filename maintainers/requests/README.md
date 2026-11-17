@@ -24,7 +24,6 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 
 | Round | Request | State | Notes |
 | --- | --- | --- | --- |
-| 0 | `request-lifecycle.md` | ready | The lifecycle, the release per project, a free layout, `caw-*` layers; in progress |
 | 0 | `import-from-fork.md` | ready | The first release after the publication: the first real test of `aiwp update` |
 | 1 | `rules.md` | ready | Design: `plans/rules-config.md` |
 | 1 | `run-tools.md` | ready | Design: `plans/run-tools.md` |
@@ -46,9 +45,11 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 | — | `process-merge-check-command.md` | ready | A review finding |
 | — | `review-effort-wording.md` | ready | A review finding |
 | — | `review-docs-only-scope.md` | ready | A review finding |
-| — | `merge-release-step-reference.md` | ready | A review finding |
-| — | `review-final-brief-unreleased.md` | ready | A review finding |
 | — | `workflow-agent-session-name.md` | idea | Parent session name in the labels of Workflow agents |
+| — | `release-per-project-proof.md` | ready | Prove AC-1 to AC-4 of `request-lifecycle` in a run |
+| — | `old-names-leftovers.md` | ready | A review finding |
+| — | `caw-layers-missing-target.md` | ready | A review finding |
+| — | `merge-project-name.md` | ready | A review finding |
 
 ## QA
 
@@ -59,6 +60,9 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 | `qa/project-docs.md` | f9ba9cf | All proven |
 | `qa/readme-get-involved-first.md` | f9ba9cf | All proven |
 | `qa/review-and-translation-cadence.md` | fb442c1 | All proven |
+| `qa/request-lifecycle.md` | this merge | AC-1, AC-2, AC-4 and part of AC-3 pending; AC-5, AC-6 failed in part (requests) |
+| `qa/merge-release-step-reference.md` | this merge | Met |
+| `qa/review-final-brief-unreleased.md` | this merge | Met |
 
 ## Done
 
