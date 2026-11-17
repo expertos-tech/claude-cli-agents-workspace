@@ -9,13 +9,22 @@ Run them in this order; each one depends on the ones before it:
 | # | Request | Design | State |
 | --- | --- | --- | --- |
 | 0 | `import-from-fork.md` | — | Pending; first after the publication, with its own release |
-| 1 | `normalize-projects.md` | `plans/normalize-projects.md` | Built in 0.1.0; first run pending in the test installation |
+| 1 | `normalize-projects.md` | `plans/normalize-projects.md` | Built in 0.1.0; end-to-end test passed on six projects; a second test on unseen projects pending |
 | 2 | `rules.md` | `plans/rules-config.md` | Pending |
 | 3 | `normalize-rules.md` | `plans/normalize-rules.md` | Pending; needs `rules` |
 | 4 | `run-tools.md` | `plans/run-tools.md` | Pending |
 | 5 | `tools-hub.md` | `plans/tools-hub.md` | Pending; needs `run-tools` |
 | 6 | `fork-my-rules.md` | `plans/fork-my-rules.md` | Pending; needs `rules` |
 | 7 | `final-review.md` | — | Pending; runs last, in a new session |
+| 8 | `readme-get-involved-first.md` | — | Pending; round 1 |
+| 9 | `prompt-log-results.md` | — | Pending; round 1 |
+| 10 | `gate-audit-gaps.md` | — | Pending; round 1 |
+| 11 | `work-status-docker-stacks.md` | — | Pending; round 1 |
+| 12 | `aiwp-remove.md` | — | Pending; round 1; its first decision is whether to build it |
+| 13 | `measure-quality-indicators.md` | — | Pending; round 1, after `import-from-fork` (both change `measure.py`) |
+| 14 | `onboard.md` | `plans/distribution.md` | Pending; round 2; needs `rules` |
+| 15 | `rules-size-budget.md` | — | Pending; round 3, or folded into `final-review` |
+| 16 | `os-sandbox-trial.md` | — | Pending; after round 3 |
 
 Requests in the same round run in parallel sessions, each in its own worktree (`claude --worktree <request>` from the
 repository root), merged into `main` one at a time:
@@ -23,9 +32,10 @@ repository root), merged into `main` one at a time:
 | Round | Requests |
 | --- | --- |
 | 0 | `import-from-fork`, alone, with its own minor release: the first real test of `aiwp update` |
-| 1 | `rules`, `run-tools` |
-| 2 | `normalize-rules`, `fork-my-rules`, `tools-hub` |
-| 3 | `final-review`, which releases the next version once, and tests the update of a real installed workspace dedicated to it |
+| 1 | `rules`, `run-tools`, `readme-get-involved-first`, `prompt-log-results`, `gate-audit-gaps`, `work-status-docker-stacks`, `aiwp-remove`, `measure-quality-indicators` |
+| 2 | `normalize-rules`, `fork-my-rules`, `tools-hub`, `onboard` |
+| 3 | `final-review` (with `rules-size-budget` folded in or right before it), which releases the next version once, and tests the update of a real installed workspace dedicated to it |
+| 4 | `os-sandbox-trial` |
 
 Run a request in a new session opened at the repository root, one stage per session when a stage is large. A finished
 request keeps its file; update the State column here.
