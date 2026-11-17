@@ -33,15 +33,15 @@ Both follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semant
 
 1. A release clone `tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/` on the branch `fix/release-vX-Y-Z`.
 2. The translations: one agent brings every pending one up to date.
-3. The full suite, strict, from the last tag (translations included), and the test installation.
-4. The final review of everything since the last tag, in two rounds with a clean context: **what enters and what
-   leaves** (effort high: the inventory of what was added, changed and removed, each traced to the request that asked
+3. `workspace/VERSION` to `X.Y.Z`, the product section dated, the root section dated and linked to the release, and
+   the commit `chore(release): X.Y.Z`, so the checks below judge them.
+4. The full suite, strict, from the last tag (translations included), and the test installation.
+5. The final review of everything since the last tag, version and dates included, in two rounds with a clean
+   context: **what enters and what leaves** (effort high: the inventory of what was added, changed and removed, each traced to the request that asked
    for it; regressions, so nothing that works is removed without a request; whether each change does what was asked;
    the changelogs), then a **general** reading of the whole tree (effort medium: contradictions, dead references,
    leftovers). Its BLOCKERs are fixed in the clone; its RECOMMENDED become backlog items.
-5. `workspace/VERSION` to `X.Y.Z`, the product section dated, the root section dated and linked to the release, and
-   the commit `chore(release): X.Y.Z`.
-6. The clone enters `developer`.
+6. The clone enters `developer`, at the commit the suite and the review judged.
 7. Each public step is confirmed by the owner, one by one: `main` (a fast-forward from `developer`, or a pull request
    when refused), the tag `vX.Y.Z` (never moved or deleted) and the GitHub release, with the product changelog section
    as its notes.

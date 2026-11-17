@@ -22,7 +22,7 @@ types of what enters each one, and a fix of something that entered the same `Unr
 - **Repository**, `CHANGELOG.md` at the root: every change. A change of the maintenance (`CLAUDE.md`, `.claude/`,
   `tests/`, `maintainers/`, `i18n/`, `docs/`, the root `README.md`) in detail, under its type; a product change as
   one summary line of the feature under `### Product`, pointing to the product changelog. Its versions are never
-  released on their own: a section is dated by the product release that ships it ("Release" step 5).
+  released on their own: a section is dated by the product release that ships it ("Release" step 3).
 
 ## Where the session is
 
@@ -89,25 +89,27 @@ same with hyphens. The tag must be free
    every pending translation up to date (the `pending:` lines of
    `bash <clone>/tests/check.sh --base <last tag> --i18n-pending`), per `.claude/rules/docs.md`; commit
    (`docs(i18n): translations for X.Y.Z`) and push.
-3. The full suite, strict: `bash <clone>/tests/check.sh --all --base <last tag>` (translations included) and
-   `bash <clone>/tests/test-install.sh`. A failure: fix in the clone, commit, push, run it again.
-4. Final review (`.claude/rules/review.md` "Final review"), on `<last tag>..HEAD` of the clone, in this order:
-   1. what enters and what leaves: `reviewer`, claude-opus-5-5, effort `high`, with the requests of
-      `maintainers/requests/done/` the range delivers and the `Unreleased` sections: the inventory, regressions,
-      intent and the changelogs;
-   2. general: `reviewer`, claude-opus-5-5, effort `medium`, over the whole tree.
-
-   Fix every BLOCKER in the clone, commit by commit, push, rerun step 3 and review the fix. A fix of something of this
-   version adds no entry. Each RECOMMENDED becomes a backlog item.
-5. In the clone, with today's date:
+3. Version and dates, in the clone, with today's date, so the checks below judge them:
    - `workspace/VERSION` to `X.Y.Z`; in `workspace/CHANGELOG.md`, `## [X.Y.Z] - Unreleased` becomes
      `## [X.Y.Z] - YYYY-MM-DD`;
    - in the root `CHANGELOG.md`, the `Unreleased` section is dated the same day; none: add a patch section over the
      newest one. Under its `### Product`, the line `Released [vX.Y.Z](<repo URL>/releases/tag/vX.Y.Z): see its
      [changelog](<repo URL>/blob/vX.Y.Z/workspace/CHANGELOG.md).`, with the repository URL of `README.md`;
    - commit (`chore(release): X.Y.Z`) and push.
-6. Into `developer`: step 5 and 6 of "From a clone" with this clone (phases 1 and the review already passed in steps
-   3 and 4).
+4. The full suite, strict: `bash <clone>/tests/check.sh --all --base <last tag>` (translations included) and
+   `bash <clone>/tests/test-install.sh`. A failure: fix in the clone, commit, push, run it again.
+5. Final review (`.claude/rules/review.md` "Final review"), on `<last tag>..HEAD` of the clone, version and dates
+   included, in this order:
+   1. what enters and what leaves: `reviewer`, claude-opus-5-5, effort `high`, with the requests of
+      `maintainers/requests/done/` the range delivers and the changelog sections of `X.Y.Z`: the inventory,
+      regressions, intent and the changelogs;
+   2. general: `reviewer`, claude-opus-5-5, effort `medium`, over the whole tree.
+
+   Fix every BLOCKER in the clone, commit by commit, push, rerun step 4 and review the fix. A fix of something of this
+   version adds no entry. Each RECOMMENDED becomes a backlog item. Then record the sha:
+   `git -C <clone> rev-parse HEAD`; it must equal the pushed `fix/release-vX-Y-Z`.
+6. Into `developer`: steps 5 and 6 of "From a clone" with this clone and the sha of step 5; phase 1 and the review
+   are steps 4 and 5 here. The clone moved after the sha was recorded: back to step 4.
 7. Then, **asking the owner before each one** (each answer covers that step only):
    1. `main`: `git push origin developer:main` (a fast-forward; refused: a pull request `developer` → `main` with
       `gh pr create`, and stop until it is merged);
