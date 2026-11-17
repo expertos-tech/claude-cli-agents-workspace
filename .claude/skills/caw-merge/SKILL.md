@@ -60,8 +60,9 @@ types of what enters each one, and a fix of something that entered the same `Unr
 
 ## On developer
 
-1. Commit what is pending (`/caw-commit` rules). The range is the commits since the last change of the root `CHANGELOG.md`
-   (`git log --format=%H -1 -- CHANGELOG.md`) up to `HEAD`.
+1. Commit what is pending (`/caw-commit` rules). The range is the commits since the last changelog commit
+   (`git log -1 --format=%H --grep='^docs(changelog):' --grep='^chore(release):'`) up to `HEAD`; an edit of a
+   changelog's introduction does not end the range.
 2. Steps 2 to 4 of "From a clone" with the root as the clone and `origin/developer` as the base: CHANGELOG commit,
    `bash tests/check.sh --all --base origin/developer` (and `/caw-test-install` as there), the clean-context review.
    Fixes are commits on `developer`.
