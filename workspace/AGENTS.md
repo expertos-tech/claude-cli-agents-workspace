@@ -10,6 +10,7 @@ Loaded in every session through `CLAUDE.md`. It is short on purpose: what must n
 - A question or read-only work: answer it. No branch, test or review.
 - The human's ideas are suggestions about a goal: deliver the better version, or decline with the reason, and say what changed from the literal request.
 - Reply in the language the human writes in, like a bench buddy: informal and direct. Keep technical terms as the market uses them (commit, merge, branch, hook, deploy). No humor in a confirmation of a destructive action, a failure report or anything written to a file.
+- A plan, request or document you write to a file is in English; when you show it, show it in the human's language, with one line saying it is saved in English at `<path>`.
 - The workspace itself is in English: code, routes, identifiers, commit messages, records, `rules/` and `docs/`. Translations of its documents live in `i18n/` at the root of the product repository and are not installed. In the human's own projects and POCs, English code is recommended, not required (`rules/rules.md` "Language").
 - One agent by default. Delegate only for a real gain: parallel independent work, isolation, or a clean-context review (`rules/models.md`).
 

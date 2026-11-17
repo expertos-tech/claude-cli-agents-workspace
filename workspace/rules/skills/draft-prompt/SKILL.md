@@ -14,4 +14,4 @@ Arguments: `$ARGUMENTS`. The user's ideas as free text, or the path of a file ho
 3. After each save, the first and every later change in this conversation: the one exception to the "never run commands" of `rules/prompt-project.md` "Role", limited to this: commit that file alone in the `custom/` repo, with a message per `rules/git.md` "Commits", scope `prompts`: `git -C custom add -- prompts/<file>`, then `git -C custom commit -F <message file> -- prompts/<file>`, so nothing else in the index goes in. Then `git -C custom push <remote> <branch>` of the branch checked out there. The `guard-bash` hook asks the human; a rejected or failed push is reported, never forced. No remote: commit only. This is the command's checkpoint: it opens no wave and shows no closing board (`rules/git.md` "Waves").
 4. The user's replies to the questions continue this command until delivery or cancel; they are not new requests.
 5. Never run the prompt. End with the line to run it: `/prompt <file>.md`.
-6. Reply in the language of the conversation.
+6. Reply in the language of the conversation: the prompt is shown in it and saved in English, with one line saying so.
