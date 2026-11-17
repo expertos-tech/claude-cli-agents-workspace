@@ -27,7 +27,8 @@ skills in `workspace/rules/skills/` (`/merge`, `/prompt`...).
 
 `.claude/` (settings, `rules/`, `skills/`, `agents/`; no hooks), `tests/` (`check.sh`; `test-install.sh` arrives with
 the installer), `maintainers/` (`backlog/`, `plans/`, `requests/`, `reviews/`: public), `tmp/` (git-ignored: test
-installations, private analyses, `tmp/prompt.md`), `workspace/` (the product), `i18n/`, `README.md`, `LICENSE`.
+installations, private analyses, `tmp/prompt.md`), `workspace/` (the product), `i18n/`, `README.md`, `CHANGELOG.md` (the repository's; the
+product's is `workspace/CHANGELOG.md`), `LICENSE`.
 
 ## The maintenance process
 
@@ -44,12 +45,13 @@ Detail in `.claude/rules/process.md`.
    session is either on `developer` at the root or in such a clone), always with explicit model and effort (high for
    hooks, the installer, security and risky actions), in parallel only on disjoint paths, and an independent
    clean-context review of hooks and security (`.claude/rules/review.md`).
-5. **Prove**: `bash tests/check.sh --all` on every change (`/caw-check`); `/caw-test-install` whenever the installer, a hook or
-   `setup-claude.sh` changes.
+5. **Prove**: `bash tests/check.sh --all` on every change (`/caw-check`); `/caw-test-install` whenever the installer,
+   a hook or `setup-claude.sh` changes.
 6. **Close**: commits per the convention below (`/caw-commit`); the work branch of a clone is pushed at each commit;
-   `/caw-merge` takes the work into `developer` (the default branch) and writes `workspace/CHANGELOG.md`; other pushes
-   only when the owner asks, each request covering that push only; a release only through `/caw-merge --main`, with every
-   public step confirmed.
+   `/caw-merge` takes the work into `developer` (the default branch) and writes the two changelogs: the root
+   `CHANGELOG.md` for every change, `workspace/CHANGELOG.md` for a product change (`workspace/`, `install.sh`). Other
+   pushes only when the owner asks, each request covering that push only. Only the product is released, through
+   `/caw-merge --main`, with every public step confirmed.
 
 ## Commits
 

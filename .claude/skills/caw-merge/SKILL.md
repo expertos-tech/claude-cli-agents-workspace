@@ -1,6 +1,6 @@
 ---
 name: caw-merge
-description: "Take the work of this session into developer through the gates, writing the versioned workspace/CHANGELOG.md; with --main, publish that version (main, tag and GitHub release, each public step confirmed). No argument: the clone of this session in tmp/work/, else the session on developer. Use only when the owner asks."
+description: "Take the work of this session into developer through the gates, writing the two changelogs (CHANGELOG.md of the repository, workspace/CHANGELOG.md of the product); with --main, release the product version (main, tag and GitHub release, each public step confirmed). No argument: the clone of this session in tmp/work/, else the session on developer. Use only when the owner asks."
 argument-hint: "[<work>/<clone> | --main]"
 disable-model-invocation: true
 model: claude-opus-5-5
@@ -8,14 +8,21 @@ effort: high
 ---
 
 Arguments: `$ARGUMENTS`. A copy of the product's `/merge` (`workspace/rules/skills/merge/SKILL.md`) with this
-repository's mechanics: no hooks here, so the steps run plain git. Running `/caw-merge` is the owner's order for the pushes
-it makes: the work branch and `developer`. `main`, the tag and the GitHub release are each confirmed (`--main`).
+repository's mechanics: no hooks here, so the steps run plain git. Running `/caw-merge` is the owner's order for the
+pushes it makes: the work branch and `developer`. `main`, the tag and the GitHub release are each confirmed (`--main`).
 
-The CHANGELOG is `workspace/CHANGELOG.md`, the product's, with the rules of `workspace/rules/docs.md` "CHANGELOG.md":
-`## [X.Y.Z] - Unreleased`, the bump by the Conventional Commit types, and a fix of something that entered the same
-`Unreleased` version is not a fix (no `### Fixed` entry, no bump; adjust the original entry only when the behavior it
-describes changed). Write for someone who uses the workspace, and what they must do after updating, if anything.
-Changes only to the maintenance (`CLAUDE.md`, `.claude/`, `tests/`, `maintainers/`, `i18n/` alone) get no entry.
+## The two changelogs
+
+Both follow `workspace/rules/docs.md` "CHANGELOG.md": `## [X.Y.Z] - Unreleased`, the bump by the Conventional Commit
+types of what enters each one, and a fix of something that entered the same `Unreleased` version is not a fix (no
+`### Fixed` entry, no bump; adjust the original entry only when the behavior it describes changed).
+
+- **Product**, `workspace/CHANGELOG.md`: only a change to `workspace/` or `install.sh`, in detail, for someone who uses
+  the workspace, with what they must do after updating, if anything. Only the product is released.
+- **Repository**, `CHANGELOG.md` at the root: every change. A change of the maintenance (`CLAUDE.md`, `.claude/`,
+  `tests/`, `maintainers/`, `i18n/`, the root `README.md`) in detail, under its type; a product change as one summary
+  line of the feature under `### Product`, pointing to the product changelog. Its versions are never released on
+  their own: a section is dated by the product release that ships it ("Release" step 4).
 
 ## Where the session is
 
@@ -29,11 +36,12 @@ Changes only to the maintenance (`CLAUDE.md`, `.claude/`, `tests/`, `maintainers
 
 1. In the clone: commit what is pending (`/caw-commit` rules), `git -C <clone> fetch -q origin`, then
    `git -C <clone> merge --no-edit origin/developer`. A conflict: resolve it in the clone and commit.
-2. CHANGELOG: write the section of what enters, from `git -C <clone> log` and `diff` of `origin/developer..HEAD`;
-   commit it alone (`docs(changelog): X.Y.Z unreleased`). Push the branch.
+2. Changelogs: write what enters, from `git -C <clone> log` and `diff` of `origin/developer..HEAD`, in the
+   repository's and, when the range changes `workspace/` or `install.sh`, in the product's ("The two changelogs");
+   commit them alone (`docs(changelog): <version> unreleased`). Push the branch.
 3. Phase 1, in the clone: `bash <clone>/tests/check.sh --all --base origin/developer`, with `AIWP_TERMS_FILE` set to
-   the root's `workspace/custom/core-terms.txt` when it exists (that file is git-ignored, so the clone lacks it); and, when the range changes
-   `install.sh`, `tests/test-install.sh`, a hook or `workspace/scripts/setup-claude.sh`, `/caw-test-install` from the
+   the root's `workspace/custom/core-terms.txt` when it exists (that file is git-ignored, so the clone lacks it); and,
+   when the range changes `install.sh`, `tests/test-install.sh`, a hook or `workspace/scripts/setup-claude.sh`, `/caw-test-install` from the
    clone. A failure: fix in the clone, commit, push, run phase 1 again. Record the sha: `git -C <clone> rev-parse HEAD`.
 4. Review: one `reviewer` subagent (claude-opus-5-5), clean context, effort `high`. Brief: the request the session ran
    (file or the owner's words), the range `origin/developer..<sha>` to read with `git -C <clone> diff`, and what
@@ -52,8 +60,8 @@ Changes only to the maintenance (`CLAUDE.md`, `.claude/`, `tests/`, `maintainers
 
 ## On developer
 
-1. Commit what is pending (`/caw-commit` rules). The range is the commits since the last change of `workspace/CHANGELOG.md`
-   (`git log --format=%H -1 -- workspace/CHANGELOG.md`) up to `HEAD`.
+1. Commit what is pending (`/caw-commit` rules). The range is the commits since the last change of the root `CHANGELOG.md`
+   (`git log --format=%H -1 -- CHANGELOG.md`) up to `HEAD`.
 2. Steps 2 to 4 of "From a clone" with the root as the clone and `origin/developer` as the base: CHANGELOG commit,
    `bash tests/check.sh --all --base origin/developer` (and `/caw-test-install` as there), the clean-context review.
    Fixes are commits on `developer`.
@@ -61,8 +69,9 @@ Changes only to the maintenance (`CLAUDE.md`, `.claude/`, `tests/`, `maintainers
 
 ## Release
 
-`/caw-merge --main` publishes the version of the `Unreleased` header of `workspace/CHANGELOG.md` on `developer` (none: say
-there is nothing to release and stop). `vX.Y.Z` is that version; `X-Y-Z` the same with hyphens. The tag must be free
+`/caw-merge --main` releases the product: the version of the `Unreleased` header of `workspace/CHANGELOG.md` on
+`developer`. None: no product change since the last release, so there is nothing to release; say so and stop (the
+maintenance changes stay on `developer`, recorded in the root `CHANGELOG.md`). `vX.Y.Z` is that version; `X-Y-Z` the same with hyphens. The tag must be free
 (`git tag -l vX.Y.Z` and `git ls-remote --tags origin vX.Y.Z` both empty); else stop before step 1 and tell the owner.
 
 1. Open the release clone: `git clone -q --local . tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/claude-cli-agents-workspace`,
@@ -76,16 +85,21 @@ there is nothing to release and stop). `vX.Y.Z` is that version; `X-Y-Z` the sam
    CHANGELOG does not describe for the user, or an entry with no change behind it. Each with path:line, the failure
    scenario and the fix.
 3. Fix every BLOCKER in the clone, commit by commit, push. A fix of something of this version adds no entry.
-4. In the clone: `workspace/VERSION` to `X.Y.Z`; `## [X.Y.Z] - Unreleased` becomes `## [X.Y.Z] - YYYY-MM-DD`; the
-   translations of the English documents the release changed (`.claude/rules/docs.md`); commit
-   (`chore(release): X.Y.Z`) and push.
+4. In the clone, with today's date:
+   - `workspace/VERSION` to `X.Y.Z`; in `workspace/CHANGELOG.md`, `## [X.Y.Z] - Unreleased` becomes
+     `## [X.Y.Z] - YYYY-MM-DD`;
+   - in the root `CHANGELOG.md`, the `Unreleased` section is dated the same day; none: add a patch section over the
+     newest one. Under its `### Product`, the line `Released [vX.Y.Z](<repo URL>/releases/tag/vX.Y.Z): see its
+     [changelog](<repo URL>/blob/vX.Y.Z/workspace/CHANGELOG.md).`, with the repository URL of `README.md`;
+   - the translations of the English documents the release changed (`.claude/rules/docs.md`);
+   - commit (`chore(release): X.Y.Z`) and push.
 5. Into `developer`: steps 3 to 6 of "From a clone" with this clone (phase 1 with `--base <last tag>`).
 6. Then, **asking the owner before each one** (each answer covers that step only):
    1. `main`: `git push origin developer:main` (a fast-forward; refused: a pull request `developer` → `main` with
       `gh pr create`, and stop until it is merged);
    2. the tag: `git tag -a vX.Y.Z -m "vX.Y.Z" <sha of main>` and `git push origin vX.Y.Z`; a tag is never moved or
       deleted;
-   3. the GitHub release of the tag, with the CHANGELOG section as its notes (`gh release create`).
+   3. the GitHub release of the tag, with the product CHANGELOG section as its notes (`gh release create`).
 7. Check that a fresh installation (`install.sh`) picks up the new tag.
 8. Summary: the version, `main` (sha), the tag, the release URL, the fixes made, the checks and their results.
 

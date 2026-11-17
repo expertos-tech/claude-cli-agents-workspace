@@ -34,8 +34,8 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - Subagents always get an explicit model and effort (`models.md`). Writers run in parallel only on disjoint paths.
 - `/caw-prompt` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
   `tmp/**`), so several requests run in separate sessions, each in its own clone. Respect the order in
-  `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/caw-merge` takes each
-  into `developer`, one at a time, with `bash tests/check.sh --all` green.
+  `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/caw-merge` takes
+  each into `developer`, one at a time, with `bash tests/check.sh --all` green.
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
 - Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
@@ -54,6 +54,7 @@ How the project is maintained. Every change goes through these steps; a typo fix
   same commit (`docs.md`).
 - Update the state of the request in `maintainers/requests/README.md` and of its backlog item, if any. A delivered
   request moves to `maintainers/requests/done/` (`git mv`) in the same commit, and its row points to the new path.
-- `/caw-merge` takes the work into `developer` and writes `workspace/CHANGELOG.md`; other pushes only when the owner asks,
-  each request covering that push only. A release only through `/caw-merge --main`.
+- `/caw-merge` takes the work into `developer` and writes the root `CHANGELOG.md` and, for a product change,
+  `workspace/CHANGELOG.md`. Other pushes only when the owner asks, each request covering that push only. Only the
+  product is released, through `/caw-merge --main`; the root sections are dated by that release.
 - End with a short report: what changed (commits), what was verified (commands and results), what is left.

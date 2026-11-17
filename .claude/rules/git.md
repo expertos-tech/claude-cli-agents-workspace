@@ -25,10 +25,11 @@
 
 ## Remote
 
-- `developer` is the default branch and the base of every change; `main` moves only by `/caw-merge --main`.
+- `developer` is the default branch and the base of every change; `main` moves only by `/caw-merge --main`, the
+  release of a product version. Maintenance changes alone are never released: they wait on `developer`.
 - The work branch of a clone in `tmp/work/` is pushed at open and after each commit (`/caw-prompt`), so the work is on
-  the remote before the clone is deleted. `/caw-merge` pushes that branch and `developer`: running it is the owner's order.
-  Any other push only when the owner asks; each request covers that push only, never a later one.
+  the remote before the clone is deleted. `/caw-merge` pushes that branch and `developer`: running it is the owner's
+  order. Any other push only when the owner asks; each request covers that push only, never a later one.
 - Never rewrite published history: no force push, no rebase or amend of a pushed commit, no moved or deleted tag.
 - Tags only through `/caw-merge --main`. Never change git config (user, hooks, remotes) unless asked.
 - A work branch (a clone in `tmp/work/`, or a pull request): `<type>/<kebab-description>`; the release clone's is
