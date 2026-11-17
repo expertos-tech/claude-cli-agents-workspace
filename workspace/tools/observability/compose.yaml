@@ -1,5 +1,6 @@
-# Local telemetry stack of the workspace. Run from the workspace root:
-#   docker compose -f tools/observability/compose.yaml up -d
+# Local telemetry stack of the workspace, in the group of every tool (tools/compose.yaml). From the workspace root:
+#   bash scripts/run-tools.sh up observability   (or /run-tools in a session)
+# This file alone (docker compose -f tools/observability/compose.yaml up -d) runs it outside the group, for development.
 # Details in README.md.
 name: observability
 

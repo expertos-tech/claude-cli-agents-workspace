@@ -388,7 +388,7 @@ class ReportTests(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             self.assertEqual(measure.main(argv), 2)
         self.assertIn('observability stack', err.getvalue())
-        self.assertIn('compose.yaml up -d', err.getvalue())
+        self.assertIn('run-tools.sh up observability', err.getvalue())
         self.assertFalse(os.path.exists(self.out))
 
     def test_stack_problems(self):

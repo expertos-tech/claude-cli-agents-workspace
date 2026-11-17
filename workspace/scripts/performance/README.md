@@ -7,7 +7,7 @@ Measures how the workspace behaves in real sessions: how much of Claude's work g
 It needs the observability stack up. Without it the script refuses, with the command that starts it:
 
 ```bash
-docker compose -f tools/observability/compose.yaml up -d
+bash scripts/run-tools.sh up observability   # or /run-tools in a session
 python3 -I -B scripts/performance/measure.py --name after-the-gate
 ```
 

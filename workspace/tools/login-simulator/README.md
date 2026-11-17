@@ -36,7 +36,7 @@ docker compose -f tools/compose.yaml restart login-simulator
 
 The tool's own `compose.yaml` still starts it alone, for development: `LOGIN_SIMULATOR_CONFIG=./config/config.json docker compose -f tools/login-simulator/compose.yaml up -d --build` runs the example (project `login-simulator`, not the group; stop it before `/run-tools`).
 
-An invalid file or an invalid `AVATAR_ORIGIN`: the container does not start and the log (`docker logs login-simulator-login-simulator-1`) names the field and the problem. A code change: `up -d --build` again.
+An invalid file or an invalid `AVATAR_ORIGIN`: the container does not start and the log (`docker compose -f tools/compose.yaml logs login-simulator`) names the field and the problem. A code change: `bash scripts/run-tools.sh up login-simulator` again.
 
 ## Configuration file
 

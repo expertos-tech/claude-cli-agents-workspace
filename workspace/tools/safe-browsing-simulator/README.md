@@ -35,7 +35,7 @@ docker compose -f tools/compose.yaml restart safe-browsing-simulator
 
 The tool's own `compose.yaml` still starts it alone, for development: `SAFE_BROWSING_THREATS=./config/threats.json docker compose -f tools/safe-browsing-simulator/compose.yaml up -d --build` runs the example (project `safe-browsing-simulator`, not the group; stop it before `/run-tools`).
 
-Invalid file: the container does not start and the log (`docker logs safe-browsing-simulator-safe-browsing-simulator-1`) names the field and the problem. A code change: `up -d --build` again. Outside Docker, the server runs with `THREATS_PATH=config/threats.json PORT=28090 node src/main.js`.
+Invalid file: the container does not start and the log (`docker compose -f tools/compose.yaml logs safe-browsing-simulator`) names the field and the problem. A code change: `bash scripts/run-tools.sh up safe-browsing-simulator` again. Outside Docker, the server runs with `THREATS_PATH=config/threats.json PORT=28090 node src/main.js`.
 
 ## How an application uses it
 
