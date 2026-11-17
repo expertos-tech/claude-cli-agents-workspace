@@ -66,3 +66,46 @@ machine and starts the ticked ones.
 | 3. `/run-tools` skill, README and guide | medium | A conversation over a script already tested |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+## Execution — 2026-11-17, merged into developer (this merge)
+
+- **Done:** stage 1, `tools/compose.yaml` including the four container tools in `claude-cli-agents-tools`, the
+  `x-run-tools` blocks, the simulators' configuration from `custom/config/<tool>/`, Azurite's key check in the
+  container, and the move of running tools into the group; stage 2, `scripts/run-tools.sh` and `run-tools.py` with the
+  scenario suite and the unit tests (a7878b7); stage 3, the `/run-tools` skill, the product README, the usage guide
+  and the features page (6afdfa4); the findings of the independent review (17bcacd, dc8a8c2).
+- **Decisions taken while running:** each tool's network gets its own key (Compose refuses a `default` network in
+  more than one included file), with its fixed name kept, so other stacks still attach; Azurite's key check moved from
+  a required Compose variable into the container's entrypoint, because the group loads every tool's file and a
+  missing key would have stopped all of them; the simulators mount their file with a bind that never creates a
+  missing path; the logic lives in `run-tools.py`, called by `run-tools.sh`, like `guard-bash`; the console's state
+  comes from `systemctl --user is-active` and `launchctl print`, not from its port; a move into the group is refused
+  before any change when another stack uses one of the tool's fixed networks (Compose refuses a network another
+  project created), when that network belongs to a third project, or when both the old and the group's volume exist;
+  a copy that fails removes the new volume and starts the old containers again; the volume is copied with the image
+  of the service that mounts it (a distroless image has no `cp`); an old volume left next to the group's is named by
+  `up` and in `list --json` (`old_volumes`); `down` only stops (`docker compose stop`); `measure.py` points to
+  `run-tools.sh up observability`.
+- **Deviations:** none from the business rules.
+- **Acceptance criteria:**
+  - AC-1: proven by a real run on a copy with every name, port, network and image prefixed: the four tools in their
+    old projects, moved by `run-tools.sh up`, then `docker compose -f tools/compose.yaml up -d`: five containers
+    healthy in one project, no old project left. No suite runs Docker.
+  - AC-2: proven (test-run-tools: docker-ce by `docker version` and by the package, Colima on macOS, none).
+  - AC-3: proven (test-run-tools with a fictitious tool; the real run: a missing `custom/config` file listed and `up`
+    refused).
+  - AC-4: proven at script level (rollback tags before the build, the final table of the tools named); the skill's
+    reply is skill text, pending a real session.
+  - AC-5: proven (only the named services reach `docker compose up`; nothing else is stopped).
+  - AC-6: proven (test-run-tools and test_run_tools.py: detection, missing configuration, busy port, rollback tag,
+    `down` without removing a container, volume or image).
+  - RN-8 (the checkboxes) is skill text, pending a real session.
+- **Checks:** `tests/check.sh --base origin/developer --i18n-pending`; test-run-tools (117 checks), test_run_tools.py
+  (62 tests, `run-tools.py` above 99 % of lines and branches), test-check-workspace, test_performance; the real Docker
+  run on the prefixed copy (move with volume copy, both refusals, AC-1, `down`, AC-3), every test resource removed;
+  `docker compose config` of the group and of each tool alone; one independent review (effort high): APPROVED_WITH_CHANGES,
+  4 RECOMMENDED, fixed.
+- **Left:** RN-8 and the skill's reply of AC-4 in a real session; the first `/run-tools` of an installed workspace
+  moves its running tools (a stack attached to `login-simulator` must stop first); the observability smoke test fails
+  its "dashboard behavior" check since 0.1.0 (`python3 -I` cannot import the sibling module), unrelated to this
+  request; translations pending for the release.

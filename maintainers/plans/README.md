@@ -11,7 +11,7 @@ says what must be true when it is done. Read the plan before running its request
 | `normalize-projects.md` | The project analysis and migration, the version marker and the check at every interaction | `requests/done/normalize-projects.md` |
 | `rules-config.md` | `custom/rules-config.json`, `custom/my-rules/`, the mandatory core and `/rules` | `requests/rules.md` |
 | `normalize-rules.md` | Bringing the rules of an older workspace into `custom/my-rules/`, and listing its projects | `requests/normalize-rules.md` |
-| `run-tools.md` | The single compose file of the tools and `/run-tools` | `requests/run-tools.md` |
+| `run-tools.md` | The single compose file of the tools and `/run-tools` | `requests/qa/run-tools.md` |
 | `tools-hub.md` | The tools page, the menu icon and the Workspace area | `requests/tools-hub.md` |
 | `fork-my-rules.md` | Giving own rules back to the project by fork and pull request | `requests/fork-my-rules.md` |
 
