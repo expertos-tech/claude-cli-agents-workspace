@@ -15,7 +15,7 @@ export const messages = {
   'nav.group.main': 'Home',
   'nav.group.docker': 'Docker',
   'nav.group.cluster': 'Cluster',
-  'nav.motion': 'Animate data changes',
+  'nav.motion': 'Animations',
   'nav.theme': 'Theme',
   'nav.theme.system': 'Follow the system',
   'nav.theme.dark': 'Dark',
