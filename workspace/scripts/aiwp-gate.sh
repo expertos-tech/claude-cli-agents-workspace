@@ -33,11 +33,14 @@ gate --merge <work>/<clone> <sha>
       not move: fetches the branch from the remote into the source repo, merge --ff-only, pushes the base, deletes the
       remote work branch (a normalization branch stays on the remote, as its record). The review against the request
       and the human's answers happen between the two phases.
-release <repo> [--pr-if-refused]
+release <repo> [--pr-if-refused] [--tag vX.Y.Z]
       developer -> main of projects/<repo>: pushes the developer commit to main of the remote (a fast-forward), then
       moves the local main ref (the checkout stays on developer). A remote that refuses the push (a protected main)
       leaves main unchanged and fails; with --pr-if-refused it opens a pull request developer -> main instead (gh)
-      and exits 0. Only on the human's request.
+      and exits 0. --tag: after main moved, an annotated tag vX.Y.Z on it, then pushed alone (no remote: local
+      only); a tag of that name on another commit, here or on the remote, fails before main moves (a tag is never
+      moved), on the same commit it is kept; a pull request opened instead leaves it for after the merge. Only on
+      the human's request.
 developer <repo> [--create]
       Brings projects/<repo> to developer, for /normalize-projects: needs a remote (none: fails, the person creates
       the repository first) and a clean checkout; a checkout on another branch is switched only when that branch has
@@ -47,7 +50,7 @@ checkpoint <repo> [--date <yyyy-mm-dd>]
       The return point of /normalize-projects, before any change: on projects/<repo> (clean, on developer, both bases
       updated from the remote), annotated tags ai-workspace-migration/<date>/developer and .../main on their heads,
       then pushed to the remote. A tag that exists on another commit, here or on the remote, is never moved: it
-      fails. The one case where the workspace pushes a tag; only after the person confirms.
+      fails. Only after the person confirms.
 bring <git-url | folder> <path relative to projects/>
       For /normalize-projects --from: clones a project into projects/<path>. A folder (outside the workspace) keeps
       every local branch and tag, its origin becomes the folder's own origin remote (none: no remote, reported), and
@@ -416,35 +419,96 @@ cmd_gate_merge() {
 }
 
 # release: developer -> main. The remote's main moves first, by a push of the developer commit (a fast-forward), and
-# the local main ref only after it, so a remote that refuses (a protected main) leaves both as they were.
+# the local main ref only after it, so a remote that refuses (a protected main) leaves both as they were. With --tag, an
+# annotated tag on the released main, pushed alone; a tag on another commit, here or on the remote, fails before main
+# moves, and a tag is never moved.
 cmd_release() {
-  local src pr=0 dev_sha url
-  src="$(project_repo "${1:-}")"
-  case "${2:-}" in
-    "") ;;
-    --pr-if-refused) pr=1 ;;
-    *) die 2 "unknown option: $2" ;;
-  esac
+  local src repo="${1:-}" pr=0 tag="" tagged=0 dev_sha url remote_tag="" remote_commit="" lines
+  [ $# -eq 0 ] || shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --pr-if-refused)
+        [ "$pr" = 0 ] || die 2 "--pr-if-refused given twice"
+        pr=1
+        ;;
+      --tag)
+        [ "$tagged" = 0 ] || die 2 "--tag given twice"
+        [ $# -ge 2 ] || die 2 "--tag needs a version: --tag vX.Y.Z"
+        tagged=1
+        tag="$2"
+        shift
+        ;;
+      *) die 2 "unknown option: $1" ;;
+    esac
+    shift
+  done
+  [ "$tagged" = 0 ] || [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 2 "--tag must be vX.Y.Z (for example v1.2.0): $tag"
+  src="$(project_repo "$repo")"
   require_clean_on "$src" developer
   git -C "$src" rev-parse -q --verify refs/heads/main >/dev/null || die 1 "${src#"$root"/} has no main"
   sync_branch "$src" developer
   sync_branch "$src" main
   git -C "$src" merge-base --is-ancestor main developer || die 1 "main has commits that are not in developer: tell the human"
   dev_sha="$(git -C "$src" rev-parse refs/heads/developer)"
+  if [ -n "$tag" ]; then
+    # Checked before main moves: a tag on another commit stops the release with nothing changed.
+    if git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+      [ "$(git -C "$src" rev-parse "refs/tags/$tag^{commit}")" = "$dev_sha" ] ||
+        die 1 "$tag exists on another commit; a tag is never moved: main is unchanged, choose another version"
+      [ "$(git -C "$src" cat-file -t "refs/tags/$tag")" = tag ] ||
+        die 1 "$tag exists here as a lightweight tag; a release tag is annotated and never moved: main is unchanged, tell the human"
+    fi
+    if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+      lines="$(timeout 120 git -C "$src" ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")" ||
+        die 1 "could not read the tags of the remote: main is unchanged"
+      remote_tag="$(printf '%s\n' "$lines" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')"
+      remote_commit="$(printf '%s\n' "$lines" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')"
+      [ -n "$remote_commit" ] || remote_commit="$remote_tag"
+      [ -z "$remote_tag" ] || [ "$remote_commit" = "$dev_sha" ] ||
+        die 1 "$tag exists on the remote on another commit; a tag is never moved: main is unchanged, choose another version"
+      if [ -n "$remote_tag" ] && git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+        [ "$(git -C "$src" rev-parse "refs/tags/$tag")" = "$remote_tag" ] ||
+          die 1 "$tag exists here and on the remote as different tags; a tag is never moved: main is unchanged, tell the human"
+      fi
+    fi
+  fi
   if git -C "$src" remote get-url origin >/dev/null 2>&1; then
     if ! timeout 120 git -C "$src" push -q origin "$dev_sha:refs/heads/main"; then
-      [ "$pr" = 1 ] || die 1 "the remote refused the push of main (a protected branch?); main is unchanged. A pull request instead: bash scripts/aiwp-cmds.sh release ${1:-} --pr-if-refused"
+      [ "$pr" = 1 ] || die 1 "the remote refused the push of main (a protected branch?); main is unchanged. A pull request instead: bash scripts/aiwp-cmds.sh release $repo --pr-if-refused${tag:+ --tag $tag}"
       echo "the remote refused the push of main; main is unchanged: opening a pull request developer -> main"
       url="$(cd "$src" && timeout 120 "${AIWP_GH:-gh}" pr create --base main --head developer \
         --title "Release developer into main" \
         --body "Release of developer ($(git -C "$src" rev-parse --short "$dev_sha")) into main, opened by aiwp-cmds.sh release because the remote refused the direct push of main.")" ||
         die 1 "the pull request could not be opened: open it on the git server (developer -> main)"
       echo "pull request: $url"
+      [ -z "$tag" ] || echo "no tag yet: $tag waits for the merge of the pull request; after it, with main equal to developer: bash scripts/aiwp-cmds.sh release $repo --tag $tag"
       return 0
     fi
   fi
   git -C "$src" fetch -q . developer:main || die 1 "main cannot fast-forward to developer"
   echo "released: main of ${src#"$root"/} at $(git -C "$src" rev-parse --short main)"
+  [ -n "$tag" ] || return 0
+  if ! git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    if [ -n "$remote_tag" ]; then
+      # The remote already holds the tag on this commit: take that one, never a second tag object of the same name.
+      timeout 120 git -C "$src" fetch -q origin "refs/tags/$tag:refs/tags/$tag" ||
+        die 1 "main was released; $tag is on the remote but could not be fetched: git -C ${src#"$root"/} fetch origin refs/tags/$tag:refs/tags/$tag"
+    else
+      git -C "$src" tag -a "$tag" -m "$tag" "$dev_sha" || die 1 "main was released, but the tag $tag could not be created"
+    fi
+  fi
+  echo "tagged: $tag at $(git -C "$src" rev-parse --short "refs/tags/$tag^{commit}")"
+  if ! git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    echo "no remote: $tag is local only"
+    return 0
+  fi
+  if [ -n "$remote_tag" ]; then
+    echo "pushed: $tag (already on the remote)"
+    return 0
+  fi
+  timeout 120 git -C "$src" push -q origin "refs/tags/$tag:refs/tags/$tag" ||
+    die 1 "main was released, but the push of $tag failed: the tag is local only. Push it: git -C ${src#"$root"/} push origin refs/tags/$tag"
+  echo "pushed: $tag"
 }
 
 # Fails unless the repo has an origin remote.

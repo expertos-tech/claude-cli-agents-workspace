@@ -918,7 +918,10 @@ def aiwp_verdict(argv):
     words = argv[1:]
     sub = words[0] if words else ''
     if sub == 'release':
-        return 'ask', 'aiwp-cmds.sh release takes developer into main and pushes main to the remote'
+        return 'ask', (
+            'aiwp-cmds.sh release takes developer into main and pushes main to the remote; with --tag it also creates '
+            'and pushes a release tag'
+        )
     if sub == 'checkpoint':
         return 'ask', (
             'aiwp-cmds.sh checkpoint creates the checkpoint tags of /normalize-projects on developer and main and '

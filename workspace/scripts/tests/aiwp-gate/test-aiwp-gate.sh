@@ -798,6 +798,167 @@ test_release_refused_by_a_protected_main_leaves_main_and_opens_a_pull_request() 
   rc_is 2
 }
 
+# A new commit on developer of projects/app, on the remote too, ready for a release.
+developer_ahead() {
+  printf '%s\n' "$1" >"$R/projects/app/$1.txt"
+  git -C "$R/projects/app" add -A
+  git -C "$R/projects/app" commit -q -m "add $1"
+  git -C "$R/projects/app" push -q origin developer
+}
+local_tag() { git -C "$R/projects/app" rev-parse -q --verify "refs/tags/$1" 2>/dev/null || echo none; }
+# A tag on the remote at a commit, pushed from a second clone, as another person would.
+remote_tag_at() { # tag, commit
+  rm -rf "$BASE/other"
+  git clone -q "$REMOTE" "$BASE/other"
+  git -C "$BASE/other" tag -a "$1" -m "$1" "$2"
+  git -C "$BASE/other" push -q origin "refs/tags/$1"
+}
+
+test_release_tag_tags_the_released_main_and_pushes_only_that_tag() {
+  fixture
+  developer_ahead one
+  local dev
+  dev="$(git -C "$R/projects/app" rev-parse developer)"
+  git -C "$R/projects/app" tag stray
+  gate release app --tag v1.0.0
+  rc_is 0
+  has "released: main of projects/app"
+  has "tagged: v1.0.0 at $(git -C "$R/projects/app" rev-parse --short "$dev")"
+  has "pushed: v1.0.0"
+  eq "remote main" "$dev" "$(remote_sha main)"
+  eq "local main" "$dev" "$(git -C "$R/projects/app" rev-parse main)"
+  eq "remote tag commit" "$dev" "$(git -C "$REMOTE" rev-parse -q --verify 'refs/tags/v1.0.0^{commit}')"
+  eq "annotated" tag "$(git -C "$REMOTE" cat-file -t refs/tags/v1.0.0)"
+  eq "same tag here and there" "$(local_tag v1.0.0)" "$(remote_tag v1.0.0)"
+  eq "only that tag pushed" none "$(remote_tag stray)"
+  local before
+  before="$(remote_tag v1.0.0)"
+  gate release app --tag v1.0.0 --pr-if-refused
+  rc_is 0
+  has "pushed: v1.0.0 (already on the remote)"
+  eq "rerun keeps the tag" "$before" "$(remote_tag v1.0.0)"
+  eq "rerun keeps the local tag" "$before" "$(local_tag v1.0.0)"
+  # The tag only on the remote, on the released commit: the remote's tag object is taken, never a second one.
+  git -C "$R/projects/app" tag -d v1.0.0 >/dev/null
+  gate release app --tag v1.0.0
+  rc_is 0
+  eq "fetched the remote's tag" "$before" "$(local_tag v1.0.0)"
+}
+
+test_release_tag_on_another_commit_fails_before_main_moves() {
+  fixture
+  local main0
+  main0="$(git -C "$R/projects/app" rev-parse main)"
+  git -C "$R/projects/app" tag -a v1.0.0 -m v1.0.0 "$main0"
+  remote_tag_at v2.0.0 "$main0"
+  developer_ahead two
+  gate release app --tag v1.0.0
+  rc_is 1
+  has "v1.0.0 exists on another commit; a tag is never moved"
+  eq "local main unchanged" "$main0" "$(git -C "$R/projects/app" rev-parse main)"
+  eq "remote main unchanged" "$main0" "$(remote_sha main)"
+  eq "not pushed" none "$(remote_tag v1.0.0)"
+  gate release app --tag v2.0.0
+  rc_is 1
+  has "v2.0.0 exists on the remote on another commit"
+  eq "local main still unchanged" "$main0" "$(git -C "$R/projects/app" rev-parse main)"
+  eq "remote main still unchanged" "$main0" "$(remote_sha main)"
+  eq "no local v2.0.0" none "$(local_tag v2.0.0)"
+  # The same name here and on the remote as two different tags on the released commit: refused, nothing moves.
+  git -C "$R/projects/app" tag -a v3.0.0 -m mine developer
+  remote_tag_at v3.0.0 "$(git -C "$R/projects/app" rev-parse developer)"
+  gate release app --tag v3.0.0
+  rc_is 1
+  has "different tags"
+  eq "remote main unchanged by v3.0.0" "$main0" "$(remote_sha main)"
+  # A lightweight tag of the same name on the released commit: refused, never pushed as the release tag.
+  git -C "$R/projects/app" tag v4.0.0 developer
+  gate release app --tag v4.0.0
+  rc_is 1
+  has "lightweight tag"
+  eq "remote main unchanged by v4.0.0" "$main0" "$(remote_sha main)"
+  eq "v4.0.0 not pushed" none "$(remote_tag v4.0.0)"
+}
+
+test_release_tag_needs_a_valid_version_before_anything() {
+  fixture
+  developer_ahead three
+  local main0
+  main0="$(git -C "$R/projects/app" rev-parse main)"
+  for bad in 1.0.0 v1.0 v1.0.0-rc1 "v1.0.0 " "" vX.Y.Z; do
+    gate release app --tag "$bad"
+    rc_is 2
+  done
+  has "--tag must be vX.Y.Z"
+  gate release missing-repo --tag 1.0
+  rc_is 2
+  gate release app --tag
+  rc_is 2
+  gate release app --tag v1.0.0 --tag v1.0.1
+  rc_is 2
+  gate release app --pr-if-refused --pr-if-refused
+  rc_is 2
+  gate release app --tag v1.0.0 --bogus
+  rc_is 2
+  eq "local main unchanged" "$main0" "$(git -C "$R/projects/app" rev-parse main)"
+  eq "remote main unchanged" "$main0" "$(remote_sha main)"
+  eq "no tag" none "$(local_tag v1.0.0)"
+}
+
+test_release_tag_waits_for_the_pull_request() {
+  fixture
+  developer_ahead four
+  protect_main
+  local main0
+  main0="$(git -C "$R/projects/app" rev-parse main)"
+  gate release app --tag v1.0.0
+  rc_is 1
+  has "release app --pr-if-refused --tag v1.0.0"
+  printf '#!/usr/bin/env bash\necho https://example.com/acme/app/pull/2\n' >"$BASE/gh.sh"
+  chmod +x "$BASE/gh.sh"
+  AIWP_GH="$BASE/gh.sh" gate release app --tag v1.0.0 --pr-if-refused
+  rc_is 0
+  has "pull request: https://example.com/acme/app/pull/2"
+  has "no tag yet: v1.0.0 waits for the merge of the pull request"
+  has "bash scripts/aiwp-cmds.sh release app --tag v1.0.0"
+  hasnt_out "tagged:"
+  eq "no local tag" none "$(local_tag v1.0.0)"
+  eq "no remote tag" none "$(remote_tag v1.0.0)"
+  eq "remote main unchanged" "$main0" "$(remote_sha main)"
+}
+
+test_release_tag_without_a_remote_is_local_and_a_refused_tag_push_says_how() {
+  fixture
+  developer_ahead five
+  local dev
+  dev="$(git -C "$R/projects/app" rev-parse developer)"
+  # The remote refuses tags only: main is released, the tag stays local, and the message gives the push command.
+  # The $1 belongs to the hook: SC2016 does not apply.
+  # shellcheck disable=SC2016
+  printf '#!/bin/sh\ncase "$1" in refs/tags/*) echo "no tags here" >&2; exit 1 ;; esac\nexit 0\n' >"$REMOTE/hooks/update"
+  chmod +x "$REMOTE/hooks/update"
+  gate release app --tag v1.0.0
+  rc_is 1
+  has "main was released, but the push of v1.0.0 failed: the tag is local only"
+  has "git -C projects/app push origin refs/tags/v1.0.0"
+  eq "remote main released" "$dev" "$(remote_sha main)"
+  eq "local tag" "$dev" "$(git -C "$R/projects/app" rev-parse -q --verify 'refs/tags/v1.0.0^{commit}')"
+  eq "no remote tag" none "$(remote_tag v1.0.0)"
+  git -C "$R/projects/app" remote remove origin
+  printf 'six\n' >"$R/projects/app/six.txt"
+  git -C "$R/projects/app" add -A
+  git -C "$R/projects/app" commit -q -m six
+  dev="$(git -C "$R/projects/app" rev-parse developer)"
+  gate release app --tag v1.1.0
+  rc_is 0
+  has "tagged: v1.1.0"
+  has "no remote: v1.1.0 is local only"
+  hasnt_out "pushed:"
+  eq "local main" "$dev" "$(git -C "$R/projects/app" rev-parse main)"
+  eq "annotated local tag" tag "$(git -C "$R/projects/app" cat-file -t refs/tags/v1.1.0)"
+  eq "on the released main" "$dev" "$(git -C "$R/projects/app" rev-parse 'refs/tags/v1.1.0^{commit}')"
+}
+
 test_developer_switches_only_safely_and_creates_only_when_asked() {
   fixture
   git -C "$R/projects/app" switch -q main
@@ -908,6 +1069,7 @@ test_usage() {
   gate --help
   rc_is 0
   has "checkpoint <repo>"
+  has "release <repo> [--pr-if-refused] [--tag vX.Y.Z]"
   gate bring onlyone
   rc_is 2
   gate developer app --bogus

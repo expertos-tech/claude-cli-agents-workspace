@@ -328,6 +328,8 @@ class WorkspaceCommandTests(unittest.TestCase):
             ('bash scripts/aiwp-cmds.sh close w --discard', 'close --discard'),
             ('bash scripts/heavy-run.sh -- bash scripts/aiwp-cmds.sh release', 'release'),
             ('bash scripts/aiwp-cmds.sh release app --pr-if-refused', 'release'),
+            ('bash scripts/aiwp-cmds.sh release app --tag v1.2.0', 'release'),
+            ('bash scripts/aiwp-cmds.sh release app --pr-if-refused --tag v1.2.0', 'release'),
             ('bash scripts/aiwp-cmds.sh checkpoint app', 'checkpoint'),
             ('bash scripts/aiwp-gate.sh checkpoint app --date 2026-11-16', 'checkpoint'),
             ('bash scripts/aiwp-cmds.sh developer app --create', 'developer --create'),
@@ -336,6 +338,10 @@ class WorkspaceCommandTests(unittest.TestCase):
             result = decision(command)
             self.assertEqual(result and result['permissionDecision'], 'ask', command)
             self.assertIn('aiwp-cmds.sh ' + text, result['permissionDecisionReason'])
+
+    def test_release_says_it_may_push_a_release_tag(self):
+        result = decision('bash scripts/aiwp-cmds.sh release app --tag v1.2.0')
+        self.assertIn('pushes a release tag', result['permissionDecisionReason'])
 
     def test_other_workspace_commands_are_silent(self):
         for command in (
