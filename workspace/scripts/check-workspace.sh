@@ -516,7 +516,7 @@ suite_inputs() {
     tests/check-workspace/test-check-workspace.sh) echo "check-workspace.sh check-ledger.sh validate.sh lib/env.sh tests/check-workspace" ;;
     tests/guard-subagent-model/test-guard-subagent-model.sh) echo "guard-subagent-model.sh guard-subagent-model.py tests/guard-subagent-model ../rules/agents/settings.json" ;;
     tests/guard-bash/test-guard-bash.sh) echo "guard-bash.sh guard-bash.py aiwp.sh tests/guard-bash tests/test_guard_bash.py ../rules/agents/settings.json" ;;
-    tests/setup-claude/test-setup-claude.sh) echo "setup-claude.sh tests/setup-claude" ;;
+    tests/setup-claude/test-setup-claude.sh) echo "setup-claude.sh rules-config.py tests/setup-claude ../rules/manifest.json" ;;
     tests/heavy-run/test-heavy-run.sh) echo "heavy-run.sh tests/heavy-run" ;;
     tests/single-agent/test-single-agent.sh) echo "single-agent.sh single-claude.sh history.sh lib/projects.sh tests/single-agent tests/lib ../rules/single-agent ../rules/agents/settings.json" ;;
     tests/aiwp-cmds/test-aiwp-cmds.sh) echo "aiwp-cmds.sh lib/projects.sh tests/aiwp-cmds" ;;

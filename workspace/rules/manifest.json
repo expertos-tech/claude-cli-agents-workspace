@@ -1,0 +1,10 @@
+{
+  "about": "The mandatory core: what the workspace needs to work and stay safe. custom/rules-config.json can neither turn these off nor replace them (scripts/rules-config.py keeps them and warns). The hooks, the deny rules and the scripts are not configurable at all; they are listed so the whole mandatory core reads in one place.",
+  "files": ["AGENTS.md"],
+  "rules": ["rules.md", "git.md", "security.md"],
+  "skills": ["merge", "commit", "request"],
+  "agents": ["reviewer", "verifier"],
+  "hooks": ["guard-bash", "guard-subagent-model", "Stop", "session-title", "prompt-log"],
+  "permissions": ["deny"],
+  "scripts": ["aiwp-cmds.sh", "aiwp-gate.sh", "setup-claude.sh"]
+}

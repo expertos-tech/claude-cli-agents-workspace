@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Generates the local .claude/ folder from the versioned sources in rules/agents/, rules/skills/, rules/*.md and
-# custom/rules/*.md.
+# AGENTS.md, with the rules configuration of the custom layer (custom/rules-config.json, custom/my-rules/) applied by
+# scripts/rules-config.py.
 set -euo pipefail
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/setup-claude.sh [--check] [--quiet] [--custom-repo <url>] [--root <dir>] [--help]
 
-Creates or syncs .claude/ (git-ignored) from rules/ and custom/rules/ (versioned):
+Creates or syncs .claude/ (git-ignored) from rules/ and the custom layer (versioned):
+  AGENTS.md                  -> .claude/AGENTS.md     (the effective one, which CLAUDE.md imports: a rule turned off
+                                is no longer named, a replaced one points to its own file)
   rules/agents/*.md          -> .claude/agents/*.md   (stale agents removed)
   rules/agents/settings.json -> .claude/settings.json (plus, in its claudeMdExcludes, the absolute path of each
                                 line of custom/claude-md-excludes.txt: instruction files a team keeps in a project,
@@ -17,8 +20,13 @@ Creates or syncs .claude/ (git-ignored) from rules/ and custom/rules/ (versioned
   rules/skills/<name>/**     -> .claude/skills/<name>/** (stale files removed)
   rules/*.md with `paths:`   -> .claude/rules/*.md    (path-scoped rules; a rule that loses its
                                 front matter or is deleted makes its copy stale)
-  custom/rules/*.md          -> .claude/rules/custom-*.md (every one: with `paths:` it loads by path,
+  custom/my-rules/*.md       -> .claude/rules/custom-*.md (every one: with `paths:` it loads by path,
                                 without it loads in every session; a deleted source makes its copy stale)
+  custom/my-rules/skills/<name>/ -> .claude/skills/custom-<name>/
+  custom/my-rules/agents/<name>.md -> .claude/agents/custom-<name>.md (name: set to custom-<name>)
+custom/rules-config.json turns core rules, skills and agents off (core.<kind>.exclude) and replaces a core rule
+with an own one (replace); the mandatory core of rules/manifest.json always loads, with a warning. A wrong
+configuration never fails the setup: it warns and the rest loads (python3 -I -B scripts/rules-config.py --help).
 custom/ is the custom layer: a git repo of its own, ignored by the workspace repo, with what belongs to
 one company and its projects. Name no rule of rules/ custom-*.md: that prefix is the custom layer's.
 Personal overrides belong in .claude/settings.local.json (never touched).
@@ -103,6 +111,23 @@ setup_custom_repo() {
 
 setup_custom_repo
 
+# The rules configuration: scripts/rules-config.py writes into a staging folder the effective AGENTS.md, the own
+# items of custom/my-rules/ (custom-*) and the list of core items that must not load. When it cannot run, the whole
+# core loads, AGENTS.md as it is, and no own item.
+stage="$(mktemp -d)"
+trap 'rm -rf "$stage"' EXIT
+if ! python3 -I -B "$(dirname "${BASH_SOURCE[0]}")/rules-config.py" --root "$root" build --out "$stage"; then
+  echo "warning: scripts/rules-config.py failed: the whole core loads, without the own rules of custom/my-rules/" >&2
+  rm -rf "${stage:?}"/* 2>/dev/null || true
+  [ ! -f "$root/AGENTS.md" ] || cp "$root/AGENTS.md" "$stage/AGENTS.md"
+  : >"$stage/skip"
+fi
+[ -f "$stage/skip" ] || : >"$stage/skip"
+
+# Succeeds when the core item $2 of kind $1 (rules, skills, agents) must not load.
+skipped() {
+  grep -qxF -- "$1 $2" "$stage/skip"
+}
 
 # Removes a stale generated file; where deletion is not allowed (Cowork folders), moves it to .claude/.removed/.
 remove_stale() {
@@ -136,15 +161,38 @@ sync_file() {
   fi
 }
 
+if [ -f "$stage/AGENTS.md" ]; then
+  sync_file "$stage/AGENTS.md" "$dst/AGENTS.md"
+fi
+
 for f in "$src"/*.md; do
+  [ -e "$f" ] || continue
+  name="$(basename "$f")"
+  case "$name" in
+    custom-*) echo "warning: rules/agents/$name not copied: the custom- prefix belongs to the custom layer" >&2; continue ;;
+  esac
+  skipped agents "${name%.md}" && continue
+  sync_file "$f" "$dst/agents/$name"
+done
+
+for f in "$stage/agents"/*.md; do
   [ -e "$f" ] || continue
   sync_file "$f" "$dst/agents/$(basename "$f")"
 done
 
+# Succeeds when the generated agent file name $1 has a source: an own agent in the staging folder, or a core agent
+# that loads.
+agent_has_source() {
+  case "$1" in
+    custom-*) [ -f "$stage/agents/$1" ] ;;
+    *) [ -f "$src/$1" ] && ! skipped agents "${1%.md}" ;;
+  esac
+}
+
 if [ -d "$dst/agents" ]; then
   for f in "$dst/agents"/*.md; do
     [ -e "$f" ] || continue
-    if [ ! -f "$src/$(basename "$f")" ]; then
+    if ! agent_has_source "$(basename "$f")"; then
       drift=1
       if [ "$check" -eq 1 ]; then
         echo "stale: ${f#"$root"/}"
@@ -160,13 +208,33 @@ skills_dst="$dst/skills"
 
 if [ -d "$skills_src" ]; then
   while IFS= read -r f; do
-    sync_file "$f" "$skills_dst/${f#"$skills_src"/}"
+    rel="${f#"$skills_src"/}"
+    case "$rel" in
+      custom-*) echo "warning: rules/skills/$rel not copied: the custom- prefix belongs to the custom layer" >&2; continue ;;
+    esac
+    skipped skills "${rel%%/*}" && continue
+    sync_file "$f" "$skills_dst/$rel"
   done < <(find "$skills_src" -type f ! -name '.DS_Store' | sort)
 fi
 
+if [ -d "$stage/skills" ]; then
+  while IFS= read -r f; do
+    sync_file "$f" "$skills_dst/${f#"$stage/skills"/}"
+  done < <(find "$stage/skills" -type f | sort)
+fi
+
+# Succeeds when the generated skill file $1 (relative to .claude/skills/) has a source: an own skill in the staging
+# folder, or a core skill that loads.
+skill_has_source() {
+  case "$1" in
+    custom-*) [ -f "$stage/skills/$1" ] ;;
+    *) [ -f "$skills_src/$1" ] && ! skipped skills "${1%%/*}" ;;
+  esac
+}
+
 if [ -d "$skills_dst" ]; then
   while IFS= read -r f; do
-    if [ ! -f "$skills_src/${f#"$skills_dst"/}" ]; then
+    if ! skill_has_source "${f#"$skills_dst"/}"; then
       drift=1
       if [ "$check" -eq 1 ]; then
         echo "stale: ${f#"$root"/}"
@@ -205,6 +273,7 @@ for f in "$rules_src"/*.md; do
     custom-*) echo "warning: rules/$(basename "$f") not copied: the custom- prefix belongs to the custom layer" >&2; continue ;;
   esac
   has_paths_front_matter "$f" || continue
+  skipped rules "$(basename "$f")" && continue
   sync_file "$f" "$rules_dst/$(basename "$f")"
 done
 
@@ -212,7 +281,8 @@ if [ -d "$rules_dst" ]; then
   for f in "$rules_dst"/*.md; do
     [ -e "$f" ] || continue
     case "$(basename "$f")" in custom-*) continue ;; esac
-    if [ ! -f "$rules_src/$(basename "$f")" ] || ! has_paths_front_matter "$rules_src/$(basename "$f")"; then
+    if [ ! -f "$rules_src/$(basename "$f")" ] || ! has_paths_front_matter "$rules_src/$(basename "$f")" ||
+      skipped rules "$(basename "$f")"; then
       drift=1
       if [ "$check" -eq 1 ]; then
         echo "stale: ${f#"$root"/}"
@@ -223,23 +293,17 @@ if [ -d "$rules_dst" ]; then
   done
 fi
 
-# The custom layer's rules: every custom/rules/<name>.md becomes .claude/rules/custom-<name>.md.
-custom_rules_src="$root/custom/rules"
-
-for f in "$custom_rules_src"/*.md; do
-  [ -e "$f" ] || [ -L "$f" ] || continue
-  # Only a regular file: a folder would stop the run, and a link could bring a file from outside into every session.
-  if [ ! -f "$f" ] || [ -L "$f" ]; then
-    echo "warning: custom/rules/$(basename "$f") skipped: not a regular file" >&2
-    continue
-  fi
-  sync_file "$f" "$rules_dst/custom-$(basename "$f")"
+# The custom layer's rules, from the staging folder: every own rule of custom/my-rules/<name>.md is
+# .claude/rules/custom-<name>.md there, and so is a replacement of a core rule that loads by path.
+for f in "$stage/rules"/custom-*.md; do
+  [ -e "$f" ] || continue
+  sync_file "$f" "$rules_dst/$(basename "$f")"
 done
 
 for f in "$rules_dst"/custom-*.md; do
   [ -e "$f" ] || continue
   name="$(basename "$f")"
-  if [ ! -f "$custom_rules_src/${name#custom-}" ]; then
+  if [ ! -f "$stage/rules/$name" ]; then
     drift=1
     if [ "$check" -eq 1 ]; then
       echo "stale: ${f#"$root"/}"
