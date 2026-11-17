@@ -368,7 +368,9 @@ cmd_open() {
     git -C "$clone" config aiwp.branch "$branch"
     git -C "$clone" config aiwp.base "$base"
     [ "$from_main" = 0 ] || git -C "$clone" config aiwp.hotfix 1
-    start="$(git -C "$src" rev-parse "refs/heads/$base")"
+    # The local base may be missing (a repo cloned with developer as its default branch has no local main): then only
+    # the remote gives the start.
+    start="$(git -C "$src" rev-parse -q --verify "refs/heads/$base" 2>/dev/null || true)"
     if [ -n "$url" ]; then
       git -C "$clone" remote set-url origin "$url"
       # The tracking refs of a local clone are the branches of projects/<repo>, not of the remote: drop them, so that
@@ -388,6 +390,11 @@ cmd_open() {
       fi
     else
       echo "attention: $repo has no remote; the branch is pushed to projects/$repo itself, not off the machine"
+    fi
+    if [ -z "$start" ]; then
+      rm -rf "${clone:?}"
+      rmdir "$work_root/$work" 2>/dev/null || true
+      die 1 "$repo has no $base to start from, here or on the remote; nothing was created for $repo"
     fi
     [ "$from_main" = 0 ] || echo "hotfix: $branch starts from main ($(git -C "$clone" rev-parse --short "$start")); it reaches main only by the gate and bash scripts/aiwp-cmds.sh hotfix"
     if git -C "$clone" ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then

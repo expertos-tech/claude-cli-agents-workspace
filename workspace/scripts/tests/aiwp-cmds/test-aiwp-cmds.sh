@@ -553,6 +553,21 @@ test_open_from_main_starts_from_the_remote_main() {
   has "pushed: fix/session-expiry"
 }
 
+# Regression: projects/<repo> cloned with developer as its default branch has no local main; open --from-main read
+# refs/heads/main, exited 128 and left a half-made clone behind.
+test_open_from_main_without_a_local_main() {
+  fixture
+  local hw="2026-11-17-hotfix-no-local-main" c
+  git -C "$R/projects/app" branch -q -D main
+  run open "$hw" app --from-main
+  rc_is 0
+  has "pushed: fix/no-local-main"
+  c="$R/tmp/work/$hw/app"
+  eq "branch" fix/no-local-main "$(git -C "$c" symbolic-ref --short HEAD)"
+  eq "starts at the remote main" "$(remote_sha main)" "$(git -C "$c" rev-parse HEAD)"
+  eq "projects/app still has no local main" "" "$(git -C "$R/projects/app" branch --list main)"
+}
+
 # AC-8: a repo with no main, or with no developer, stops the hotfix with a warning, and nothing is created for any repo.
 test_open_from_main_refuses_a_repo_without_main_or_developer() {
   fixture
