@@ -19,6 +19,10 @@ Once per gate, between its two phases (`rules/git.md` "Gate", `/merge`), on ever
 
 - The reviewer never edits, and never re-runs a check that passed on the tree it reviews.
 
+## Release
+
+`/merge --main` ends with a stronger final review (`rules/skills/merge/SKILL.md` "Release" step 3), on everything since the last release, in two rounds: **what enters and what leaves** (effort `high`: the inventory of what was added, changed and removed, each traced to its request; regressions, so nothing that works is removed without a request; intent, so each change does what was asked and no more; the CHANGELOG) and a **general** reading of the whole tree (effort `medium`: contradictions, dead references, leftovers). UNEXPLAINED removals and regressions are BLOCKERs.
+
 ## Findings
 
 - BLOCKER: correctness, security, data loss, a broken or unproven acceptance criterion, a failing test, a weaker gate or hook. Fix it in the clone and run the gate again from phase 1.

@@ -106,7 +106,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | Command | Does |
 | --- | --- |
 | `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to the project's `developer`, through the gate, writing the `CHANGELOG.md` |
-| `/merge --main <repo>` | The release: a release clone, a full check in a clean context, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
+| `/merge --main <repo>` | The release: a release clone, the full check, the final review (what enters and what leaves, then general), the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |

@@ -162,7 +162,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | Command | Does |
 | --- | --- |
 | `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to `developer`, through the gate, writing the `CHANGELOG.md` |
-| `/merge --main <repo>` | The release: a release clone `fix/release-vX-Y-Z`, a full check in a clean context, fixes, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
+| `/merge --main <repo>` | The release: a release clone `fix/release-vX-Y-Z`, the full check, the final review (what enters and what leaves, then general), fixes, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
