@@ -458,6 +458,10 @@ EOF
 STORE_KEY=k run up acme-store
 ok "$rc" "already in the group, old volume kept: up goes on"
 ! logged "^docker (run|volume create)"; ok $? "already in the group: nothing copied again"
+has "old volume kept: acme-store_data (not copied: the group already has acme-tools_data"
+ok $? "already in the group: the old volume left behind is named (regression: it was skipped silently)"
+run list --json
+[ "$(field acme-store old_volumes)" = '["acme-store_data"]' ]; ok $? "list: the old volume next to the group's"
 
 # Compose up failing: exit 1 and the way back.
 fresh upfail
@@ -532,5 +536,26 @@ ok $? "real group file: the group and its four tools"
 for t in observability login-simulator safe-browsing-simulator azurite-console; do
   grep -q '^    x-run-tools:' "$repo/tools/$t/compose.yaml"; ok $? "real $t: has an x-run-tools block"
 done
+for t in login-simulator safe-browsing-simulator; do
+  grep -q 'create_host_path: false' "$repo/tools/$t/compose.yaml"; ok $? "real $t: the configuration bind never creates a path"
+done
+
+# The Azurite key check of the real compose file: its entrypoint, run with sh and env in place of Azurite.
+entry="$(python3 -I -c 'import json, sys
+for line in open(sys.argv[1], encoding="utf-8"):
+    if line.strip().startswith("entrypoint:"):
+        print(json.loads(line.split(":", 1)[1])[2].replace("$$", "$"))
+        break' "$repo/tools/azurite-console/compose.yaml")"
+[ -n "$entry" ]; ok $? "real azurite: the entrypoint script is read"
+rc=0
+out="$(AZURITE_ACCOUNT_KEY='' sh -c "$entry" azurite env 2>&1)" || rc=$?
+[ "$rc" -eq 1 ]; ok $? "azurite without a key: exit 1, Azurite never runs"
+has "set AZURITE_ACCOUNT_KEY in custom/env/azurite-console.env"; ok $? "azurite without a key: says where to set it"
+! has "AZURITE_ACCOUNTS="; ok $? "azurite without a key: no account configured"
+rc=0
+out="$(AZURITE_ACCOUNT_KEY=acme-key sh -c "$entry" azurite env 2>&1)" || rc=$?
+ok "$rc" "azurite with a key: runs the command"
+printf '%s\n' "$out" | grep -qx 'AZURITE_ACCOUNTS=devstoreaccount1:acme-key'; ok $? "azurite with a key: the account uses it"
+! printf '%s\n' "$out" | grep -q '^AZURITE_ACCOUNT_KEY='; ok $? "azurite with a key: the key variable is not passed on"
 
 echo "suite ok: run-tools ($passed checks)"

@@ -21,9 +21,10 @@ compose file, never read or print a file of `custom/env/`, and never run `docker
 
    Each option: the label is the title; the description is the URL and the state in plain words: "already up",
    "stopped", "not installed: /run-tools installs it", "runs in its old project: starting moves it into the group",
-   and each line of `missing` ("configuration missing: ...", "port ... busy: ..."). A question takes 2 to 4 options:
-   a kind with one tool joins the other question when it fits; more than 4 tools of a kind split into more questions
-   (at most 4 questions, 16 tools); a tool left out is named in the reply. No tool at all: say so and stop.
+   each line of `missing` ("configuration missing: ...", "port ... busy: ...") and each of `old_volumes` ("old volume
+   kept: ..."). A question takes 2 to 4 options: a kind with one tool joins the other question when it fits; more than
+   4 tools of a kind split into more questions (at most 4 questions, 16 tools); a tool left out is named in the reply.
+   No tool at all: say so and stop.
 3. Nothing ticked: say that nothing was started and stop. Unticking a tool that is up stops nothing.
 4. Run `bash scripts/run-tools.sh up <ids ticked>`. A first build or a console installation can pass 3 minutes: run it
    in the background and say so.
@@ -32,9 +33,10 @@ compose file, never read or print a file of `custom/env/`, and never run `docker
    - each `refused:` line with its fix: a missing `custom/config/<tool>/...` file (the tool's README says what goes in
      it), a missing variable (`/local-env tools/<tool>`, then the person fills the value in an editor), a busy port
      (what holds it), a network another stack uses (stop that stack, then `/run-tools` again);
-   - each `old volume kept: <name>` line: the data is already in the group's volume. Ask, in its own question, whether
-     to delete the old one, "Keep" first. Only on an explicit "Delete" run `docker volume rm <name>`, one volume per
-     command; the guard asks again before it runs.
+   - each `old volume kept: <name> (<note>)` line: the note says whether its data was copied to the group's volume or
+     not (the group already had one: both may hold data). Ask, in its own question, whether to delete the old one,
+     "Keep" first. Only on an explicit "Delete" run `docker volume rm <name>`, one volume per command; the guard asks
+     again before it runs.
 
 ## Stop (`--down`)
 

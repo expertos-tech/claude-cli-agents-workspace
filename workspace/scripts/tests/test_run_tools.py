@@ -655,6 +655,20 @@ class ListTests(RunToolsTestCase):
         self.assertIn('| acme-metrics | compose | up | http://localhost:2 | runs in the old project acme-metrics', out)
         self.assertIn('| acme-web | compose | stopped |', out)
 
+    def test_list_names_an_old_volume_only_once_the_tool_is_in_the_group(self):
+        """The old project's volume is data the group does not use: listed in the group, never while the tool still
+        runs in its old project (there it is the live volume)."""
+        self.fake.volumes = {'acme-store_data'}
+        _, out, _ = self.quiet(rt.cmd_list, self.root, True)
+        tools = {tool['id']: tool for tool in json.loads(out)['tools']}
+        self.assertEqual(tools['acme-store']['old_volumes'], ['acme-store_data'])
+        _, out, _ = self.quiet(rt.cmd_list, self.root, False)
+        self.assertIn('old volume kept: acme-store_data', out)
+        self.fake.containers = [container('o1', 'acme-store', 'store', port=STORE_PORT)]
+        _, out, _ = self.quiet(rt.cmd_list, self.root, True)
+        tools = {tool['id']: tool for tool in json.loads(out)['tools']}
+        self.assertEqual(tools['acme-store']['old_volumes'], [])
+
     def test_pick(self):
         tools = [{'id': 'a'}, {'id': 'b'}]
         self.assertEqual(rt.pick(tools, ['b', 'a', 'b']), [{'id': 'b'}, {'id': 'a'}])
@@ -794,7 +808,7 @@ class MoveTests(RunToolsTestCase):
         store['networks'] = [{'key': 'n', 'name': 'acme-store-net', 'fixed': True}]
         self.network('acme-store-net', 'acme-store', ('o1', 'x'))
         kept, out, _ = self.quiet(rt.move_tool, self.root, store, GROUP)
-        self.assertEqual(kept, ['acme-store_data'])
+        self.assertEqual(kept, [('acme-store_data', 'its data is in the group now')])
         self.assertIn('moving acme-store from project acme-store to acme-tools', out)
         self.assertIn('copied: acme-store_data -> acme-tools_data', out)
         self.assertTrue(self.fake.called('^docker stop -t 10 o2$'))
@@ -808,11 +822,15 @@ class MoveTests(RunToolsTestCase):
         self.assertTrue(self.fake.called('^docker network rm acme-store-net$'))
 
     def test_move_tool_skips_volumes_absent_or_already_moved(self):
+        """No old volume: nothing kept; both volumes: nothing copied, the old one named as left behind."""
         self.fake.containers = [container('o1', 'acme-store', 'store', running=False, port=STORE_PORT)]
         store = self.tools()['acme-store']
         self.assertEqual(self.quiet(rt.move_tool, self.root, store, GROUP)[0], [])
         self.fake.volumes = {'acme-store_data', 'acme-tools_data'}
-        self.assertEqual(self.quiet(rt.move_tool, self.root, store, GROUP)[0], [])
+        self.assertEqual(
+            self.quiet(rt.move_tool, self.root, store, GROUP)[0],
+            [('acme-store_data', 'not copied: the group already has acme-tools_data; check both')],
+        )
         self.assertFalse(self.fake.called('^docker (stop|run|volume create)'))
 
     def test_a_failed_copy_restores_the_old_project(self):

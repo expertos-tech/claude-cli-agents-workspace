@@ -452,9 +452,21 @@ def model(root):
             continue
         tool = compose_tool(root, group, ids, tool_id)
         add_runtime(tool, group, running)
+        add_old_volumes(root, tool, group)
         tools.append(tool)
     tools += machine_tools(root)
     return group, ids, tools
+
+
+def add_old_volumes(root, tool, group):
+    """Adds the volumes of the tool's old project still on disk once the tool is in the group: data the group does
+    not use, which the person keeps or deletes."""
+    tool['old_volumes'] = []
+    if tool['project'] != group:
+        return
+    for volume in tool['volumes']:
+        if run(['docker', 'volume', 'inspect', volume['old']], root)[0] == 0:
+            tool['old_volumes'].append(volume['old'])
 
 
 def public(tool):
@@ -472,6 +484,7 @@ def public(tool):
         'project': tool.get('project', ''),
         'ports': sorted(ports),
         'missing': tool['missing'],
+        'old_volumes': tool.get('old_volumes', []),
     }
 
 
@@ -493,6 +506,7 @@ def print_table(tools, group):
         notes = list(tool['missing'])
         if tool.get('project') and tool['project'] != group and tool['kind'] == 'compose':
             notes.insert(0, f'runs in the old project {tool["project"]}; up moves it to {group}')
+        notes += [f'old volume kept: {name}' for name in tool.get('old_volumes', [])]
         print(f'| {tool["id"]} | {tool["kind"]} | {tool["state"]} | {tool.get("url", "")} | {"; ".join(notes)} |')
 
 
@@ -598,7 +612,7 @@ def copy_image(tool, volume, old):
 def move_tool(root, tool, group):
     """Brings a tool from its old compose project into the group: stops its old containers, copies each named volume
     to the group's name (the old one is kept), removes the old containers and the old project's networks. Does nothing
-    for a tool already in the group. Returns the old volumes kept."""
+    for a tool already in the group. Returns (old volume, note) for each old volume left next to the group's."""
     old = [c for c in tool['containers'] if c['project'] != group]
     running = [c['id'] for c in old if c['running']]
     if old:
@@ -611,7 +625,9 @@ def move_tool(root, tool, group):
         if run(['docker', 'volume', 'inspect', volume['old']], root)[0] != 0:
             continue
         if run(['docker', 'volume', 'inspect', volume['new']], root)[0] == 0:
-            continue  # already in the group; check_move refused the case where the old project still runs
+            # check_move refused this when the old project still runs; here the group already had its own volume
+            kept.append((volume['old'], f'not copied: the group already has {volume["new"]}; check both'))
+            continue
         created = False
         try:
             run(
@@ -660,7 +676,7 @@ def move_tool(root, tool, group):
                 f'copying {volume["old"]} failed, so {tool["id"]} stays in {tool["old_project"]}: {error}'
             ) from error
         say(f'copied: {volume["old"]} -> {volume["new"]}')
-        kept.append(volume['old'])
+        kept.append((volume['old'], 'its data is in the group now'))
     own = {c['id'] for c in old}
     if old:
         run(['docker', 'rm', *[c['id'] for c in old]], root, check=True)
@@ -771,8 +787,8 @@ def cmd_up(root, ids):
         except Refused as error:
             say(f'refused: {tool["id"]}: {error}')
             failed = True
-    for name in kept:
-        say(f'old volume kept: {name} (its data is in the group now; delete it only after checking, with confirmation)')
+    for name, note in kept:
+        say(f'old volume kept: {name} ({note}; delete it only after checking, with confirmation)')
     _, _, after = model(root)
     wanted = [tool for tool in after if tool['id'] in dict.fromkeys(ids)]
     print_table(wanted, group)
