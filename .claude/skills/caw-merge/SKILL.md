@@ -94,23 +94,25 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
 
 2. **Release clone:** `git clone -q --local . tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/claude-cli-agents-workspace`,
    origin set to the root's URL, `git -C <clone> fetch -q origin`, `git -C <clone> switch -c fix/release-vX-Y-Z
-   origin/developer`, pushed with upstream.
+   origin/developer`; not pushed yet (the push gate: after step 5).
 3. **Translations**, once for the release: one `docs-writer` (claude-sonnet-5-5, effort `medium`) brings every pending
    translation up to date (the `pending:` lines of `bash <clone>/tests/check.sh --base <last tag> --i18n-pending`);
-   commit (`docs(i18n): translations for X.Y.Z`) and push.
+   commit (`docs(i18n): translations for X.Y.Z`); no push.
 4. **Version and dates**, today, so the checks below judge them: `workspace/VERSION` to `X.Y.Z`; `workspace/CHANGELOG.md`
    dated; in the root `CHANGELOG.md` the `Unreleased` section dated the same day (none: a patch section over the
    newest), with under `### Product` the line `Released [vX.Y.Z](<repo URL>/releases/tag/vX.Y.Z): see its
    [changelog](<repo URL>/blob/vX.Y.Z/workspace/CHANGELOG.md).` (the repository URL of `README.md`); each file of
    `maintainers/requests/qa/` moved to `done/` with `Released in vX.Y.Z`, and its row in the README; commit
-   (`chore(release): X.Y.Z`) and push.
+   (`chore(release): X.Y.Z`); no push.
 5. **Full suite, strict:** `bash <clone>/tests/check.sh --all --base <last tag>` (translations included) and
-   `bash <clone>/tests/test-install.sh`.
+   `bash <clone>/tests/test-install.sh`. Passed: record `git -C <clone> rev-parse HEAD` and push the release branch
+   with upstream.
 6. **Final review** (the product's step 4, `.claude/rules/review.md` "Final review") on `<last tag>..HEAD` of the
    clone, against every request of `maintainers/requests/qa/`.
 7. **The findings, once** (the product's step 5): per finding, (1) fix now in the release clone or (2) a request in
-   `maintainers/requests/`; a BLOCKER sent to a request stops the release. Fixes: rerun step 5 and review the fixes.
-   Then record the sha: `git -C <clone> rev-parse HEAD`, equal to the pushed `fix/release-vX-Y-Z`.
+   `maintainers/requests/`; a BLOCKER sent to a request stops the release. Fixes or requests written in the clone: rerun step 5 (which
+   records and pushes again) and review the fixes. The sha is the one step 5 recorded last, equal to the pushed
+   `fix/release-vX-Y-Z` and to HEAD.
 8. **Into `developer`:** phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone
    moved after the sha was recorded: back to step 5.
 9. Then, **asking the owner before each one** (each answer covers that step only): `main` (`git push origin
