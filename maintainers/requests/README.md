@@ -53,6 +53,7 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 | — | `execution-block-after-fixes.md` | ready | A review finding |
 | — | `work-branch-push-before-scan.md` | ready | A review finding |
 | — | `repo-terms-skip-stops-merge.md` | idea | A review finding: today no terms list exists here |
+| — | `clone-path-findings-loop.md` | ready | A review finding |
 
 ## QA
 
