@@ -188,7 +188,7 @@ claude-cli-agents-workspace/
     repository);
   - the test installation (`/caw-test-install`, `tests/test-install.sh`): a throwaway workspace created from the current
     tree under `tmp/test-install/`, where a session exercises the hooks end to end;
-  - the release process (`/release`): raise `VERSION`, write `CHANGELOG.md`, create the tag and publish the release;
+  - the release process (`/release` then, now `/caw-merge --main`): raise `VERSION`, write `CHANGELOG.md`, create the tag and publish the release;
   - the process, rules, skills and agents of the maintenance, in the root `CLAUDE.md` and `.claude/`: adapted copies of
     the product's pieces, never references to them.
 - **Plans and requests are public.** `maintainers/` is written without company names. Analyses of real use

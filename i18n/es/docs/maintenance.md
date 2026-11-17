@@ -1,4 +1,4 @@
-<!-- source: docs/maintenance.md sha256:91804dacacb62272afdf91f28c150569aaf9f829c0861c383de0bc464febda14 -->
+<!-- source: docs/maintenance.md sha256:15b1d2a7623544cc1105895d68119cf1966e795dce5b79203fbf587b64d1b884 -->
 
 # Mantenimiento
 
@@ -94,7 +94,8 @@ Solo cuando el owner lo pide. Ejecutarlo es la orden del owner para los push que
   `bash tests/check.sh --all --base origin/developer` (y `/caw-test-install` cuando cambió el instalador, un hook o
   `setup-claude.sh`), y después un `reviewer` con contexto limpio. Solo entonces, en la raíz, avanza `developer`
   (fast-forward) hasta el commit del clon, lo sube, y borra la rama de trabajo y el clon.
-- **En developer:** los mismos gates sobre los commits desde el último cambio de `CHANGELOG.md`, y después el push.
+- **En developer:** los mismos gates sobre los commits desde el último commit de changelog
+  (`docs(changelog)` o `chore(release)`), y después el push.
 - **`--main`:** el release del producto ([releases](releases.md)).
 
 Nunca hace merge con un check fallando o un BLOCKER abierto, y nunca reescribe `developer` ni `main`.

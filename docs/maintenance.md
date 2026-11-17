@@ -90,7 +90,8 @@ Only when the owner asks. Running it is the owner's order for the pushes it make
   `bash tests/check.sh --all --base origin/developer` (and `/caw-test-install` when the installer, a hook or
   `setup-claude.sh` changed), then a `reviewer` in a clean context. Only then, at the root, fast-forward `developer`
   to the clone's commit, push it, delete the work branch and the clone.
-- **On developer:** the same gates over the commits since the last change of `CHANGELOG.md`, then the push.
+- **On developer:** the same gates over the commits since the last changelog commit (`docs(changelog)` or
+  `chore(release)`), then the push.
 - **`--main`:** the release of the product ([releases](releases.md)).
 
 It never merges with a failing check or an open BLOCKER, and never rewrites `developer` or `main`.

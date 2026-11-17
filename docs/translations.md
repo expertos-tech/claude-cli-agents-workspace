@@ -14,7 +14,8 @@ The documents are written in English and translated to two locales: `pt-BR` and 
 
 ## What is never translated
 
-Rules, skills, agents, scripts and hooks, `CLAUDE.md`, `.claude/`, `maintainers/`, the changelogs and the decision
+Rules, skills, agents, scripts and hooks, `CLAUDE.md`, `.claude/`, the files of `maintainers/` other than its
+READMEs, the changelogs and the decision
 records. They stay in English.
 
 ## Where a translation lives
@@ -36,7 +37,7 @@ translations in the same commit.
 
 ## Language links
 
-Right under the H1, each English page has a line that links to its translations (`English · Português (Brasil) ·
+Right under the H1, each translated document outside `workspace/` has a line that links to its translations (`English · Português (Brasil) ·
 Español`); the translations carry the same line, linking back. In the root `README.md` it is centered, in HTML.
 
 ## Links in a translation

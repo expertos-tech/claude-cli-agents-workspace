@@ -1,4 +1,4 @@
-<!-- source: docs/translations.md sha256:225842fa6e74ffb3491965ef0b2cd24fdedc8f99c74a25f8eba7bbc723662f35 -->
+<!-- source: docs/translations.md sha256:9386c43a384d50fc639d1997ac03130221e4d9163f4e0757e5ff0f244f62fc9a -->
 
 # Traduções
 
@@ -16,7 +16,8 @@ Os documentos são escritos em inglês e traduzidos para dois idiomas: `pt-BR` e
 
 ## O que nunca é traduzido
 
-Regras, skills, agentes, scripts e hooks, `CLAUDE.md`, `.claude/`, `maintainers/`, os changelogs e os registros de
+Regras, skills, agentes, scripts e hooks, `CLAUDE.md`, `.claude/`, os arquivos de `maintainers/` que não são
+READMEs, os changelogs e os registros de
 decisão. Eles ficam em inglês.
 
 ## Onde fica uma tradução
@@ -38,7 +39,7 @@ atualiza as duas traduções no mesmo commit.
 
 ## Links de idioma
 
-Logo abaixo do H1, cada página em inglês tem uma linha que leva às traduções (`English · Português (Brasil) ·
+Logo abaixo do H1, cada documento traduzido fora de `workspace/` tem uma linha que leva às traduções (`English · Português (Brasil) ·
 Español`); as traduções levam a mesma linha, apontando de volta. No `README.md` da raiz ela é centralizada, em HTML.
 
 ## Links numa tradução
