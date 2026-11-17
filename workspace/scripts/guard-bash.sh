@@ -29,8 +29,10 @@ mode (auto mode judges destruction); this hook holds only what the workspace nev
         docker rm -v; DROP or TRUNCATE given to a SQL client (psql, mysql, mariadb, sqlite3, sqlcmd, mongosh,
         duckdb); dropdb, mysqladmin drop, dotnet ef database drop, prisma migrate reset or db push --force-reset,
         rails/rake db:drop, db:reset, db:purge; rm of a .data folder or of a .db, .sqlite, .mdf or .ldf file.
-  ask   scripts/aiwp-cmds.sh release, checkpoint (pushes the checkpoint tags), developer --create (creates developer on
-        the remote), gate --untested (a normalization without its tests), apply --apply and close --discard (run, by a shell, or by source).
+  ask   scripts/aiwp-cmds.sh release, hotfix (pushes a fix to main), hotfix-tag (pushes a release tag), hotfix-down
+        (merges main into developer and pushes it), checkpoint (pushes the checkpoint tags), developer --create (creates
+        developer on the remote), gate --untested (a normalization without its tests), apply --apply and close --discard
+        (run, by a shell, or by source).
   ask   git configuration on the line that can run a command (-c core.fsmonitor, core.sshCommand, a pager, an alias,
         a hooks folder, diff.external, remote.*.fetch, --config-env, --upload-pack, GIT_CONFIG_*, GIT_SSH_COMMAND...).
 In an installed workspace (the nearest folder above a path with .aiwp/manifest.json, any workspace, not only this

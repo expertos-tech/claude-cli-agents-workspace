@@ -222,12 +222,14 @@ GIT_ENV = {
 }
 
 
-def porcelain(kind, path, state, marker='-', version='0.2.0', pending='-'):
-    """One line of scripts/aiwp-project-state.sh --porcelain."""
+def porcelain(kind, path, state, marker='-', version='0.2.0', pending='-', hotfix=None):
+    """One line of scripts/aiwp-project-state.sh --porcelain; hotfix None leaves out the eleventh field (an older
+    script)."""
     developer, checkout = ('yes', 'developer') if kind == 'project' else ('-', '-')
     source = 'developer' if kind == 'project' else 'file'
     name = path.rsplit('/', 1)[-1]
-    return '\t'.join([kind, name, path, state, marker, version, pending, source, developer, checkout])
+    fields = [kind, name, path, state, marker, version, pending, source, developer, checkout]
+    return '\t'.join(fields + ([] if hotfix is None else [hotfix]))
 
 
 class ProjectWarningTests(unittest.TestCase):
@@ -326,6 +328,32 @@ class ProjectWarningTests(unittest.TestCase):
         self.repo('ahead', 'newer', marker='0.9.0')
         self.assertIsNone(self.warning('/normalize-projects billing-api'))
         self.assertIsNone(self.warning('change claude-cli-agents-workspace, done and ahead'))
+
+    def test_a_hotfix_not_merged_into_developer_gets_the_warning(self):
+        self.repo('billing-api', 'current', marker='0.2.0', hotfix='yes')
+        self.repo('ledger-app', 'current', marker='0.2.0', hotfix='no')
+        self.repo('shop-web', 'none', hotfix='yes')
+        text = self.warning('fix the login of billing-api')
+        self.assertIn('Hotfix pending', text)
+        self.assertIn(
+            '`billing-api` (projects/billing-api) has a hotfix on main that is not merged into developer', text
+        )
+        self.assertIn('`bash scripts/aiwp-cmds.sh hotfix-down billing-api`', text)
+        self.assertIn('fix/<slug>-developer', text)
+        self.assertNotIn('normalize', text)
+        self.assertIsNone(self.warning('see ledger-app'))
+        text = self.warning('see shop-web')
+        self.assertIn('/normalize-projects shop-web', text)
+        self.assertIn('hotfix-down shop-web', text)
+        self.assertLess(text.index('normalize-projects'), text.index('Hotfix pending'))
+        self.rows['custom/pocs/cache-test'] = porcelain('poc', 'custom/pocs/cache-test', 'current', hotfix='yes')
+        os.makedirs(os.path.join(self.root, 'custom/pocs/cache-test'))
+        self.assertIsNone(self.warning('see custom/pocs/cache-test'))
+
+    def test_rows_with_more_fields_are_read(self):
+        self.repo('billing-api', 'none', hotfix='no')
+        self.rows['projects/billing-api'] += '\tlater-field'
+        self.assertIn('/normalize-projects billing-api', self.warning('billing-api'))
 
     def test_the_hook_output_joins_the_title_and_the_warning(self):
         self.repo('ledger-app', 'none')
@@ -474,6 +502,21 @@ class ProjectWarningWithTheStateScriptTests(unittest.TestCase):
         self.assertIn('with the migrations 0.2.0 pending', text)
         self.assertNotIn('`done`', text)
         self.assertNotIn('claude-cli-agents-workspace', text)
+        self.assertNotIn('Hotfix pending', text)
+
+    def test_a_hotfix_on_main_from_the_real_script(self):
+        self.project('done', MARK.format('0.2.0') + '\n')
+        folder = os.path.join(self.root, 'projects', 'done')
+        for argv in (
+            ['switch', '-q', 'main'],
+            ['commit', '-q', '--allow-empty', '-m', 'hotfix'],
+            ['switch', '-q', 'developer'],
+        ):
+            subprocess.run(['git', *argv], cwd=folder, check=True, capture_output=True)
+        text = title.project_warning({'prompt': 'change projects/done/app.py'}, self.root)
+        self.assertIn('`done` (projects/done) has a hotfix on main that is not merged into developer', text)
+        subprocess.run(['git', 'merge', '-q', '--no-edit', 'main'], cwd=folder, check=True, capture_output=True)
+        self.assertIsNone(title.project_warning({'prompt': 'change projects/done/app.py'}, self.root))
 
 
 if __name__ == '__main__':

@@ -231,6 +231,45 @@ test_repos_inside_repos_are_listed_at_their_depth() {
   rc_is 1
 }
 
+test_a_hotfix_on_main_not_merged_into_developer() {
+  fixture 0.1.0 0.1.0
+  project app "$(printf '%s 0.1.0 -->' "$MARK")"
+  state --porcelain app
+  has "$(printf '\tdeveloper\tyes\tdeveloper\tno')"
+  hasnt "hotfix pending"
+  # No remote: the local branches count.
+  git -C "$R/projects/app" commit -q --allow-empty -m "unreleased work"
+  state app
+  hasnt "hotfix pending"
+  git -C "$R/projects/app" switch -q main
+  git -C "$R/projects/app" commit -q --allow-empty -m "hotfix"
+  git -C "$R/projects/app" switch -q developer
+  state app
+  rc_is 0
+  has "projects/app: up to date (marker 0.1.0, workspace 0.1.0); developer exists; checkout on developer; hotfix pending: main is not merged into developer (merge it down before any /merge into developer or release)"
+  state --porcelain app
+  has "$(printf '\tdeveloper\tyes\tdeveloper\tyes')"
+  # A remote: its tracking refs count, as they are (never fetched here), over the local branches.
+  git init -q --bare -b main "$BASE/remote.$CURRENT.git"
+  git -C "$R/projects/app" remote add origin "$BASE/remote.$CURRENT.git"
+  git -C "$R/projects/app" push -q origin main developer
+  git -C "$R/projects/app" merge -q --no-edit main
+  state --porcelain app
+  has "$(printf '\tdeveloper\tyes\tdeveloper\tyes')"
+  git -C "$R/projects/app" push -q origin developer
+  state --porcelain app
+  has "$(printf '\tdeveloper\tyes\tdeveloper\tno')"
+  # Without developer, or for a POC: no field to judge.
+  git -C "$R/projects/app" switch -q main
+  git -C "$R/projects/app" branch -q -D developer
+  git -C "$R/projects/app" update-ref -d refs/remotes/origin/developer
+  state --porcelain app
+  has "$(printf '\tmain\tno\tmain\t-')"
+  mkdir -p "$R/custom/pocs/cache-test"
+  state --porcelain pocs/cache-test
+  has "$(printf '\tfile\t-\t-\t-')"
+}
+
 test_usage_and_a_broken_version() {
   fixture 0.1.0 0.1.0
   state --help
@@ -252,6 +291,13 @@ test_it_never_writes() {
   sleep 1
   state
   state --porcelain app
+  git -C "$R/projects/app" switch -q main
+  git -C "$R/projects/app" commit -q --allow-empty -m hotfix
+  git -C "$R/projects/app" switch -q developer
+  before="$(cd "$R" && find . -path ./custom/.git -prune -o -newer "$R/VERSION" -print | sort; ls -la "$R/projects/app/.git")"
+  sleep 1
+  state app
+  has "hotfix pending"
   after="$(cd "$R" && find . -path ./custom/.git -prune -o -newer "$R/VERSION" -print | sort; ls -la "$R/projects/app/.git")"
   [ "$before" = "$after" ]; check "nothing written in the workspace or the repo" $?
 }

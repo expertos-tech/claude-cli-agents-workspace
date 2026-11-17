@@ -1,5 +1,5 @@
 """UserPromptSubmit hook: names the session <project>-<n> when the human runs /request, and warns when a message names
-a project that is not a workspace project or is out of date.
+a project that is not a workspace project, is out of date, or has a hotfix on main not merged into developer yet.
 
 The model cannot run /rename, so the title comes from here, with the same effect (hookSpecificOutput.sessionTitle).
 The request file is the one /request reads: tmp/request.md with no argument, custom/requests/<name> for a bare file
@@ -14,8 +14,9 @@ The warning: a message (and, on /request, its request file) that names a repo of
 its folder name, by a path (projects/<path>, which names its nearest repo only; custom/pocs/<poc>;
 tmp/work/<work>/<clone>) or by the "**Project:**" line, gets the state of each (scripts/aiwp-project-state.sh) added
 to the context when it has no marker or is out of date, with the order to warn the person and ask for authorization to
-run /normalize-projects. It never blocks: the request goes on either way. A message that runs /normalize-projects gets
-no warning.
+run /normalize-projects, and when a hotfix on main is not merged into developer yet (the gate refuses /merge into
+that developer and the release until it is), with the order to tell the person. It never blocks: the request goes on
+either way. A message that runs /normalize-projects gets no warning.
 Any failure stays silent and the time is bounded (a capped walk, a state script with a deadline): the prompt always
 goes on.
 Usage: python3 -I session-title.py <workspace-root>   (hook JSON on stdin)
@@ -274,10 +275,39 @@ def project_states(root, targets):
         )
     except (OSError, subprocess.SubprocessError):
         return []
-    return [line.split('\t') for line in done.stdout.splitlines() if line.count('\t') == 9]
+    # Ten fields at least: the script only ever adds fields at the end (hotfix is the eleventh).
+    return [line.split('\t') for line in done.stdout.splitlines() if line.count('\t') >= 9]
+
+
+def hotfix_text(rows):
+    """Returns the context to add for the projects with a hotfix on main not merged into developer yet, or None."""
+    notes = []
+    for kind, name, path, *rest in rows:
+        if kind != 'project' or rest[7:8] != ['yes']:
+            continue
+        target = path[len('projects/') :]
+        notes.append(
+            f'`{name}` ({path}) has a hotfix on main that is not merged into developer yet: /merge into its developer '
+            f'and its release (/merge --main) are refused until `bash scripts/aiwp-cmds.sh hotfix-down {target}` '
+            'merges it down (or, when that conflicts, a fix/<slug>-developer clone of developer through /merge).'
+        )
+    if not notes:
+        return None
+    return (
+        'Hotfix pending (scripts/aiwp-project-state.sh): '
+        + ' '.join(notes)
+        + ' If the request is about this project, tell the person this before working on it and offer to merge the '
+        'hotfix down first. Nothing is blocked here; this note comes back at the next message that names the project.'
+    )
 
 
 def warning_text(rows):
+    """Returns the context to add for the rows that need normalizing or have a hotfix pending, or None."""
+    parts = [normalize_text(rows), hotfix_text(rows)]
+    return '\n'.join(part for part in parts if part) or None
+
+
+def normalize_text(rows):
     """Returns the context to add for the rows that need normalizing, or None."""
     notes, commands = [], []
     for kind, name, path, state, marker, version, pending, *_ in rows:

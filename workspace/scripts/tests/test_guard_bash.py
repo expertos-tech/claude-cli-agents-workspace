@@ -359,10 +359,40 @@ class WorkspaceCommandTests(unittest.TestCase):
             ('bash scripts/aiwp-gate.sh checkpoint app --date 2026-11-16', 'checkpoint'),
             ('bash scripts/aiwp-cmds.sh developer app --create', 'developer --create'),
             ('bash scripts/aiwp-cmds.sh gate 2026-11-16-normalize-app/app --untested', 'gate --untested'),
+            ('bash scripts/aiwp-cmds.sh hotfix 2026-11-17-hotfix-login/app abc123', 'hotfix'),
+            ('bash scripts/aiwp-cmds.sh hotfix w/app abc123 --pr-if-refused', 'hotfix'),
+            ('bash scripts/aiwp-gate.sh hotfix w/app abc123', 'hotfix'),
+            ('cd /w && bash scripts/aiwp-cmds.sh hotfix w/app abc123', 'hotfix'),
+            ('bash scripts/aiwp-cmds.sh hotfix-tag app v1.2.1', 'hotfix-tag'),
+            ('bash scripts/aiwp-gate.sh hotfix-tag app v1.2.1', 'hotfix-tag'),
+            ('bash scripts/aiwp-cmds.sh hotfix-down app', 'hotfix-down'),
+            ('bash -c "bash scripts/aiwp-cmds.sh hotfix-down app"', 'hotfix-down'),
         ):  # fmt: skip
             result = decision(command)
             self.assertEqual(result and result['permissionDecision'], 'ask', command)
             self.assertIn('aiwp-cmds.sh ' + text, result['permissionDecisionReason'])
+
+    def test_the_hotfix_commands_say_what_they_move(self):
+        for command, text in (
+            ('bash scripts/aiwp-cmds.sh hotfix w/app abc123', 'pushes the checked fix to main'),
+            ('bash scripts/aiwp-cmds.sh hotfix-tag app v1.2.1', 'pushes a release tag'),
+            ('bash scripts/aiwp-cmds.sh hotfix-down app', 'writes developer of the project'),
+        ):
+            self.assertIn(text, decision(command)['permissionDecisionReason'], command)
+
+    def test_every_other_way_to_move_main_or_write_developer_in_projects_is_denied(self):
+        # Only aiwp-cmds.sh release, the gate and the hotfix commands move main or write developer of a project.
+        for command in (
+            'git -C projects/p push origin HEAD:main', 'git -C projects/p push origin abc123:refs/heads/main',
+            'git -C projects/p merge main', 'git -C projects/p merge --no-ff main',
+            'git -C projects/p fetch . fix/x:main',
+            'git -C projects/p push origin developer', 'git -C projects/p update-ref refs/heads/main abc123',
+            'git -C projects/p tag -a v1.2.1 -m v1.2.1 main', 'git -C projects/p push origin v1.2.1',
+            'git -C projects/p commit-tree abc -p developer -p main -m x', 'git -C projects/p branch -f main fix/x',
+        ):  # fmt: skip
+            result = decision(command, cwd=ROOT)
+            self.assertEqual(result and result['permissionDecision'], 'deny', command)
+            self.assertIn('to a repository of projects/', result['permissionDecisionReason'], command)
 
     def test_release_says_it_may_push_a_release_tag(self):
         result = decision('bash scripts/aiwp-cmds.sh release app --tag v1.2.0')
@@ -375,7 +405,8 @@ class WorkspaceCommandTests(unittest.TestCase):
             'bash scripts/aiwp-cmds.sh gate', 'bash scripts/aiwp-cmds.sh --help',
             'bash scripts/aiwp-cmds.sh release --help',
             'bash scripts/aiwp-cmds.sh developer app', 'bash scripts/aiwp-cmds.sh bring /old/app app',
-            'bash scripts/aiwp-cmds.sh checkpoint --help',
+            'bash scripts/aiwp-cmds.sh checkpoint --help', 'bash scripts/aiwp-cmds.sh hotfix --help',
+            'bash scripts/aiwp-cmds.sh open 2026-11-17-hotfix-login app --from-main',
             'aiwp-cmds.sh', 'bash scripts/other.sh release', 'bash scripts/aiwp-gate.sh',
             'bash -n scripts/aiwp-cmds.sh',
         ):  # fmt: skip

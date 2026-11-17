@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prints whether each project of projects/ and each POC of custom/pocs/ is a workspace project, and of which version:
-# the marker on line 1 of its README.md against the workspace VERSION and migrations/. Read only: it never writes,
+# the marker on line 1 of its README.md against the workspace VERSION and migrations/; and, for a project, whether a
+# hotfix on main waits to be merged into developer. Read only: it never writes,
 # fetches or changes a checkout, so the UserPromptSubmit hook, aiwp-cmds.sh open, the gate and /normalize-projects can
 # all call it.
 # shellcheck source-path=SCRIPTDIR
@@ -30,12 +31,19 @@ pocs/<poc>, or a bare name, matched against the last folder of every repo of pro
 are printed). No <project>: every repo of projects/, at any depth, a repo inside another one included
 (billing/billing-api, where billing/ is a repo too), and every POC that custom/pocs/.gitignore keeps.
 
+Hotfix pending: a repo with main and developer whose main is not an ancestor of developer (a hotfix on main not
+merged into developer yet): /merge into developer and the release are refused until it is merged down. Read from the
+remote-tracking refs origin/main and origin/developer as they are (never fetched here); a branch with no tracking ref
+is read from the local branch.
+
 Output, one line per project:
-  <path>: <state in words>; developer <exists|missing>; checkout on <branch>
+  <path>: <state in words>; developer <exists|missing>; checkout on <branch>[; hotfix pending: main is not merged
+  into developer (merge it down before any /merge into developer or release)]
 --porcelain: tab-separated fields, for scripts:
-  kind name path state marker version pending source developer checkout
+  kind name path state marker version pending source developer checkout hotfix
   (kind project|poc; marker and pending "-" when empty, pending comma-separated; source developer|main|folder|file;
-  developer yes|no and checkout <branch>|detached for a project, "-" for a POC)
+  developer yes|no and checkout <branch>|detached for a project, "-" for a POC; hotfix yes|no for a project with
+  main and developer, "-" otherwise and for a POC. New fields are only ever added at the end)
 
 Exit: 0 every project named was found (whatever its state); 1 a project not found, or VERSION unreadable; 2 usage.
 
@@ -128,12 +136,13 @@ is_own_repo() {
   return 1
 }
 
-# Prints one line for a state: path, kind, state, marker, pending, source, developer, checkout.
+# Prints one line for a state: path, kind, state, marker, pending, source, developer, checkout, hotfix.
 report() {
-  local path="$1" kind="$2" state="$3" marker="$4" pending="$5" source="$6" developer="$7" checkout="$8" words where
+  local path="$1" kind="$2" state="$3" marker="$4" pending="$5" source="$6" developer="$7" checkout="$8" hotfix="$9"
+  local words where
   if [ "$porcelain" -eq 1 ]; then
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "${path##*/}" "$path" "$state" "${marker:--}" "$version" \
-      "${pending:--}" "$source" "$developer" "$checkout"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "${path##*/}" "$path" "$state" "${marker:--}" \
+      "$version" "${pending:--}" "$source" "$developer" "$checkout" "$hotfix"
     return 0
   fi
   case "$source" in
@@ -151,6 +160,8 @@ report() {
   if [ "$kind" = project ]; then
     if [ "$developer" = yes ]; then words="$words; developer exists"; else words="$words; developer missing"; fi
     words="$words; checkout on $checkout"
+    [ "$hotfix" != yes ] ||
+      words="$words; hotfix pending: main is not merged into developer (merge it down before any /merge into developer or release)"
   fi
   printf '%s: %s\n' "$path" "$words"
 }
@@ -169,14 +180,44 @@ state_of() {
   fi
 }
 
+# Prints the ref a branch is judged on: its remote-tracking ref origin/<branch>, else the local branch, else nothing.
+judged_ref() {
+  local repo="$1" branch="$2" ref
+  for ref in "refs/remotes/origin/$branch" "refs/heads/$branch"; do
+    if git --no-optional-locks -C "$repo" rev-parse -q --verify "$ref" >/dev/null 2>&1; then
+      printf '%s\n' "$ref"
+      return 0
+    fi
+  done
+}
+
+# Prints yes when main is not an ancestor of developer (a hotfix waits to be merged down), no when it is, - when the
+# repo lacks one of them or git cannot tell. Read only: the refs as they are, never fetched.
+hotfix_of() {
+  local repo="$1" m d rc=0
+  m="$(judged_ref "$repo" main)"
+  d="$(judged_ref "$repo" developer)"
+  if [ -z "$m" ] || [ -z "$d" ]; then
+    echo -
+    return 0
+  fi
+  git --no-optional-locks -C "$repo" merge-base --is-ancestor "$m" "$d" 2>/dev/null || rc=$?
+  case "$rc" in
+    0) echo no ;;
+    1) echo yes ;;
+    *) echo - ;;
+  esac
+}
+
 # Reports a repo of projects/ given relative to projects/.
 project_state() {
-  local rel="$1" repo="$root/projects/$1" g developer=no checkout source marker="" state pending=""
+  local rel="$1" repo="$root/projects/$1" g developer=no checkout source marker="" state pending="" hotfix
   g=(git --no-optional-locks -C "$repo")
   git -C "$repo" rev-parse -q --verify refs/heads/developer >/dev/null 2>&1 && developer=yes
   checkout="$("${g[@]}" symbolic-ref -q --short HEAD 2>/dev/null || echo detached)"
+  hotfix="$(hotfix_of "$repo")"
   if is_own_repo "$repo"; then
-    report "projects/$rel" project workspace "" "" - "$developer" "$checkout"
+    report "projects/$rel" project workspace "" "" - "$developer" "$checkout" "$hotfix"
     return 0
   fi
   if [ "$developer" = yes ]; then
@@ -193,7 +234,7 @@ project_state() {
   fi
   state="$(state_of "$marker")"
   [ "$state" != outdated ] || pending="$(pending_for "$marker")"
-  report "projects/$rel" project "$state" "$marker" "$pending" "$source" "$developer" "$checkout"
+  report "projects/$rel" project "$state" "$marker" "$pending" "$source" "$developer" "$checkout" "$hotfix"
 }
 
 # Reports a POC folder of custom/pocs/.
@@ -202,7 +243,7 @@ poc_state() {
   [ -f "$root/custom/pocs/$name/README.md" ] && marker="$(marker_of <"$root/custom/pocs/$name/README.md")"
   state="$(state_of "$marker")"
   [ "$state" != outdated ] || pending="$(pending_for "$marker")"
-  report "custom/pocs/$name" poc "$state" "$marker" "$pending" file - -
+  report "custom/pocs/$name" poc "$state" "$marker" "$pending" file - - -
 }
 
 # Prints the POC folders of custom/pocs/ the custom layer keeps (an ignored one is outside the workspace).

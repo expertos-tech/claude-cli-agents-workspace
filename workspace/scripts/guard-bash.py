@@ -922,6 +922,21 @@ def aiwp_verdict(argv):
             'aiwp-cmds.sh release takes developer into main and pushes main to the remote; with --tag it also creates '
             'and pushes a release tag'
         )
+    if sub == 'hotfix':
+        return 'ask', (
+            'aiwp-cmds.sh hotfix moves production: it pushes the checked fix to main of the remote (with '
+            '--pr-if-refused it may open a pull request into main instead); confirm only after the review with no '
+            "BLOCKER and the human's OK"
+        )
+    if sub == 'hotfix-tag':
+        return (
+            'ask',
+            'aiwp-cmds.sh hotfix-tag creates and pushes a release tag on main; only when the human says publish',
+        )
+    if sub == 'hotfix-down':
+        return 'ask', (
+            'aiwp-cmds.sh hotfix-down writes developer of the project: it merges main into developer and pushes it'
+        )
     if sub == 'checkpoint':
         return 'ask', (
             'aiwp-cmds.sh checkpoint creates the checkpoint tags of /normalize-projects on developer and main and '
@@ -1946,8 +1961,9 @@ def decide(data, root, run=subprocess.run):
     """Judges one Bash tool call: deny or ask with the reason, or stay silent. Denies: a git write in projects/ or in
     the core, Terraform that changes the cloud, git push --no-verify, a commit with a local secret file or a secret,
     chmod, chown, chgrp, git init or git clone in the read-only core of an installed workspace, aiwp update, rollback
-    and repair. Asks: deleting a database, aiwp-cmds.sh release, checkpoint, developer --create, gate --untested,
-    apply --apply and close --discard. The rest is left to Claude Code's own permission mode."""
+    and repair. Asks: deleting a database, aiwp-cmds.sh release, hotfix, hotfix-tag, hotfix-down, checkpoint,
+    developer --create, gate --untested, apply --apply and close --discard. The rest is left to Claude Code's own
+    permission mode."""
     command = data['tool_input']['command']
     if not isinstance(command, str):
         raise TypeError('command is not a string')

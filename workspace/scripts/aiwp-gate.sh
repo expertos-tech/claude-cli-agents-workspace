@@ -8,7 +8,8 @@ set -euo pipefail
 # Prints the command reference.
 usage() {
   cat <<'USAGE'
-Usage: scripts/aiwp-cmds.sh gate | release | apply | developer | checkpoint | bring ...   (this file: scripts/aiwp-gate.sh)
+Usage: scripts/aiwp-cmds.sh gate | release | hotfix | hotfix-tag | hotfix-down | apply | developer | checkpoint | bring ...
+       (this file: scripts/aiwp-gate.sh)
 
 gate <work>/<clone> [--test "<command>" | --docs-only | --untested]
       Phase 1, checks. In the source repo (projects/<repo>, clean and on its base): fast-forward the base to the
@@ -19,6 +20,14 @@ gate <work>/<clone> [--test "<command>" | --docs-only | --untested]
       of what leaves the base (deleted or renamed-away files, removed or disabled tests, destructive SQL, infra and
       dependency changes, large deletions) to tmp/work/<work>/gate-<clone>.md. The tests and checks must leave the
       tracked files unchanged. On success records the checked sha and prints the merge command.
+      While a hotfix on main waits to be merged into developer (the remote main is not in the remote developer), the
+      gate of a clone of developer refuses and says so, unless the branch holds that main: it is the merge of main
+      into developer (fix/<slug>-developer), which clears the wait.
+      A hotfix clone (open --from-main; base main, branch fix/<slug>) is judged against main: projects/<repo> stays
+      clean on developer, main is fast-forwarded to the remote, the updated main is merged into the branch, and a
+      branch that holds a commit of the remote developer that main does not have (a merge or a reset that brought
+      unreleased work in) is refused; a cherry-pick of the fix passes. Same tests, validate, secrets and audit; it
+      prints the hotfix command instead of the merge command.
       The normalization (/normalize-projects, branch feat/ai-workspace-migration, or
       feat/ai-workspace-migration-<x>-<y>-<z> for a later version) is judged on what the branch adds,
       because what is there today is reported, never fixed by it: the project must need it (state none or out of date;
@@ -32,7 +41,8 @@ gate --merge <work>/<clone> <sha>
       Phase 2, merge. Only the sha phase 1 passed, still the clone's HEAD and on the remote, and only when the base did
       not move: fetches the branch from the remote into the source repo, merge --ff-only, pushes the base, deletes the
       remote work branch (a normalization branch stays on the remote, as its record). The review against the request
-      and the human's answers happen between the two phases.
+      and the human's answers happen between the two phases. Refuses a hotfix clone (its command is hotfix) and, like
+      phase 1, a clone of developer while a hotfix waits to be merged down.
 release <repo> [--pr-if-refused] [--tag vX.Y.Z]
       developer -> main of projects/<repo>: pushes the developer commit to main of the remote (a fast-forward), then
       moves the local main ref (the checkout stays on developer). A remote that refuses the push (a protected main)
@@ -40,7 +50,29 @@ release <repo> [--pr-if-refused] [--tag vX.Y.Z]
       and exits 0. --tag: after main moved, an annotated tag vX.Y.Z on it, then pushed alone (no remote: local
       only); a tag of that name on another commit, here or on the remote, fails before main moves (a tag is never
       moved), on the same commit it is kept; a pull request opened instead leaves it for after the merge. Only on
-      the human's request.
+      the human's request. Refused while a hotfix on main waits to be merged into developer.
+hotfix <work>/<clone> <sha> [--pr-if-refused]
+      The fix of a hotfix clone into main (production), after its gate, the review and the human's OK. The same guards
+      as gate --merge: only the sha the gate checked, still the clone's HEAD, clean and on the remote fix branch, and
+      only when main did not move. projects/<repo> stays clean on developer. Pushes the sha to main of the remote (a
+      fast-forward), then moves the local main ref, deletes the remote fix branch and prints the next steps. No tag.
+      A remote that refuses (a protected main) leaves main unchanged and fails; with --pr-if-refused it opens a pull
+      request fix/<slug> -> main (gh) and exits 0: the tag waits for its merge (a known limit). Only on the human's
+      request.
+hotfix-tag <repo> vX.Y.Z
+      The release tag of a hotfix (the patch version), when the human says publish: an annotated tag on the head of
+      main (fast-forwarded to the remote), pushed alone (no remote: local only). Only while main waits to be merged
+      into developer; else refused (a release is tagged by release --tag). The tag rules of release --tag: a tag on
+      another commit, here or on the remote, fails and is never moved; on the same commit it is kept; a lightweight
+      local tag of that name is refused.
+hotfix-down <repo>
+      Merges main into developer of projects/<repo> (clean, on developer; both fast-forwarded to the remote) after a
+      hotfix: main already in developer, nothing to do. Builds the merge with git merge-tree --write-tree (git 2.38 or
+      later) without touching the checkout; on a conflict nothing changes, it lists the files and exits 1 (resolve it
+      in a clone of developer on fix/<slug>-developer, merging origin/main there, through /merge). Clean: a standard
+      merge commit "Merge branch 'main' into developer" (never a rebase), pushed to developer (a fast-forward), then
+      the checkout fast-forwards to it; no tests run, the fix was tested before main. A refused push changes nothing.
+      No remote: local only, said. Only on the human's request.
 developer <repo> [--create]
       Brings projects/<repo> to developer, for /normalize-projects: needs a remote (none: fails, the person creates
       the repository first) and a clean checkout; a checkout on another branch is switched only when that branch has
@@ -183,6 +215,72 @@ sync_branch() {
   die 1 "$branch of ${repo#"$root"/} diverged from the remote ($ahead ahead, $behind behind): tell the human"
 }
 
+# The path of a source repo to show: projects/<repo>, or custom.
+shown() {
+  printf '%s\n' "${1#"$root"/}"
+}
+
+# Prints why a repo is blocked by a hotfix on main that developer does not hold yet, with the way out.
+hotfix_reason() {
+  local src="$1" rel
+  rel="${src#"$root"/projects/}"
+  echo "a hotfix on main of $(shown "$src") is not merged into developer yet: merge it down first (bash scripts/aiwp-cmds.sh hotfix-down $rel; when it conflicts, a fix/<slug>-developer clone of developer through /merge)"
+}
+
+# Succeeds when a hotfix waits to be merged down: the repo has main and developer and main is not an ancestor of
+# developer. With a remote, the remote's branches, fetched here; with none, the local ones. Sets HOTFIX_MAIN to the main
+# commit judged. A repo without main or developer never waits.
+hotfix_pending() {
+  local repo="$1" lines m d rc=0
+  HOTFIX_MAIN=""
+  if git -C "$repo" remote get-url origin >/dev/null 2>&1; then
+    lines="$(timeout 120 git -C "$repo" ls-remote origin refs/heads/main refs/heads/developer)" ||
+      die 1 "could not read the branches of the remote of $(shown "$repo")"
+    m="$(printf '%s\n' "$lines" | awk '$2 == "refs/heads/main" { print $1 }')"
+    d="$(printf '%s\n' "$lines" | awk '$2 == "refs/heads/developer" { print $1 }')"
+    [ -n "$m" ] && [ -n "$d" ] || return 1
+    timeout 120 git -C "$repo" fetch -q --no-tags origin "+refs/heads/main:refs/remotes/origin/main" \
+      "+refs/heads/developer:refs/remotes/origin/developer" || die 1 "could not fetch main and developer of $(shown "$repo")"
+    m="$(git -C "$repo" rev-parse refs/remotes/origin/main)"
+    d="$(git -C "$repo" rev-parse refs/remotes/origin/developer)"
+  else
+    m="$(git -C "$repo" rev-parse -q --verify refs/heads/main)" || return 1
+    d="$(git -C "$repo" rev-parse -q --verify refs/heads/developer)" || return 1
+  fi
+  HOTFIX_MAIN="$m"
+  git -C "$repo" merge-base --is-ancestor "$m" "$d" || rc=$?
+  [ "$rc" != 0 ]
+}
+
+# Succeeds when a commit of the clone holds the main commit HOTFIX_MAIN: the branch that merges main into developer.
+holds_hotfix_main() {
+  local clone="$1" sha="$2"
+  [ -n "$HOTFIX_MAIN" ] && git -C "$clone" cat-file -e "$HOTFIX_MAIN^{commit}" 2>/dev/null &&
+    git -C "$clone" merge-base --is-ancestor "$HOTFIX_MAIN" "$sha"
+}
+
+# Fails when a hotfix clone brings commits of developer that main does not have (a merge or a reset that took
+# unreleased work in): every commit of base_sha..sha reachable from developer (the remote's, fetched; with no remote,
+# the local one). A cherry-pick makes a new commit and passes: the review judges what it depends on.
+require_no_developer_work() {
+  local src="$1" clone="$2" sha="$3" base_sha="$4" dev_ref=refs/heads/developer dev bases leaked
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    timeout 120 git -C "$src" fetch -q --no-tags origin "+refs/heads/developer:refs/remotes/origin/developer" ||
+      die 1 "could not fetch developer of $(shown "$src") from the remote"
+    dev_ref=refs/remotes/origin/developer
+  fi
+  git -C "$clone" fetch -q --no-tags "$src" "$dev_ref" || die 1 "could not read developer of $(shown "$src")"
+  dev="$(git -C "$clone" rev-parse FETCH_HEAD)"
+  bases="$(git -C "$clone" merge-base --all "$sha" "$dev" || true)"
+  [ -n "$bases" ] || return 0
+  # shellcheck disable=SC2086  # bases is a list of commits, split on purpose
+  leaked="$(git -C "$clone" rev-list --count $bases --not "$base_sha")"
+  [ "$leaked" = 0 ] && return 0
+  # shellcheck disable=SC2086
+  git -C "$clone" log --oneline -n 10 $bases --not "$base_sha" >&2
+  die 1 "refused: the branch holds $leaked commit(s) of developer that main does not have (above): a hotfix starts from main and takes only the fix. Rebuild it from origin/main (a cherry-pick of the fix is fine) and run the gate again"
+}
+
 # Writes the audit of base..HEAD of a clone, in Markdown, to the given file.
 write_audit() {
   local clone="$1" range="$2" out="$3" f n
@@ -303,7 +401,7 @@ changed_files() {
 # gate phase 1: checks and audit.
 cmd_gate_check() {
   local given="$1" test_cmd="$2" docs_flag="$3" untested="$4" clone src base branch work name sha range report record
-  local base_sha normalization=0 files
+  local base_sha normalization=0 files hotfix=0 blocked=0
   clone="$(clone_path "$given")"
   src="$(git -C "$clone" config --get aiwp.source)"
   base="$(git -C "$clone" config --get aiwp.base)"
@@ -311,13 +409,28 @@ cmd_gate_check() {
   work="$(basename "$(dirname "$clone")")"
   name="$(basename "$clone")"
   [[ "$branch" =~ $NORMALIZATION_RE ]] && normalization=1
+  [ "$(git -C "$clone" config --get aiwp.hotfix || true)" != 1 ] || hotfix=1
   [ "$untested" = 0 ] || [ "$normalization" = 1 ] || die 2 "--untested is only for a normalization (feat/ai-workspace-migration)"
   [ -z "$(git -C "$clone" status --porcelain)" ] || die 1 "the clone has changes not committed: commit them first"
   [ "$(git -C "$clone" symbolic-ref -q --short HEAD)" = "$branch" ] || die 1 "the clone is not on $branch"
-  require_clean_on "$src" "$base"
-  echo "== 1/6 base: $base of ${src#"$root"/}"
-  sync_branch "$src" "$base"
+  if [ "$hotfix" = 1 ]; then
+    # A hotfix clone is judged against main; projects/<repo> stays on developer and main is only a ref there.
+    [ "$base" = main ] && [[ "$branch" =~ ^fix/ ]] || die 1 "a hotfix clone has the base main and a fix/ branch: open it again with open --from-main"
+    require_clean_on "$src" developer
+    echo "== 1/6 base: main of $(shown "$src") (hotfix: the checkout stays on developer)"
+    sync_branch "$src" main
+  else
+    require_clean_on "$src" "$base"
+    echo "== 1/6 base: $base of $(shown "$src")"
+    sync_branch "$src" "$base"
+    # While a hotfix on main waits to be merged down, developer takes only the branch that merges main into it.
+    if [ "$base" = developer ] && hotfix_pending "$src"; then
+      if holds_hotfix_main "$clone" HEAD; then blocked=2; else blocked=1; fi
+    fi
+  fi
   case "$src/" in "$root/projects/"*) [ "$normalization" = 1 ] || bash "$cmds" _state-note "${src#"$root"/projects/}" ;; esac
+  [ "$blocked" != 1 ] || die 1 "refused: $(hotfix_reason "$src")"
+  [ "$blocked" != 2 ] || echo "hotfix pending: $branch holds main ($(git -C "$clone" rev-parse --short "$HOTFIX_MAIN")), so it is the merge of main into developer that clears it"
   echo "== 2/6 merge of the updated base into $branch"
   # The base is the sha of projects/<repo>, read here; no ref of the clone, which the session can move, stands for it.
   base_sha="$(git -C "$src" rev-parse "refs/heads/$base")"
@@ -332,6 +445,7 @@ cmd_gate_check() {
   sha="$(git -C "$clone" rev-parse HEAD)"
   range="$base_sha..$sha"
   [ "$(git -C "$clone" rev-list --count "$range")" -gt 0 ] || die 1 "$branch adds nothing to $base"
+  [ "$hotfix" = 0 ] || require_no_developer_work "$src" "$clone" "$sha" "$base_sha"
   if [ "$normalization" = 1 ]; then
     echo "normalization: judged on what $branch adds"
     require_normalization_state "$src" "$branch"
@@ -387,6 +501,11 @@ cmd_gate_check() {
   echo
   echo "gate: checks passed for $sha"
   echo "audit: ${report#"$root"/}"
+  if [ "$hotfix" = 1 ]; then
+    echo "next: review the fix ($range) against the error it fixes; with no BLOCKER open and the human's OK, the"
+    echo "      fix goes into main (production): bash scripts/aiwp-cmds.sh hotfix $work/$name $sha"
+    return 0
+  fi
   echo "next: review the audit and the diff ($range) against the request; ask the human only what the request does"
   echo "      not explain; then: bash scripts/aiwp-cmds.sh gate --merge $work/$name $sha"
 }
@@ -401,6 +520,8 @@ cmd_gate_merge() {
   work="$(basename "$(dirname "$clone")")"
   name="$(basename "$clone")"
   record="$work_root/$work/.gate-$name"
+  [ "$(git -C "$clone" config --get aiwp.hotfix || true)" != 1 ] ||
+    die 1 "$work/$name is a hotfix clone: its fix goes into main by bash scripts/aiwp-cmds.sh hotfix $work/$name <sha>, never by gate --merge"
   [ -f "$record" ] || die 1 "phase 1 did not pass for this clone: run bash scripts/aiwp-cmds.sh gate $work/$name first"
   read -r sha base_then _ <"$record"
   [ "$(git -C "$clone" rev-parse "$want" 2>/dev/null)" = "$sha" ] || die 1 "$want is not the sha phase 1 checked ($sha)"
@@ -409,6 +530,9 @@ cmd_gate_merge() {
   require_clean_on "$src" "$base"
   sync_branch "$src" "$base"
   [ "$(git -C "$src" rev-parse "$base")" = "$base_then" ] || die 1 "$base moved after phase 1: run the gate again"
+  if [ "$base" = developer ] && hotfix_pending "$src" && ! holds_hotfix_main "$clone" "$sha"; then
+    die 1 "refused: $(hotfix_reason "$src")"
+  fi
   if git -C "$src" remote get-url origin >/dev/null 2>&1; then
     timeout 120 git -C "$src" fetch -q origin "$branch" || die 1 "could not fetch $branch from the remote"
     [ "$(git -C "$src" rev-parse FETCH_HEAD)" = "$sha" ] || die 1 "the remote $branch is not $sha: push it and run the gate again"
@@ -434,12 +558,65 @@ cmd_gate_merge() {
   echo "next: bash scripts/aiwp-cmds.sh close $work"
 }
 
+# Checks the release tag vX.Y.Z before anything moves: a tag of that name on another commit, here or on the remote,
+# fails (a tag is never moved), and so do a lightweight local tag and two different tag objects here and there. Sets
+# TAG_REMOTE to the remote's tag object when the remote already holds it on that commit.
+tag_check() {
+  local src="$1" tag="$2" commit="$3" lines remote_commit
+  TAG_REMOTE=""
+  if git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    [ "$(git -C "$src" rev-parse "refs/tags/$tag^{commit}")" = "$commit" ] ||
+      die 1 "$tag exists on another commit; a tag is never moved: main is unchanged, choose another version"
+    [ "$(git -C "$src" cat-file -t "refs/tags/$tag")" = tag ] ||
+      die 1 "$tag exists here as a lightweight tag; a release tag is annotated and never moved: main is unchanged, tell the human"
+  fi
+  git -C "$src" remote get-url origin >/dev/null 2>&1 || return 0
+  lines="$(timeout 120 git -C "$src" ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")" ||
+    die 1 "could not read the tags of the remote: main is unchanged"
+  TAG_REMOTE="$(printf '%s\n' "$lines" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')"
+  remote_commit="$(printf '%s\n' "$lines" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')"
+  [ -n "$remote_commit" ] || remote_commit="$TAG_REMOTE"
+  [ -z "$TAG_REMOTE" ] || [ "$remote_commit" = "$commit" ] ||
+    die 1 "$tag exists on the remote on another commit; a tag is never moved: main is unchanged, choose another version"
+  if [ -n "$TAG_REMOTE" ] && git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    [ "$(git -C "$src" rev-parse "refs/tags/$tag")" = "$TAG_REMOTE" ] ||
+      die 1 "$tag exists here and on the remote as different tags; a tag is never moved: main is unchanged, tell the human"
+  fi
+  return 0
+}
+
+# Creates the annotated tag on the commit, or takes the remote's when it holds it there already (never a second tag
+# object of the same name), then pushes it alone (no remote: local only). Runs after tag_check, once main is there.
+tag_publish() {
+  local src="$1" tag="$2" commit="$3"
+  if ! git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    if [ -n "$TAG_REMOTE" ]; then
+      timeout 120 git -C "$src" fetch -q origin "refs/tags/$tag:refs/tags/$tag" ||
+        die 1 "main was released; $tag is on the remote but could not be fetched: git -C $(shown "$src") fetch origin refs/tags/$tag:refs/tags/$tag"
+    else
+      git -C "$src" tag -a "$tag" -m "$tag" "$commit" || die 1 "main was released, but the tag $tag could not be created"
+    fi
+  fi
+  echo "tagged: $tag at $(git -C "$src" rev-parse --short "refs/tags/$tag^{commit}")"
+  if ! git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    echo "no remote: $tag is local only"
+    return 0
+  fi
+  if [ -n "$TAG_REMOTE" ]; then
+    echo "pushed: $tag (already on the remote)"
+    return 0
+  fi
+  timeout 120 git -C "$src" push -q origin "refs/tags/$tag:refs/tags/$tag" ||
+    die 1 "main was released, but the push of $tag failed: the tag is local only. Push it: git -C $(shown "$src") push origin refs/tags/$tag"
+  echo "pushed: $tag"
+}
+
 # release: developer -> main. The remote's main moves first, by a push of the developer commit (a fast-forward), and
 # the local main ref only after it, so a remote that refuses (a protected main) leaves both as they were. With --tag, an
 # annotated tag on the released main, pushed alone; a tag on another commit, here or on the remote, fails before main
 # moves, and a tag is never moved.
 cmd_release() {
-  local src repo="${1:-}" pr=0 tag="" tagged=0 dev_sha url remote_tag="" remote_commit="" lines
+  local src repo="${1:-}" pr=0 tag="" tagged=0 dev_sha url
   [ $# -eq 0 ] || shift
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -464,30 +641,10 @@ cmd_release() {
   git -C "$src" rev-parse -q --verify refs/heads/main >/dev/null || die 1 "${src#"$root"/} has no main"
   sync_branch "$src" developer
   sync_branch "$src" main
-  git -C "$src" merge-base --is-ancestor main developer || die 1 "main has commits that are not in developer: tell the human"
+  git -C "$src" merge-base --is-ancestor main developer || die 1 "refused: $(hotfix_reason "$src")"
   dev_sha="$(git -C "$src" rev-parse refs/heads/developer)"
-  if [ -n "$tag" ]; then
-    # Checked before main moves: a tag on another commit stops the release with nothing changed.
-    if git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-      [ "$(git -C "$src" rev-parse "refs/tags/$tag^{commit}")" = "$dev_sha" ] ||
-        die 1 "$tag exists on another commit; a tag is never moved: main is unchanged, choose another version"
-      [ "$(git -C "$src" cat-file -t "refs/tags/$tag")" = tag ] ||
-        die 1 "$tag exists here as a lightweight tag; a release tag is annotated and never moved: main is unchanged, tell the human"
-    fi
-    if git -C "$src" remote get-url origin >/dev/null 2>&1; then
-      lines="$(timeout 120 git -C "$src" ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")" ||
-        die 1 "could not read the tags of the remote: main is unchanged"
-      remote_tag="$(printf '%s\n' "$lines" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')"
-      remote_commit="$(printf '%s\n' "$lines" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')"
-      [ -n "$remote_commit" ] || remote_commit="$remote_tag"
-      [ -z "$remote_tag" ] || [ "$remote_commit" = "$dev_sha" ] ||
-        die 1 "$tag exists on the remote on another commit; a tag is never moved: main is unchanged, choose another version"
-      if [ -n "$remote_tag" ] && git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-        [ "$(git -C "$src" rev-parse "refs/tags/$tag")" = "$remote_tag" ] ||
-          die 1 "$tag exists here and on the remote as different tags; a tag is never moved: main is unchanged, tell the human"
-      fi
-    fi
-  fi
+  # Checked before main moves: a tag on another commit stops the release with nothing changed.
+  [ -z "$tag" ] || tag_check "$src" "$tag" "$dev_sha"
   if git -C "$src" remote get-url origin >/dev/null 2>&1; then
     if ! timeout 120 git -C "$src" push -q origin "$dev_sha:refs/heads/main"; then
       [ "$pr" = 1 ] || die 1 "the remote refused the push of main (a protected branch?); main is unchanged. A pull request instead: bash scripts/aiwp-cmds.sh release $repo --pr-if-refused${tag:+ --tag $tag}"
@@ -503,28 +660,156 @@ cmd_release() {
   fi
   git -C "$src" fetch -q . developer:main || die 1 "main cannot fast-forward to developer"
   echo "released: main of ${src#"$root"/} at $(git -C "$src" rev-parse --short main)"
-  [ -n "$tag" ] || return 0
-  if ! git -C "$src" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-    if [ -n "$remote_tag" ]; then
-      # The remote already holds the tag on this commit: take that one, never a second tag object of the same name.
-      timeout 120 git -C "$src" fetch -q origin "refs/tags/$tag:refs/tags/$tag" ||
-        die 1 "main was released; $tag is on the remote but could not be fetched: git -C ${src#"$root"/} fetch origin refs/tags/$tag:refs/tags/$tag"
-    else
-      git -C "$src" tag -a "$tag" -m "$tag" "$dev_sha" || die 1 "main was released, but the tag $tag could not be created"
+  [ -z "$tag" ] || tag_publish "$src" "$tag" "$dev_sha"
+}
+
+# hotfix: the fix of a hotfix clone into main, the sha phase 1 checked against main. The remote's main moves first, by a
+# push of that sha (a fast-forward), then the local main ref; projects/<repo> stays on developer. A remote that refuses
+# leaves main as it was and fails; with --pr-if-refused a pull request fix/<slug> -> main is opened instead.
+cmd_hotfix() {
+  local given="" want="" pr=0 clone src branch work name record sha base_then rel url
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --pr-if-refused)
+        [ "$pr" = 0 ] || die 2 "--pr-if-refused given twice"
+        pr=1
+        ;;
+      -*) die 2 "unknown option: $1" ;;
+      *)
+        if [ -z "$given" ]; then given="$1"; elif [ -z "$want" ]; then want="$1"; else die 2 "usage: hotfix <work>/<clone> <sha> [--pr-if-refused]"; fi
+        ;;
+    esac
+    shift
+  done
+  [ -n "$given" ] && [ -n "$want" ] || die 2 "usage: hotfix <work>/<clone> <sha> [--pr-if-refused]"
+  clone="$(clone_path "$given")"
+  src="$(git -C "$clone" config --get aiwp.source)"
+  branch="$(git -C "$clone" config --get aiwp.branch)"
+  work="$(basename "$(dirname "$clone")")"
+  name="$(basename "$clone")"
+  rel="${src#"$root"/projects/}"
+  [ "$(git -C "$clone" config --get aiwp.hotfix || true)" = 1 ] && [ "$(git -C "$clone" config --get aiwp.base)" = main ] ||
+    die 1 "$work/$name is not a hotfix clone (open --from-main): its work goes into developer by gate --merge"
+  record="$work_root/$work/.gate-$name"
+  [ -f "$record" ] || die 1 "the gate did not pass for this clone: run bash scripts/aiwp-cmds.sh gate $work/$name first; main is unchanged"
+  read -r sha base_then _ <"$record"
+  [ "$(git -C "$clone" rev-parse "$want" 2>/dev/null)" = "$sha" ] || die 1 "$want is not the sha the gate checked ($sha); main is unchanged"
+  [ "$(git -C "$clone" rev-parse HEAD)" = "$sha" ] || die 1 "the clone moved after the gate: run the gate again; main is unchanged"
+  [ -z "$(git -C "$clone" status --porcelain --untracked-files=no)" ] || die 1 "the clone has tracked changes after the gate: run the gate again; main is unchanged"
+  require_clean_on "$src" developer
+  sync_branch "$src" main
+  [ "$(git -C "$src" rev-parse refs/heads/main)" = "$base_then" ] || die 1 "main moved after the gate: run the gate again; main is unchanged"
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    timeout 120 git -C "$src" fetch -q origin "$branch" || die 1 "could not fetch $branch from the remote; main is unchanged"
+    [ "$(git -C "$src" rev-parse FETCH_HEAD)" = "$sha" ] || die 1 "the remote $branch is not $sha: push it and run the gate again; main is unchanged"
+  else
+    [ "$(git -C "$src" rev-parse -q --verify "refs/heads/$branch" || true)" = "$sha" ] || die 1 "$branch in $(shown "$src") is not $sha; main is unchanged"
+  fi
+  git -C "$src" merge-base --is-ancestor "$base_then" "$sha" || die 1 "main cannot fast-forward to $sha: run the gate again; main is unchanged"
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    if ! timeout 120 git -C "$src" push -q origin "$sha:refs/heads/main"; then
+      [ "$pr" = 1 ] || die 1 "the remote refused the push of main (a protected branch?); main is unchanged. A pull request instead: bash scripts/aiwp-cmds.sh hotfix $work/$name $sha --pr-if-refused"
+      echo "the remote refused the push of main; main is unchanged: opening a pull request $branch -> main"
+      url="$(cd "$src" && timeout 120 "${AIWP_GH:-gh}" pr create --base main --head "$branch" \
+        --title "Hotfix $branch into main" \
+        --body "Hotfix $branch ($(git -C "$src" rev-parse --short "$sha")) into main, checked by the gate against main, opened by aiwp-cmds.sh hotfix because the remote refused the direct push of main.")" ||
+        die 1 "the pull request could not be opened: open it on the git server ($branch -> main)"
+      echo "pull request: $url"
+      echo "no tag yet: the tag waits for the merge of the pull request (a known limit); after it, when the human says publish: bash scripts/aiwp-cmds.sh hotfix-tag $rel vX.Y.Z; then bash scripts/aiwp-cmds.sh hotfix-down $rel"
+      return 0
     fi
   fi
-  echo "tagged: $tag at $(git -C "$src" rev-parse --short "refs/tags/$tag^{commit}")"
-  if ! git -C "$src" remote get-url origin >/dev/null 2>&1; then
-    echo "no remote: $tag is local only"
+  git -C "$src" update-ref refs/heads/main "$sha" "$base_then" ||
+    die 1 "main of the remote is at $sha, but the local main could not move: run git -C $(shown "$src") fetch origin main:main"
+  echo "into main: $sha of $(shown "$src")"
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    echo "pushed: main"
+    timeout 120 git -C "$src" push -q origin --delete "$branch" 2>/dev/null && echo "deleted from the remote: $branch" ||
+      echo "attention: $branch is still on the remote"
+  else
+    echo "no remote: main moved locally only"
+    git -C "$src" branch -q -D "$branch" 2>/dev/null || true
+  fi
+  rm -f "$record"
+  echo "next: ask the human whether to publish to production with the fix; yes: bash scripts/aiwp-cmds.sh hotfix-tag $rel vX.Y.Z"
+  echo "      (the patch version); then, whatever the answer: bash scripts/aiwp-cmds.sh hotfix-down $rel"
+}
+
+# hotfix-tag: the release tag of a hotfix, on the head of main, while main waits to be merged into developer.
+cmd_hotfix_tag() {
+  [ $# -eq 2 ] || die 2 "usage: hotfix-tag <repo> vX.Y.Z"
+  local repo="$1" tag="$2" src head
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 2 "the tag must be vX.Y.Z (for example v1.2.1): $tag"
+  src="$(project_repo "$repo")"
+  require_clean_on "$src" developer
+  git -C "$src" rev-parse -q --verify refs/heads/developer >/dev/null || die 1 "$(shown "$src") has no developer"
+  sync_branch "$src" main
+  hotfix_pending "$src" ||
+    die 1 "no hotfix pending in $(shown "$src"): main is already in developer. A release is tagged by bash scripts/aiwp-cmds.sh release $repo --tag $tag"
+  head="$(git -C "$src" rev-parse refs/heads/main)"
+  [ "$head" = "$HOTFIX_MAIN" ] || die 1 "main of the remote moved while tagging: run again"
+  tag_check "$src" "$tag" "$head"
+  tag_publish "$src" "$tag" "$head"
+  echo "next: bash scripts/aiwp-cmds.sh hotfix-down $repo"
+}
+
+# Fails unless git has merge-tree --write-tree (2.38 or later), which builds a merge without touching the checkout.
+require_merge_tree() {
+  local v major minor
+  v="$(git version | awk '{ print $3 }')"
+  IFS=. read -r major minor _ <<<"$v"
+  if [[ "$major" =~ ^[0-9]+$ ]] && [[ "$minor" =~ ^[0-9]+$ ]] && { [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 38 ]; }; }; then
     return 0
   fi
-  if [ -n "$remote_tag" ]; then
-    echo "pushed: $tag (already on the remote)"
+  die 1 "hotfix-down needs git 2.38 or later (git merge-tree --write-tree), this is git $v: update git, or merge main into developer in a fix/<slug>-developer clone through /merge"
+}
+
+# hotfix-down: main into developer by a standard merge commit, built off the checkout (git merge-tree) so a conflict
+# changes nothing; pushed, then the checked-out developer fast-forwards to it. No tests: the fix was tested before main.
+cmd_hotfix_down() {
+  [ $# -eq 1 ] || die 2 "usage: hotfix-down <repo>"
+  local repo="$1" src out rc=0 tree dev main merge
+  src="$(project_repo "$repo")"
+  require_clean_on "$src" developer
+  if ! git -C "$src" rev-parse -q --verify refs/heads/main >/dev/null; then
+    if ! git -C "$src" remote get-url origin >/dev/null 2>&1 ||
+      ! timeout 120 git -C "$src" ls-remote --exit-code -q origin refs/heads/main >/dev/null 2>&1; then
+      die 1 "$(shown "$src") has no main: nothing to merge down"
+    fi
+  fi
+  sync_branch "$src" developer
+  sync_branch "$src" main
+  if git -C "$src" merge-base --is-ancestor refs/heads/main refs/heads/developer; then
+    echo "nothing to do: main of $(shown "$src") is already in developer"
     return 0
   fi
-  timeout 120 git -C "$src" push -q origin "refs/tags/$tag:refs/tags/$tag" ||
-    die 1 "main was released, but the push of $tag failed: the tag is local only. Push it: git -C ${src#"$root"/} push origin refs/tags/$tag"
-  echo "pushed: $tag"
+  require_merge_tree
+  dev="$(git -C "$src" rev-parse refs/heads/developer)"
+  main="$(git -C "$src" rev-parse refs/heads/main)"
+  out="$(git -C "$src" merge-tree --write-tree --name-only --no-messages "$dev" "$main")" || rc=$?
+  case "$rc" in
+    0) tree="$(printf '%s\n' "$out" | head -n 1)" ;;
+    1)
+      echo "conflict merging main into developer of $(shown "$src"); nothing changed. Conflicting files:" >&2
+      printf '%s\n' "$out" | tail -n +2 | grep . | sed 's/^/  /' >&2
+      die 1 "resolve it in a clone of developer: bash scripts/aiwp-cmds.sh open <yyyy-mm-dd>-<slug>-developer $repo --branch fix/<slug>-developer; there git fetch origin main, git merge origin/main, resolve every conflict (CHANGELOG.md: the Unreleased section of developer stays on top, the dated patch section goes below it) and adapt the fix so the bug stays fixed on developer; then take it through /merge"
+      ;;
+    *) die 1 "git merge-tree failed (exit $rc): nothing changed; tell the human" ;;
+  esac
+  merge="$(git -C "$src" commit-tree "$tree" -p "$dev" -p "$main" -m "Merge branch 'main' into developer")" ||
+    die 1 "the merge commit could not be created: nothing changed; tell the human"
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    timeout 120 git -C "$src" push -q origin "$merge:refs/heads/developer" ||
+      die 1 "the remote refused the push of developer; nothing changed: tell the human"
+  fi
+  git -C "$src" merge -q --ff-only "$merge" ||
+    die 1 "developer of the remote is at $merge, but the local developer could not fast-forward to it: tell the human"
+  echo "merged down: main ($(git -C "$src" rev-parse --short "$main")) into developer of $(shown "$src") at $(git -C "$src" rev-parse --short "$merge")"
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    echo "pushed: developer"
+  else
+    echo "no remote: developer merged locally only"
+  fi
 }
 
 # Fails unless the repo has an origin remote.
@@ -797,6 +1082,9 @@ case "$command" in
     fi
     ;;
   release) cmd_release "$@" ;;
+  hotfix) cmd_hotfix "$@" ;;
+  hotfix-tag) cmd_hotfix_tag "$@" ;;
+  hotfix-down) cmd_hotfix_down "$@" ;;
   apply) cmd_apply "$@" ;;
   developer) cmd_developer "$@" ;;
   checkpoint) cmd_checkpoint "$@" ;;

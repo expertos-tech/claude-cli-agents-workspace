@@ -288,7 +288,8 @@ test_release_moves_main_to_developer() {
   git -C "$BASE/other" push -q origin main
   gate release app
   rc_is 1
-  has "main has commits that are not in developer"
+  has "a hotfix on main of projects/app is not merged into developer yet"
+  has "hotfix-down app"
   eq "still on developer" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
 }
 
@@ -1138,12 +1139,417 @@ test_nested_repos_are_handled_at_their_depth() {
   has "closed: tmp/work/$w"
 }
 
+# --- Hotfix: a fix from main into production, then main merged down into developer ---------------------------------
+
+HW="2026-11-17-hotfix-login-null"
+hc() { echo "$R/tmp/work/$HW/app"; }
+local_sha() { git -C "$R/projects/app" rev-parse -q --verify "refs/heads/$1" 2>/dev/null || echo none; }
+remote_heads() { git -C "$REMOTE" for-each-ref --format='%(refname)' refs/heads | sort | tr '\n' ' '; }
+# A commit in the hotfix clone (its hooks push it).
+hcommit() { # file, content
+  mkdir -p "$(dirname "$(hc)/$1")"
+  printf '%s\n' "$2" >"$(hc)/$1"
+  git -C "$(hc)" add -A
+  git -C "$(hc)" commit -q -m "fix $1" >/dev/null 2>&1
+}
+# The fixture, developer one commit ahead of main (unreleased work, on the remote too), and a hotfix clone of main.
+hotfix_fixture() {
+  fixture
+  developer_ahead unreleased
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$HW" app --from-main >/dev/null 2>&1)
+}
+# The fixture with a fix already in main of the remote, not merged into developer.
+hotfix_landed() {
+  hotfix_fixture
+  hcommit fix.txt fixed
+  gate gate "$HW/app" --test "test -f fix.txt"
+  gate hotfix "$HW/app" "$(git -C "$(hc)" rev-parse HEAD)"
+}
+
+test_hotfix_gate_against_main_then_into_main() {
+  hotfix_fixture
+  local dev0 main0 sha
+  dev0="$(local_sha developer)"
+  main0="$(local_sha main)"
+  eq "the clone starts from main" "$main0" "$(git -C "$(hc)" rev-parse HEAD)"
+  hcommit fix.txt fixed
+  sha="$(git -C "$(hc)" rev-parse HEAD)"
+  gate gate "$HW/app" --test "test -f fix.txt && test ! -f unreleased.txt"
+  rc_is 0
+  has "== 1/6 base: main of projects/app (hotfix: the checkout stays on developer)"
+  has "gate: checks passed for $sha"
+  has "bash scripts/aiwp-cmds.sh hotfix $HW/app $sha"
+  hasnt_out "gate --merge"
+  [ -f "$R/tmp/work/$HW/gate-app.md" ]; check "audit written" $?
+  grep -q "Range: \`$main0..$sha\`" "$R/tmp/work/$HW/gate-app.md"; check "audit of main..fix" $?
+  eq "checkout still on developer" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
+  eq "developer untouched" "$dev0" "$(local_sha developer)"
+  eq "main untouched by the gate" "$main0" "$(remote_sha main)"
+  gate gate --merge "$HW/app" "$sha"
+  rc_is 1
+  has "is a hotfix clone: its fix goes into main by bash scripts/aiwp-cmds.sh hotfix"
+  eq "gate --merge left main" "$main0" "$(remote_sha main)"
+  eq "gate --merge left developer" "$dev0" "$(remote_sha developer)"
+  gate hotfix "$HW/app" "$sha"
+  rc_is 0
+  has "into main: $sha of projects/app"
+  has "pushed: main"
+  has "deleted from the remote: fix/login-null"
+  has "bash scripts/aiwp-cmds.sh hotfix-tag app vX.Y.Z"
+  has "bash scripts/aiwp-cmds.sh hotfix-down app"
+  eq "remote main" "$sha" "$(remote_sha main)"
+  eq "local main" "$sha" "$(local_sha main)"
+  eq "remote developer untouched" "$dev0" "$(remote_sha developer)"
+  eq "checkout on developer" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
+  eq "no tag" "" "$(git -C "$REMOTE" tag)"
+  [ ! -f "$R/tmp/work/$HW/.gate-app" ]; check "record removed" $?
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh close "$HW" 2>&1)"
+  RC=$?
+  rc_is 0
+}
+
+# AC-1: a branch that brought developer work in (a merge, a reset) is refused; a cherry-pick of the fix passes.
+test_hotfix_gate_refuses_unreleased_developer_work() {
+  hotfix_fixture
+  git -C "$(hc)" fetch -q origin developer
+  git -C "$(hc)" merge -q --no-edit FETCH_HEAD >/dev/null 2>&1
+  gate gate "$HW/app" --test true
+  rc_is 1
+  has "refused: the branch holds 1 commit(s) of developer that main does not have"
+  has "add unreleased"
+  [ ! -f "$R/tmp/work/$HW/.gate-app" ]; check "no record" $?
+  git -C "$(hc)" reset -q --hard origin/main
+  git -C "$(hc)" reset -q --soft FETCH_HEAD
+  git -C "$(hc)" reset -q --hard FETCH_HEAD
+  gate gate "$HW/app" --test true
+  rc_is 1
+  has "commit(s) of developer that main does not have"
+  git -C "$(hc)" reset -q --hard origin/main
+  # -x: a new commit even within the same second (onto the same parent, a plain cherry-pick can be the very commit).
+  git -C "$(hc)" cherry-pick -x "$(git -C "$R/projects/app" rev-parse developer)" >/dev/null 2>&1
+  gate gate "$HW/app" --test "test -f unreleased.txt"
+  rc_is 0
+  has "gate: checks passed for"
+}
+
+# AC-4: without the gate's record, with a sha that moved, or with main moved, main does not change and gets no push.
+test_hotfix_into_main_refuses_what_the_gate_did_not_check() {
+  hotfix_fixture
+  local main0 sha other
+  main0="$(remote_sha main)"
+  hcommit fix.txt fixed
+  sha="$(git -C "$(hc)" rev-parse HEAD)"
+  gate hotfix "$HW/app" "$sha"
+  rc_is 1
+  has "the gate did not pass for this clone"
+  eq "no record: main unchanged" "$main0" "$(remote_sha main)"
+  gate gate "$HW/app" --test true
+  rc_is 0
+  gate hotfix "$HW/app" "$(git -C "$(hc)" rev-parse HEAD~1)"
+  rc_is 1
+  has "is not the sha the gate checked"
+  hcommit late.txt late
+  gate hotfix "$HW/app" "$sha"
+  rc_is 1
+  has "the clone moved after the gate"
+  eq "sha moved: main unchanged" "$main0" "$(remote_sha main)"
+  git -C "$(hc)" reset -q --hard "$sha"
+  printf 'dirty\n' >>"$(hc)/fix.txt"
+  gate hotfix "$HW/app" "$sha"
+  rc_is 1
+  has "tracked changes after the gate"
+  git -C "$(hc)" checkout -q -- fix.txt
+  printf 'x\n' >"$R/projects/app/stray.txt"
+  gate hotfix "$HW/app" "$sha"
+  rc_is 1
+  has "has changes in its checkout"
+  rm "$R/projects/app/stray.txt"
+  # Another hotfix reached main after the gate: run the gate again.
+  rm -rf "$BASE/other"
+  git clone -q -b main "$REMOTE" "$BASE/other"
+  printf 'other\n' >"$BASE/other/other-fix.txt"
+  git -C "$BASE/other" add -A
+  git -C "$BASE/other" commit -q -m "other hotfix"
+  git -C "$BASE/other" push -q origin main
+  other="$(remote_sha main)"
+  gate hotfix "$HW/app" "$sha"
+  rc_is 1
+  has "main moved after the gate: run the gate again"
+  eq "main moved: not pushed" "$other" "$(remote_sha main)"
+  eq "local main is the remote's" "$other" "$(local_sha main)"
+  gate hotfix "$W/app" "$(git -C "$(c)" rev-parse HEAD)"
+  rc_is 1
+  has "is not a hotfix clone (open --from-main)"
+  gate hotfix "$HW/app"
+  rc_is 2
+  gate hotfix "$HW/app" "$sha" --bogus
+  rc_is 2
+  gate hotfix "$HW/app" "$sha" extra
+  rc_is 2
+}
+
+test_hotfix_refused_by_a_protected_main_opens_a_pull_request() {
+  hotfix_fixture
+  local main0 sha
+  main0="$(remote_sha main)"
+  hcommit fix.txt fixed
+  sha="$(git -C "$(hc)" rev-parse HEAD)"
+  gate gate "$HW/app" --test true
+  protect_main
+  gate hotfix "$HW/app" "$sha"
+  rc_is 1
+  has "the remote refused the push of main"
+  has "bash scripts/aiwp-cmds.sh hotfix $HW/app $sha --pr-if-refused"
+  eq "remote main unchanged" "$main0" "$(remote_sha main)"
+  eq "local main unchanged" "$main0" "$(local_sha main)"
+  # The $* and $(...) belong to the stub: SC2016 does not apply.
+  # shellcheck disable=SC2016
+  printf '#!/usr/bin/env bash\necho "gh $* @ $(pwd -P)" >>"%s/gh.log"\necho https://example.com/acme/app/pull/2\n' "$BASE" >"$BASE/gh.sh"
+  chmod +x "$BASE/gh.sh"
+  : >"$BASE/gh.log"
+  AIWP_GH="$BASE/gh.sh" gate hotfix "$HW/app" "$sha" --pr-if-refused
+  rc_is 0
+  has "pull request: https://example.com/acme/app/pull/2"
+  has "no tag yet: the tag waits for the merge of the pull request (a known limit)"
+  grep -q "gh pr create --base main --head fix/login-null" "$BASE/gh.log"; check "gh opened fix -> main" $?
+  grep -q "@ $R/projects/app" "$BASE/gh.log"; check "from the project folder" $?
+  eq "local main still unchanged" "$main0" "$(local_sha main)"
+  eq "fix branch kept for the pull request" "$sha" "$(remote_sha fix/login-null)"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"$BASE/gh.sh"
+  AIWP_GH="$BASE/gh.sh" gate hotfix "$HW/app" "$sha" --pr-if-refused
+  rc_is 1
+  has "the pull request could not be opened"
+}
+
+test_hotfix_tag_only_while_main_waits_and_never_moved() {
+  hotfix_fixture
+  gate hotfix-tag app v1.0.1
+  rc_is 1
+  has "no hotfix pending in projects/app: main is already in developer"
+  eq "no tag before the fix" none "$(remote_tag v1.0.1)"
+  hcommit fix.txt fixed
+  gate gate "$HW/app" --test true
+  gate hotfix "$HW/app" "$(git -C "$(hc)" rev-parse HEAD)"
+  local main1
+  main1="$(remote_sha main)"
+  for bad in 1.0.1 v1.0 v1.0.1-rc1 ""; do
+    gate hotfix-tag app "$bad"
+    rc_is 2
+  done
+  gate hotfix-tag app
+  rc_is 2
+  git -C "$R/projects/app" tag -a v1.0.0 -m v1.0.0 "$(local_sha developer)"
+  gate hotfix-tag app v1.0.0
+  rc_is 1
+  has "v1.0.0 exists on another commit; a tag is never moved"
+  git -C "$R/projects/app" tag v1.0.2 main
+  gate hotfix-tag app v1.0.2
+  rc_is 1
+  has "lightweight tag"
+  eq "lightweight never pushed" none "$(remote_tag v1.0.2)"
+  remote_tag_at v1.0.3 "$(local_sha developer)"
+  gate hotfix-tag app v1.0.3
+  rc_is 1
+  has "v1.0.3 exists on the remote on another commit"
+  gate hotfix-tag app v1.0.1
+  rc_is 0
+  has "tagged: v1.0.1 at $(git -C "$R/projects/app" rev-parse --short main)"
+  has "pushed: v1.0.1"
+  has "next: bash scripts/aiwp-cmds.sh hotfix-down app"
+  eq "tag on main" "$main1" "$(git -C "$REMOTE" rev-parse -q --verify 'refs/tags/v1.0.1^{commit}')"
+  eq "annotated" tag "$(git -C "$REMOTE" cat-file -t refs/tags/v1.0.1)"
+  eq "only that tag" none "$(remote_tag v1.0.0)"
+  local before
+  before="$(remote_tag v1.0.1)"
+  gate hotfix-tag app v1.0.1
+  rc_is 0
+  has "pushed: v1.0.1 (already on the remote)"
+  eq "kept" "$before" "$(remote_tag v1.0.1)"
+  eq "main unchanged by the tag" "$main1" "$(remote_sha main)"
+  gate hotfix-down app
+  rc_is 0
+  gate hotfix-tag app v1.0.4
+  rc_is 1
+  has "no hotfix pending"
+}
+
+# AC-6, clean: a standard merge commit of main into developer, pushed; no new branch and no test run.
+test_hotfix_down_merges_main_into_developer() {
+  hotfix_landed
+  local dev0 main1 heads merge
+  dev0="$(remote_sha developer)"
+  main1="$(remote_sha main)"
+  heads="$(remote_heads)"
+  rm -f "$R/validate.log"
+  gate hotfix-down app
+  rc_is 0
+  has "merged down: main ($(git -C "$R/projects/app" rev-parse --short "$main1")) into developer of projects/app"
+  has "pushed: developer"
+  merge="$(remote_sha developer)"
+  eq "local developer is the pushed merge" "$merge" "$(local_sha developer)"
+  eq "first parent: developer" "$dev0" "$(git -C "$REMOTE" rev-parse "$merge^1")"
+  eq "second parent: main" "$main1" "$(git -C "$REMOTE" rev-parse "$merge^2")"
+  eq "two parents" 3 "$(git -C "$REMOTE" rev-list --parents -n 1 "$merge" | wc -w | tr -d ' ')"
+  eq "message" "Merge branch 'main' into developer" "$(git -C "$REMOTE" log -1 --format=%s "$merge")"
+  eq "no new branch" "$heads" "$(remote_heads)"
+  eq "main unchanged" "$main1" "$(remote_sha main)"
+  [ ! -e "$R/validate.log" ]; check "no check run" $?
+  [ -f "$R/projects/app/fix.txt" ] && [ -f "$R/projects/app/unreleased.txt" ]; check "checkout has both" $?
+  eq "checkout clean" "" "$(git -C "$R/projects/app" status --porcelain)"
+  gate hotfix-down app
+  rc_is 0
+  has "nothing to do: main of projects/app is already in developer"
+  gate hotfix-down
+  rc_is 2
+  gate hotfix-down app extra
+  rc_is 2
+}
+
+# AC-6, conflict: nothing changes and the way out is a fix/<slug>-developer clone through /merge; CHANGELOG.md is the
+# expected conflict. That clone passes the gate while the hotfix waits, and its merge clears the wait (AC-7).
+test_hotfix_down_conflict_changes_nothing_and_the_resolution_clone_clears_it() {
+  fixture
+  printf '# Changelog\n\n## 1.0.0 - 2026-11-01\n\n- first\n' >"$R/projects/app/CHANGELOG.md"
+  git -C "$R/projects/app" add -A
+  git -C "$R/projects/app" commit -q -m "changelog"
+  git -C "$R/projects/app" push -q origin developer
+  (cd "$R" && bash scripts/aiwp-cmds.sh release app >/dev/null 2>&1)
+  printf '# Changelog\n\n## Unreleased\n\n- new feature\n\n## 1.0.0 - 2026-11-01\n\n- first\n' >"$R/projects/app/CHANGELOG.md"
+  git -C "$R/projects/app" commit -q -am "unreleased entry"
+  git -C "$R/projects/app" push -q origin developer
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$HW" app --from-main >/dev/null 2>&1)
+  printf '# Changelog\n\n## 1.0.1 - 2026-11-17\n\n- login no longer fails on a null name\n\n## 1.0.0 - 2026-11-01\n\n- first\n' >"$(hc)/CHANGELOG.md"
+  hcommit fix.txt fixed
+  gate gate "$HW/app" --test true
+  gate hotfix "$HW/app" "$(git -C "$(hc)" rev-parse HEAD)"
+  rc_is 0
+  local dev0 main1
+  dev0="$(remote_sha developer)"
+  main1="$(remote_sha main)"
+  gate hotfix-down app
+  rc_is 1
+  has "conflict merging main into developer of projects/app; nothing changed"
+  has "  CHANGELOG.md"
+  has "--branch fix/<slug>-developer"
+  has "the Unreleased section of developer stays on top"
+  eq "remote developer unchanged" "$dev0" "$(remote_sha developer)"
+  eq "local developer unchanged" "$dev0" "$(local_sha developer)"
+  eq "main unchanged" "$main1" "$(remote_sha main)"
+  eq "checkout clean" "" "$(git -C "$R/projects/app" status --porcelain)"
+  [ ! -e "$R/projects/app/.git/MERGE_HEAD" ]; check "no merge in progress" $?
+  # The resolution: a clone of developer on fix/login-null-developer merges origin/main and resolves the conflict.
+  local rw="2026-11-17-login-null-developer" rc_dir sha
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$rw" app --branch fix/login-null-developer >/dev/null 2>&1)
+  rc_dir="$R/tmp/work/$rw/app"
+  git -C "$rc_dir" fetch -q origin main
+  git -C "$rc_dir" merge -q --no-edit origin/main >/dev/null 2>&1
+  printf '# Changelog\n\n## Unreleased\n\n- new feature\n\n## 1.0.1 - 2026-11-17\n\n- login no longer fails on a null name\n\n## 1.0.0 - 2026-11-01\n\n- first\n' >"$rc_dir/CHANGELOG.md"
+  git -C "$rc_dir" add CHANGELOG.md
+  git -C "$rc_dir" commit -q --no-edit >/dev/null 2>&1
+  gate gate "$rw/app" --test "test -f fix.txt"
+  rc_is 0
+  has "hotfix pending: fix/login-null-developer holds main"
+  sha="$(git -C "$rc_dir" rev-parse HEAD)"
+  gate gate --merge "$rw/app" "$sha"
+  rc_is 0
+  git -C "$REMOTE" merge-base --is-ancestor "$main1" developer; check "developer holds main" $?
+  eq "Unreleased stays on top" "## Unreleased" "$(git -C "$REMOTE" show developer:CHANGELOG.md | grep -m 1 '^## ')"
+  OUT="$(cd "$R" && bash scripts/aiwp-project-state.sh app 2>&1)"
+  hasnt_out "hotfix pending"
+  gate hotfix-down app
+  rc_is 0
+  has "nothing to do"
+}
+
+# AC-7: while main waits to be merged into developer, the gate of a clone of developer and the release refuse with the
+# reason; once hotfix-down pushed the merge, both work again.
+test_a_pending_hotfix_blocks_developer_merges_and_the_release() {
+  hotfix_fixture
+  commit_in feature.txt one
+  gate gate "$W/app" --test true
+  rc_is 0
+  local sha dev0
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  dev0="$(remote_sha developer)"
+  hcommit fix.txt fixed
+  gate gate "$HW/app" --test true
+  gate hotfix "$HW/app" "$(git -C "$(hc)" rev-parse HEAD)"
+  rc_is 0
+  gate gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "refused: a hotfix on main of projects/app is not merged into developer yet"
+  has "bash scripts/aiwp-cmds.sh hotfix-down app"
+  eq "developer unchanged" "$dev0" "$(remote_sha developer)"
+  gate gate "$W/app" --test true
+  rc_is 1
+  has "attention: projects/app has a hotfix on main not merged into developer yet"
+  has "refused: a hotfix on main of projects/app is not merged into developer yet"
+  [ ! -f "$R/tmp/work/$W/.gate-app" ] || [ "$(cut -d' ' -f1 "$R/tmp/work/$W/.gate-app")" = "$sha" ]; check "no new record" $?
+  gate release app --tag v1.1.0
+  rc_is 1
+  has "refused: a hotfix on main of projects/app is not merged into developer yet"
+  eq "no release tag" none "$(remote_tag v1.1.0)"
+  OUT="$(cd "$R" && bash scripts/aiwp-project-state.sh app 2>&1)"
+  has "hotfix pending: main is not merged into developer"
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh open 2026-11-17-next-change app 2>&1)"
+  has "attention: projects/app has a hotfix on main not merged into developer yet"
+  gate hotfix-down app
+  rc_is 0
+  OUT="$(cd "$R" && bash scripts/aiwp-project-state.sh app 2>&1)"
+  hasnt_out "hotfix pending"
+  gate gate "$W/app" --test "test -f fix.txt"
+  rc_is 0
+  hasnt_out "attention: projects/app has a hotfix"
+  gate gate --merge "$W/app" "$(git -C "$(c)" rev-parse HEAD)"
+  rc_is 0
+  gate release app
+  rc_is 0
+  eq "released" "$(remote_sha developer)" "$(remote_sha main)"
+}
+
+# A repo with no remote: the same flow, every step local, and said.
+test_hotfix_without_a_remote_stays_local() {
+  fixture
+  rm -rf "$R/tmp/work"
+  git -C "$R/projects/app" remote remove origin
+  developer_ahead_local() { printf 'u\n' >"$R/projects/app/u.txt"; git -C "$R/projects/app" add -A; git -C "$R/projects/app" commit -q -m unreleased; }
+  developer_ahead_local
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh open "$HW" app --from-main 2>&1)"
+  has "attention: app has no remote"
+  hcommit fix.txt fixed
+  local sha
+  sha="$(git -C "$(hc)" rev-parse HEAD)"
+  gate gate "$HW/app" --test true
+  rc_is 0
+  gate hotfix "$HW/app" "$sha"
+  rc_is 0
+  has "no remote: main moved locally only"
+  eq "local main" "$sha" "$(local_sha main)"
+  eq "fix branch removed" none "$(local_sha fix/login-null)"
+  OUT="$(cd "$R" && bash scripts/aiwp-project-state.sh --porcelain app 2>&1)"
+  has "$(printf '\tdeveloper\tyes')"
+  case "$OUT" in *"$(printf '\tyes')") check "hotfix yes" 0 ;; *) check "hotfix yes" 1 ;; esac
+  gate release app
+  rc_is 1
+  has "hotfix-down app"
+  gate hotfix-tag app v0.1.1
+  rc_is 0
+  has "no remote: v0.1.1 is local only"
+  gate hotfix-down app
+  rc_is 0
+  has "no remote: developer merged locally only"
+  git -C "$R/projects/app" merge-base --is-ancestor "$sha" developer; check "developer holds the fix" $?
+}
+
 test_usage() {
   fixture
   gate --help
   rc_is 0
   has "checkpoint <repo>"
   has "release <repo> [--pr-if-refused] [--tag vX.Y.Z]"
+  has "hotfix <work>/<clone> <sha> [--pr-if-refused]"
+  has "hotfix-tag <repo> vX.Y.Z"
+  has "hotfix-down <repo>"
   gate bring onlyone
   rc_is 2
   gate developer app --bogus

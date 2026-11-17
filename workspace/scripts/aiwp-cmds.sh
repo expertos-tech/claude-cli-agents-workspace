@@ -14,7 +14,7 @@ POCs), on the branch of the request. Everything is allowed inside a clone; proje
 the gate. <work> is <yyyy-mm-dd>-<kebab-slug>, one folder per request.
 
 Commands:
-  open <work> <repo>... [--branch <type>/<slug>]
+  open <work> <repo>... [--branch <type>/<slug>] [--from-main]
         <repo> is a repo folder relative to projects/, at any depth (e.g. billing-api, acme/billing-web), a repo
         inside another one included (billing/billing-api, where billing/ is a repo itself), or "custom" for a POC.
         For each: clones it to tmp/work/<work>/<clone>/, points the clone's origin at the real remote of the repo,
@@ -28,6 +28,12 @@ Commands:
         billing/billing-api -> billing--billing-api, acme/billing/billing-api -> acme--billing--billing-api);
         "custom" for custom/. Two repos never share it while folder names are kebab-case (no --); a clone folder
         that belongs to another repo is refused, never reused.
+        --from-main: a hotfix clone, to fix production. The branch, fix/<kebab-slug> (default fix/<slug of work
+        without a leading "hotfix-">: 2026-11-17-hotfix-login-null -> fix/login-null), starts from main of the remote,
+        fetched (no remote: the local main), never from developer; the clone records the base main. It reaches main
+        only by gate and hotfix (scripts/aiwp-gate.sh --help). A repo with no main (on its remote, when it has one)
+        or with no developer (the normal flow already works from main: open without --from-main) is refused, and
+        nothing is created for any repo of the call.
   run <work>/<clone> -- <command>...
         Runs the command with the clone as the current folder. Refuses a path outside tmp/work/.
   status [<work>]
@@ -46,7 +52,7 @@ Commands:
   rollback <work>/<clone> | <repo> [-- <docker compose options>...]
         Points each image of the stack back to its rollback-latest tag and runs docker compose up -d --no-build.
         Volumes are never touched.
-  gate, release, apply, developer, checkpoint, bring
+  gate, release, hotfix, hotfix-tag, hotfix-down, apply, developer, checkpoint, bring
         The only ways into projects/: scripts/aiwp-gate.sh --help.
 
 Git hooks of a clone (written by open; never part of any repo):
@@ -59,8 +65,8 @@ Git hooks of a clone (written by open; never part of any repo):
                              Docker down or the remote unreadable: the push is refused, the commit stays in the clone.
 
 Internal: _autopush <clone>, _prepush <clone> <remote> (refs on stdin), _scan-range <clone> <sha> <base ref> (the
-gate's check of every commit that enters the base), _state-note <repo> (the state lines of open and the gate; never
-fails), _stop-check (Claude Code Stop hook JSON on stdin; blocks the end
+gate's check of every commit that enters the base), _state-note <repo> (the state lines of open and the gate, a hotfix
+waiting to be merged into developer included; never fails), _stop-check (Claude Code Stop hook JSON on stdin; blocks the end
 of a reply once while a clone has a commit, on a branch or a detached HEAD, not on the remote).
 
 Environment: AIWP_SECRETS_CMD replaces the gitleaks run (tests); it gets the repo and the range as arguments.
@@ -270,11 +276,12 @@ cmd_prepush() {
 # Prints the state of a repo of projects/ (relative path) and, with no marker or out of date, the attention line that
 # asks for authorization to normalize it. Never fails: the state only warns.
 state_note() {
-  local rel="$1" line kind state marker version pending
+  local rel="$1" line kind state marker version pending hotfix
   line="$(timeout 20 bash "$root/scripts/aiwp-project-state.sh" --porcelain -- "$rel" 2>/dev/null | head -n 1)" || true
   [ -n "$line" ] || return 0
-  IFS=$'\t' read -r kind _ _ state marker version pending _ <<<"$line"
+  IFS=$'\t' read -r kind _ _ state marker version pending _ _ _ hotfix _ <<<"$line"
   [ "$kind" = project ] || return 0
+  [ "$hotfix" != yes ] || echo "attention: projects/$rel has a hotfix on main not merged into developer yet: /merge into developer and the release are refused until it is merged down (bash scripts/aiwp-cmds.sh hotfix-down $rel, or a fix/<slug>-developer clone through /merge when it conflicts)"
   case "$state" in
     none) echo "attention: projects/$rel has no AI-WORKSPACE-PROJECT marker: not a workspace project yet. Ask the person for authorization to run /normalize-projects $rel; the work goes on either way" ;;
     outdated) echo "attention: projects/$rel is on workspace version $marker, the workspace on $version, with migrations ${pending//,/, } pending. Ask the person for authorization to run /normalize-projects $rel; the work goes on either way" ;;
@@ -285,12 +292,31 @@ state_note() {
   return 0
 }
 
+# Fails, before anything is created, unless a repo can take a hotfix clone: main on its remote (with no remote, the
+# local main) and developer, here or on the remote.
+require_hotfix_source() {
+  local repo="$1" src="$2" heads="" dev=0
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    heads="$(timeout 120 git -C "$src" ls-remote origin refs/heads/main refs/heads/developer 2>/dev/null)" ||
+      die 1 "could not read the remote of $repo: a hotfix starts from main of the remote; nothing was created"
+    printf '%s\n' "$heads" | awk '$2 == "refs/heads/main" { found = 1 } END { exit !found }' ||
+      die 1 "$repo has no main on its remote: a hotfix starts from main (production); nothing was created"
+  else
+    git -C "$src" rev-parse -q --verify refs/heads/main >/dev/null ||
+      die 1 "$repo has no main: a hotfix starts from main (production); nothing was created"
+  fi
+  git -C "$src" rev-parse -q --verify refs/heads/developer >/dev/null && dev=1
+  printf '%s\n' "$heads" | awk '$2 == "refs/heads/developer" { found = 1 } END { exit !found }' && dev=1
+  [ "$dev" = 1 ] || die 1 "$repo has no developer: its base is main, and the normal flow already works from it (open without --from-main); nothing was created"
+}
+
 # open: one clone per repo, branch from the base, hooks, env files, first push.
 cmd_open() {
-  local work="" branch="" repos=() repo src name clone base url slug start
+  local work="" branch="" repos=() repo src name clone base url slug start from_main=0 kind
   while [ $# -gt 0 ]; do
     case "$1" in
       --branch) [ $# -ge 2 ] || die 2 "--branch needs a value"; branch="$2"; shift ;;
+      --from-main) from_main=1 ;;
       -*) die 2 "unknown option: $1" ;;
       *) if [ -z "$work" ]; then work="$1"; else repos+=("$1"); fi ;;
     esac
@@ -303,9 +329,20 @@ cmd_open() {
   # shellcheck source=lib/projects.sh
   . "$root/scripts/lib/projects.sh"
   slug="${work:11}"
+  if [ "$from_main" = 1 ]; then
+    [ -n "$branch" ] || branch="fix/${slug#hotfix-}"
+    [[ "$branch" =~ ^fix/[a-z0-9]+(-[a-z0-9]+)*$ ]] || die 2 "--from-main needs a branch fix/<kebab-slug>: $branch"
+  fi
   [ -n "$branch" ] || branch="feat/$slug"
   [[ "$branch" =~ ^[a-z]+/[a-z0-9]+(-[a-z0-9]+)*$ ]] || die 2 "--branch must be <type>/<kebab-slug>: $branch"
   [[ "${branch#*/}" =~ $protected_re ]] && die 2 "--branch cannot be a base: $branch"
+  if [ "$from_main" = 1 ]; then
+    # Every repo is checked before the first clone: a refusal leaves nothing behind.
+    for repo in "${repos[@]}"; do
+      src="$(source_repo "$repo")"
+      require_hotfix_source "$repo" "$src"
+    done
+  fi
   for repo in "${repos[@]}"; do
     src="$(source_repo "$repo")"
     name="$(clone_name "$repo" "$src")"
@@ -318,16 +355,19 @@ cmd_open() {
     case "$src/" in "$root/projects/"*) state_note "${src#"$root"/projects/}" ;; esac
     if [ -e "$clone" ]; then
       [ "$(git -C "$clone" config --get aiwp.source 2>/dev/null)" = "$src" ] || die 1 "tmp/work/$work/$name exists and is not a clone of $repo"
+      kind="$(git -C "$clone" config --get aiwp.hotfix 2>/dev/null || echo 0)"
+      [ "$kind" = "$from_main" ] || die 1 "tmp/work/$work/$name is open already$([ "$kind" = 1 ] && echo " as a hotfix clone (from main)" || echo " from its base"): use another <work>"
       echo "path: tmp/work/$work/$name (already open)"
       continue
     fi
-    base="$(base_of "$src")"
+    if [ "$from_main" = 1 ]; then base=main; else base="$(base_of "$src")"; fi
     mkdir -p "$work_root/$work"
     git clone -q --local --no-checkout "$src" "$clone"
     url="$(git -C "$src" remote get-url origin 2>/dev/null || true)"
     git -C "$clone" config aiwp.source "$src"
     git -C "$clone" config aiwp.branch "$branch"
     git -C "$clone" config aiwp.base "$base"
+    [ "$from_main" = 0 ] || git -C "$clone" config aiwp.hotfix 1
     start="$(git -C "$src" rev-parse "refs/heads/$base")"
     if [ -n "$url" ]; then
       git -C "$clone" remote set-url origin "$url"
@@ -338,12 +378,18 @@ cmd_open() {
       done
       if timeout 120 git -C "$clone" fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null; then
         start="origin/$base"
+      elif [ "$from_main" = 1 ]; then
+        # A hotfix starts from production only: never from a local main that may be behind the remote.
+        rm -rf "${clone:?}"
+        rmdir "$work_root/$work" 2>/dev/null || true
+        die 1 "could not fetch main from the remote of $repo: a hotfix starts from main of the remote; nothing was created for $repo"
       else
         echo "attention: could not fetch $base from the remote of $repo; the branch starts from the local $base"
       fi
     else
       echo "attention: $repo has no remote; the branch is pushed to projects/$repo itself, not off the machine"
     fi
+    [ "$from_main" = 0 ] || echo "hotfix: $branch starts from main ($(git -C "$clone" rev-parse --short "$start")); it reaches main only by the gate and bash scripts/aiwp-cmds.sh hotfix"
     if git -C "$clone" ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
       rm -rf "${clone:?}"
       rmdir "$work_root/$work" 2>/dev/null || true
@@ -351,6 +397,13 @@ cmd_open() {
     fi
     git -C "$clone" checkout -q -b "$branch" "$start"
     git -C "$clone" branch -q --unset-upstream 2>/dev/null || true
+    if [ "$from_main" = 1 ]; then
+      # git clone --local made a local copy of the checked-out developer: a hotfix clone holds only its fix branch, so
+      # no developer work is at hand there, and close never sees that copy as commits off the remote.
+      git -C "$clone" for-each-ref --format='%(refname:short)' refs/heads | while IFS= read -r ref; do
+        [ "$ref" = "$branch" ] || git -C "$clone" branch -q -D "$ref"
+      done
+    fi
     write_hooks "$clone"
     copy_env_files "$src" "$clone"
     if push_branch "$clone" >/dev/null; then
@@ -563,7 +616,7 @@ case "$command" in
   close) cmd_close "$@" ;;
   up) cmd_up "$@" ;;
   rollback) cmd_rollback "$@" ;;
-  gate | release | apply | developer | checkpoint | bring) exec bash "$root/scripts/aiwp-gate.sh" "$command" "$@" ;;
+  gate | release | hotfix | hotfix-tag | hotfix-down | apply | developer | checkpoint | bring) exec bash "$root/scripts/aiwp-gate.sh" "$command" "$@" ;;
   _autopush)
     # Inside a rebase HEAD is detached and each picked commit fires post-commit: post-rewrite pushes at the end.
     git -C "$1" symbolic-ref -q HEAD >/dev/null || exit 0

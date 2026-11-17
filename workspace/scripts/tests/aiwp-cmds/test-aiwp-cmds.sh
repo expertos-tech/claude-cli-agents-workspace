@@ -502,11 +502,107 @@ test_open_names_a_nested_repo_after_its_path() {
   rc_is 2
 }
 
+# AC-1: a hotfix clone starts from main of the remote (production), never from developer nor from a local main behind
+# the remote, and records the base main.
+test_open_from_main_starts_from_the_remote_main() {
+  fixture
+  local hw="2026-11-17-hotfix-login-null" remote="$BASE/remote.$CURRENT.git" c
+  printf 'unreleased\n' >"$R/projects/app/unreleased.txt"
+  git -C "$R/projects/app" add unreleased.txt
+  git -C "$R/projects/app" commit -q -m "unreleased work"
+  git -C "$R/projects/app" push -q origin developer
+  rm -rf "$BASE/other"
+  git clone -q -b main "$remote" "$BASE/other"
+  printf 'released later\n' >"$BASE/other/released.txt"
+  git -C "$BASE/other" add released.txt
+  git -C "$BASE/other" commit -q -m "released by another release"
+  git -C "$BASE/other" push -q origin main
+  run open "$hw" app --from-main
+  rc_is 0
+  has "hotfix: fix/login-null starts from main"
+  has "pushed: fix/login-null"
+  has "path: tmp/work/$hw/app"
+  c="$R/tmp/work/$hw/app"
+  eq "branch" fix/login-null "$(git -C "$c" symbolic-ref --short HEAD)"
+  eq "starts at the remote main" "$(remote_sha main)" "$(git -C "$c" rev-parse HEAD)"
+  if git -C "$c" merge-base --is-ancestor "$(remote_sha developer)" HEAD; then check "no commit of developer" 1; fi
+  eq "base recorded" main "$(git -C "$c" config aiwp.base)"
+  eq "hotfix recorded" 1 "$(git -C "$c" config aiwp.hotfix)"
+  # Regression: git clone --local copied the checked-out developer as a local branch, which close saw as commits off
+  # the remote; a hotfix clone holds only its fix branch.
+  eq "only the fix branch" fix/login-null "$(git -C "$c" for-each-ref --format='%(refname:short)' refs/heads)"
+  run close "$hw"
+  rc_is 1
+  has "fix/login-null is not in main"
+  hasnt "commits not on the remote"
+  eq "projects/app untouched" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
+  run status "$hw"
+  has "branch=fix/login-null base=main ahead=0"
+  run open "$hw" app --from-main
+  rc_is 0
+  has "(already open)"
+  run open "$hw" app
+  rc_is 1
+  has "is open already as a hotfix clone"
+  run open "$W" app
+  run open "$W" app --from-main
+  rc_is 1
+  has "is open already from its base"
+  run open 2026-11-17-other-fix app --from-main --branch fix/session-expiry
+  rc_is 0
+  has "pushed: fix/session-expiry"
+}
+
+# AC-8: a repo with no main, or with no developer, stops the hotfix with a warning, and nothing is created for any repo.
+test_open_from_main_refuses_a_repo_without_main_or_developer() {
+  fixture
+  local hw="2026-11-17-hotfix-login-null" remote="$BASE/remote.$CURRENT.git"
+  git -C "$remote" update-ref -d refs/heads/main
+  run open "$hw" app --from-main
+  rc_is 1
+  has "app has no main on its remote: a hotfix starts from main (production); nothing was created"
+  [ ! -e "$R/tmp/work/$hw" ]; check "no clone folder" $?
+  eq "no branch on the remote" none "$(remote_sha fix/login-null)"
+  local_repo solo
+  git -C "$R/projects/solo" branch -q -D main
+  run open "$hw" solo --from-main
+  rc_is 1
+  has "solo has no main: a hotfix starts from main (production)"
+  git init -q -b main "$R/projects/mainonly"
+  git -C "$R/projects/mainonly" commit -q --allow-empty -m base
+  run open "$hw" mainonly --from-main
+  rc_is 1
+  has "mainonly has no developer: its base is main, and the normal flow already works from it (open without --from-main)"
+  # Several repos: one refused, none created.
+  local_repo good
+  run open "$hw" good mainonly --from-main
+  rc_is 1
+  [ ! -e "$R/tmp/work/$hw" ]; check "nothing created for the good repo either" $?
+  # Regression: a repo that does not exist stops the check of the others, never passes as an empty folder.
+  run open "$hw" good missing --from-main
+  rc_is 1
+  has "repo not found: missing"
+  hasnt "missing has no main"
+  [ ! -e "$R/tmp/work/$hw" ]; check "nothing created with a missing repo" $?
+  run open "$hw" good --from-main --branch feat/x
+  rc_is 2
+  has "--from-main needs a branch fix/<kebab-slug>"
+  run open "$hw" good --from-main --branch fix/main
+  rc_is 2
+  [ ! -e "$R/tmp/work/$hw" ]; check "still nothing created" $?
+  run open "$hw" good --from-main
+  rc_is 0
+  has "attention: good has no remote"
+  eq "no remote: from the local main" "$(git -C "$R/projects/good" rev-parse main)" "$(git -C "$R/tmp/work/$hw/good" rev-parse HEAD)"
+}
+
 test_usage() {
   fixture
   run --help
   rc_is 0
   has "Usage: scripts/aiwp-cmds.sh"
+  has "open <work> <repo>... [--branch <type>/<slug>] [--from-main]"
+  has "gate, release, hotfix, hotfix-tag, hotfix-down, apply"
   run
   rc_is 2
   run nope

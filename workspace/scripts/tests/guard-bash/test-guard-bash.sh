@@ -213,6 +213,12 @@ test_terraform_and_database() {
   has "a release asks" "aiwp-cmds.sh release"
   hook "bash scripts/aiwp-cmds.sh checkpoint billing-api"
   has "the checkpoint tags ask" "aiwp-cmds.sh checkpoint"
+  hook "bash scripts/aiwp-cmds.sh hotfix 2026-11-17-hotfix-login/billing-api abc123"
+  has "the fix into main asks" "aiwp-cmds.sh hotfix moves production"
+  hook "bash scripts/aiwp-cmds.sh hotfix-tag billing-api v1.2.1"
+  has "the hotfix tag asks" "aiwp-cmds.sh hotfix-tag"
+  hook "bash scripts/aiwp-cmds.sh hotfix-down billing-api"
+  has "the merge into developer asks" "aiwp-cmds.sh hotfix-down"
 }
 
 test_python_missing_asks() {
