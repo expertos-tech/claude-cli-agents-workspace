@@ -2,6 +2,20 @@
 
 All notable changes to Claude CLI Agents Workspace are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - Unreleased
+
+### Added
+
+- `/merge` writes the project's `CHANGELOG.md` at every merge into `developer`, always under a named version (`## [X.Y.Z] - Unreleased`): a `feat` makes it a minor, anything else a patch, and a fix of something that entered the same unreleased version adjusts its entry instead of adding a "Fixed" one (`rules/docs.md`). With no argument, `/merge` takes the clone of the session.
+- `/merge --main <repo>` releases that version: a release clone on `fix/release-vX-Y-Z`, a full check in a clean context, its fixes, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the annotated tag `vX.Y.Z` (`aiwp-cmds.sh release <repo> --tag vX.Y.Z`, which never moves a tag).
+- Plans, requests and documents Claude writes to a file are saved in English and shown in your language.
+
+### Changed
+
+- `/prompt` opens the work clone before the first change to a project or POC.
+- `/commit`, the implementer and the docs writer no longer write `CHANGELOG.md`; `/merge` does.
+- After updating: a project whose `CHANGELOG.md` has a plain `## [Unreleased]` section gets it named by the next `/merge` (`## [X.Y.Z] - Unreleased`); nothing to do by hand.
+
 ## [0.1.0] - 2026-11-16
 
 Initial public release.
