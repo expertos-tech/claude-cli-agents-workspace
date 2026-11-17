@@ -11,7 +11,7 @@
 - A clone of `tmp/work/` (`AGENTS.md` "Where work happens"): anything, with no question: commit, amend, rebase, reset, branch. Each commit, rewrite or merge is pushed by the clone's own hooks, after a secret scan of the commits that leave; never push it by hand, and never with `--no-verify`.
 - `projects/`: read only (`status`, `log`, `diff`, `fetch`...). The `guard-bash` hook refuses any other git command there. It changes only by `bash scripts/aiwp-cmds.sh gate`, `release` and `apply` (below), and by the steps of `/normalize-projects`: `developer`, `checkpoint` and `bring` (`bash scripts/aiwp-gate.sh --help`). The core is no repo and changes only by `aiwp update`, run by the person in a terminal.
 - The custom layer (`custom/`): commit and push the files the session wrote there (prompts, lessons, the project index), by path. A POC is worked on in a clone of `custom/`, like a project.
-- A new remote and pushing a tag: only when the human asks. Each request covers that operation only. The one tag the workspace pushes: the checkpoint tags of `/normalize-projects` (`ai-workspace-migration/<yyyy-mm-dd>/developer` and `.../main`, annotated, on the heads before any change), by `bash scripts/aiwp-cmds.sh checkpoint <repo>` after the human confirms; they are never moved or deleted.
+- A new remote and pushing a tag: only when the human asks. Each request covers that operation only. The tags the workspace pushes: the release tag `vX.Y.Z` of `/merge --main` (`bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z`, annotated, on the released `main`), and the checkpoint tags of `/normalize-projects` (`ai-workspace-migration/<yyyy-mm-dd>/developer` and `.../main`, annotated, on the heads before any change), by `bash scripts/aiwp-cmds.sh checkpoint <repo>` after the human confirms; they are never moved or deleted.
 - Never change git config (user, hooks, remotes) unless asked.
 - Verifying a push block on a remote: read the effective permissions of each branch the block covers. Never test it with a real push.
 
@@ -22,11 +22,12 @@
 - Branch name: `<type>/<kebab-description>`, ASCII, lowercase, with the types of "Commits"; it must not exist on the remote yet.
 - The clone has the repo's local `.env` files (copied by `open`); install its dependencies there.
 - `bash scripts/aiwp-cmds.sh status` lists the clones, what is not pushed and what is not committed; `close <work>` deletes a work folder once everything in it is merged and on the remote.
+- A release (`/merge --main`) works on `fix/release-vX-Y-Z`, in `tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/`: the full check of `developer`, its fixes and the dated CHANGELOG.
 - A normalization (`/normalize-projects`) works on `feat/ai-workspace-migration` and goes through the gate like any work, after the human approved its plan and tested the branch.
 
 ## Gate
 
-The base of a project receives only what the gate checked: `/merge <work>/<clone>` (`rules/skills/merge/SKILL.md`).
+The base of a project receives only what the gate checked: `/merge [<work>/<clone>]` (`rules/skills/merge/SKILL.md`). Before phase 1, `/merge` merges the base into the branch and writes the CHANGELOG section of what enters (`rules/docs.md` "CHANGELOG.md").
 
 1. Phase 1, `bash scripts/aiwp-cmds.sh gate <work>/<clone> --test "<full test command>"` (`--docs-only` when only documentation changed): the base updated from the remote and merged into the branch, the full tests, `validate.sh` with every check, env files and secrets in the commits, and the audit of what leaves the base.
 2. The review against the request (`rules/review.md`), then the human's answers when the gate found something the request does not explain.
@@ -34,7 +35,7 @@ The base of a project receives only what the gate checked: `/merge <work>/<clone
 
 - The normalization branch (`feat/ai-workspace-migration`) is judged on what it adds: line 1 of `README.md` must be the marker of the workspace version, `validate.sh` runs its lint checks on the changed files only, and the secret check is the scan of the commits the branch adds (a new secret or env file fails; one already in the base does not, and is reported by `/normalize-projects`). It applies only to a project that needs it (no marker, or out of date; a `-x-y-z` suffix names a pending migration), and the branch may add or change only documentation, images, `.gitignore` and the sample `.env` (deletions allowed). `--untested` replaces `--test` only when the human chose to go on untested, and `guard-bash` asks before it. The branch stays on the remote after phase 2.
 - Never merge with a BLOCKER open or a failing check.
-- `main` moves only by `bash scripts/aiwp-cmds.sh release <repo>` (`developer` into `main` by fast-forward), on the human's explicit request.
+- `main` moves only by `/merge --main <repo>`, on the human's explicit request: a release clone with a clean-context full check and its fixes, the CHANGELOG dated, the gate into `developer`, then `bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z` (`developer` into `main` by fast-forward, and the tag).
 - Terraform changes the cloud only by `bash scripts/aiwp-cmds.sh apply <repo> <module>` (plan from `main`), then `... --apply <plan>` after the human confirms that plan; both on the human's explicit request.
 
 ## Waves

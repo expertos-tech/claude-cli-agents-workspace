@@ -1,4 +1,4 @@
-<!-- source: workspace/docs/usage.md sha256:1ea24bc1a99b208ff10a3ab37ccedfd3c5bcd55b0353564b6f318d04de66b591 -->
+<!-- source: workspace/docs/usage.md sha256:fba8f7459a8e08b7ea785807b75c521ce3415fad82081ed806860fab053ebd94 -->
 
 # Usando o workspace
 
@@ -128,7 +128,7 @@ O que esperar:
 
 - **Pergunta ou leitura:** o Claude responde; nada é aberto.
 - **Mudança num projeto ou numa POC:** o Claude abre um clone em `tmp/work/<date>-<subject>/<repo>/` (`bash scripts/aiwp-cmds.sh open`), diz o caminho e trabalha só ali. No clone, tudo é livre: commit, rebase, reset, apagar, subir Docker. Cada commit vai sozinho para o remoto, depois de uma varredura de segredos dos commits que saem; um commit com segredo ou `.env` fica no clone.
-- **Levar para a base:** `/merge <work>/<clone>`. O gate traz a `developer` atualizada, roda a suíte inteira e o `validate.sh` completo, procura segredos em todos os commits que entram, escreve a auditoria do que sai da base (arquivos apagados ou renomeados para fora, testes removidos ou desligados, SQL destrutivo, infra, dependências) e pede uma revisão contra o pedido. Você só é perguntado sobre o que o pedido não explica. Depois, a `developer` avança por fast-forward exatamente para o commit que passou, e o clone pode ser fechado (`aiwp-cmds.sh close`).
+- **Levar para a base:** `/merge [<work>/<clone>]`; sem argumento, o clone desta sessão. O `/merge` integra a `developer` no clone e escreve a versão do `CHANGELOG.md` do projeto (`## [X.Y.Z] - Unreleased`; as regras de versão estão em `rules/docs.md`) antes do gate. O gate traz a `developer` atualizada, roda a suíte inteira e o `validate.sh` completo, procura segredos em todos os commits que entram, escreve a auditoria do que sai da base (arquivos apagados ou renomeados para fora, testes removidos ou desligados, SQL destrutivo, infra, dependências) e pede uma revisão contra o pedido. Você só é perguntado sobre o que o pedido não explica. Depois, a `developer` avança por fast-forward exatamente para o commit que passou, e o clone pode ser fechado (`aiwp-cmds.sh close`).
 - **`projects/` fica sempre na `developer`.** Ninguém edita ali; só o gate avança a base.
 
 ## Ondas: checkpoint, merge e retomada
@@ -152,7 +152,7 @@ O resto segue o modo de permissão do Claude Code: o auto mode julga o que é de
 | --- | --- |
 | Gate com algo que o pedido não explica, destruição fora da máquina, ou base que publica em produção | uma pergunta, numa rodada, antes de mesclar |
 | Apagar banco de dados: `docker volume rm`, `docker compose down -v`, `DROP`/`TRUNCATE`, apagar uma pasta `.data/` | o Claude diz o que vai embora, e o hook pede a sua confirmação |
-| `aiwp-cmds.sh release` (a `main` anda) | confirmação, e só a seu pedido |
+| `aiwp-cmds.sh release` (a `main` anda, e a tag `vX.Y.Z` é enviada), executado por `/merge --main <repo>` | confirmação, e só a seu pedido |
 | `aiwp-cmds.sh apply --apply` (Terraform na nuvem) | confirmação do plano mostrado, e só a seu pedido |
 | `aiwp-cmds.sh close --discard` (apagar trabalho não mesclado) | confirmação |
 | git que escreve em `projects/` ou no core, Terraform fora do `apply`, `git push --no-verify` | recusado pelo hook, com o caminho certo |
@@ -163,7 +163,8 @@ O resto segue o modo de permissão do Claude Code: o auto mode julga o que é de
 
 | Comando | Faz |
 | --- | --- |
-| `/merge <work>/<clone>` | Leva o trabalho de um clone para a `developer`, pelo gate |
+| `/merge [<work>/<clone>]` | Leva o trabalho de um clone (sem argumento: o desta sessão) para a `developer`, pelo gate, escrevendo o `CHANGELOG.md` |
+| `/merge --main <repo>` | A release: um clone de release `fix/release-vX-Y-Z`, uma verificação completa em contexto limpo, correções, o `CHANGELOG.md` datado, o gate para a `developer`, depois a `main` e a tag `vX.Y.Z` |
 | `/commit [--all] [--repo <dir>]` | Um commit por mudança lógica, num clone ou no `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Envia o `custom/`, ou reenvia um clone cujo push automático falhou |
 | `/validate [folder] [--only <checks>] [--sonar]` | Roda as validações em Docker |
@@ -206,7 +207,7 @@ Nos dois modos, testes unitários, cobertura, lint e varredura de segredos são 
 
 - Cada projeto é um repositório git independente em `projects/`, nunca parte do core. A lista está em `custom/projects.md`.
 - **Criar:** peça ("cria o projeto X em projects/client-y"). O Claude usa `scripts/init-repo.sh`. A pasta de um projeto novo é decisão sua; se você não disser, o Claude pergunta.
-- **Branches:** o checkout em `projects/` fica na `developer`; o trabalho acontece num clone em `tmp/work/`, numa branch que sai dela e volta pelo gate. A `main` só anda quando você pede a release (`aiwp-cmds.sh release`): um fast-forward para a `developer`. Terraform só aplica a partir da `main`, com `aiwp-cmds.sh apply`, a seu pedido e com o plano confirmado.
+- **Branches:** o checkout em `projects/` fica na `developer`; o trabalho acontece num clone em `tmp/work/`, numa branch que sai dela e volta pelo gate. A `main` só anda quando você pede a release (`/merge --main <repo>`, num clone de release `fix/release-vX-Y-Z`, terminando em `aiwp-cmds.sh release <repo> --tag vX.Y.Z`): um fast-forward para a `developer` e a tag da versão. Terraform só aplica a partir da `main`, com `aiwp-cmds.sh apply`, a seu pedido e com o plano confirmado.
 - **Docker local:** `aiwp-cmds.sh up` publica e marca antes as imagens que vai substituir; `aiwp-cmds.sh rollback` volta para elas.
 - **Projetos do workspace:** a primeira linha do `README.md` de cada projeto (e de cada pasta de POC) é um marcador com a versão do workspace da última normalização: `<!-- AI-WORKSPACE-PROJECT 0.1.0 -->`. `bash scripts/aiwp-project-state.sh` mostra o estado de cada um. Quando uma mensagem cita um projeto sem o marcador, ou um que uma versão mais nova do workspace pede algo (`migrations/`), o Claude avisa e pergunta se deve rodar `/normalize-projects <project>`. Dizer não nunca bloqueia o pedido; o aviso volta da próxima vez que você citar o projeto. O `aiwp-cmds.sh open` e o gate mostram o mesmo aviso.
 - **Trazer um projeto que já existe:** `/normalize-projects --from <url | folder>` o clona em `projects/` (de uma pasta, as branches locais vêm junto e o `origin` aponta para o remoto real dela; mudanças não commitadas lá são listadas, pois um clone não as leva). Um projeto clonado à mão ou uma POC movida para `custom/pocs/` é normalizado do mesmo jeito: `/normalize-projects <project>`.

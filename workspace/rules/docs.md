@@ -21,9 +21,11 @@ paths:
 
 ## CHANGELOG.md
 
-- Projects, components and SDKs: every delivery that changes behavior adds its entry under `Unreleased`, in the existing subsection of its type (`### Added`, `### Changed`, `### Fixed`). Format: Keep a Changelog, SemVer, newest first. A change of form only (spelling, formatting, a broken link) needs no entry.
-- A version section only when the human asks: rename `Unreleased` to `[x.y.z] - YYYY-MM-DD` in a commit of its own.
-- The workspace: `CHANGELOG.md` gets one section per release, written by the release process of the product repository; a session never edits it.
+- Projects, components and SDKs: `/merge` is the only writer, at each merge into `developer`, from `git log` and `git diff` of what enters. Format: Keep a Changelog, SemVer, newest first; subsections `### Added`, `### Changed`, `### Fixed`, `### Removed`, `### Security`, written for the reader, no duplicates. A change of form only (spelling, formatting, a broken link) needs no entry. A component with its own `CHANGELOG.md` (the nearest one up the tree from the changed files) gets its own section and version; a changed file no `CHANGELOG.md` covers goes to the root one, created when missing. The root `CHANGELOG.md` is the version of the repository: its version names the release tag.
+- The next version is always named: `## [X.Y.Z] - Unreleased`. L is the higher of the newest dated header and the newest `vX.Y.Z` tag (neither: `0.0.0`). No `Unreleased` section: bump L by the Conventional Commit types of what enters: a `feat` → minor; only `fix`, `docs`, `refactor`, `chore`, `test`, `perf`, `build` or `ci` → patch; breaking (`!`) → major from 1.0.0, minor before. A section that is a patch of L (same X.Y) becomes X.(Y+1).0 when a new `feat` enters; a minor or major section keeps its number and only gains entries.
+- A fix of something that entered the same `Unreleased` version is not a fix: no `### Fixed` entry and no bump. Adjust the original entry, only when the behavior it describes changed. `### Fixed` is only for what a dated version already published.
+- `/merge --main` dates the section (`## [X.Y.Z] - YYYY-MM-DD`) and tags `main` with `vX.Y.Z`. Never edit a dated section.
+- The workspace: `CHANGELOG.md` gets one section per release, written by `/merge` of the product repository; a session of an installed workspace never edits it.
 
 ## docs/ of a project
 

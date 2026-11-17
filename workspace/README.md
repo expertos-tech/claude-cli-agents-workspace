@@ -78,7 +78,7 @@ Claude asks only what keeps it from starting and opens a clone in `tmp/work/<dat
 /merge <date>-<subject>/my-app
 ```
 
-The gate brings `developer` up to date, runs the whole suite and the validations, looks for secrets, shows what leaves the base and asks for a review against your request. You are asked only if something shows up that the request does not explain. Then `developer` moves to exactly the commit that passed.
+Without an argument, `/merge` takes the clone of this session. The gate brings `developer` up to date, runs the whole suite and the validations, looks for secrets, shows what leaves the base and asks for a review against your request. You are asked only if something shows up that the request does not explain. Then `developer` moves to exactly the commit that passed. `/merge` also writes the version of the project's `CHANGELOG.md` before the gate.
 
 **Next:** for larger requests, build the request with `/draft-prompt` and run it with `/prompt`; the session gets the project's name, numbered (`my-app-1`, `my-app-2`...). The full guide is in [docs/usage.md](docs/usage.md).
 
@@ -92,7 +92,7 @@ The gate brings `developer` up to date, runs the whole suite and the validations
 ## What never happens without you
 
 - **`projects/` stays on `developer` and changes only through the gate.** A hook refuses any git write in `projects/` or in the core outside it.
-- **`main` and the cloud only at your request.** `main` moves only with `bash scripts/aiwp-cmds.sh release`, and Terraform applies only with `bash scripts/aiwp-cmds.sh apply`, from `main` and with the plan confirmed.
+- **`main` and the cloud only at your request.** `main` moves only by `/merge --main <repo>`, a new version with a tag, and Terraform applies only with `bash scripts/aiwp-cmds.sh apply`, from `main` and with the plan confirmed.
 - **Deleting a database asks for your confirmation**: a Docker volume, `DROP`, `dropdb` and the like.
 - **Publishing to the local Docker is free**, and `bash scripts/aiwp-cmds.sh up` always tags the previous publication first; `rollback` goes back to it.
 - **A secret does not leave the machine:** the scan runs before each push and again at the gate.
@@ -105,7 +105,8 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 
 | Command | Does |
 | --- | --- |
-| `/merge <work>/<clone>` | Takes the work of a clone to the project's `developer`, through the gate |
+| `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to the project's `developer`, through the gate, writing the `CHANGELOG.md` |
+| `/merge --main <repo>` | The release: a release clone, a full check in a clean context, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |

@@ -1,4 +1,4 @@
-<!-- source: workspace/README.md sha256:0178760f9c2d955a0551dbd9aaf55452c4756f4c52a6cc0a431c3300fbe6b6d0 -->
+<!-- source: workspace/README.md sha256:a94a75cee22b18f68a5915e52ffcf1c62210cd1f17ff7228405f2e4275d49216 -->
 
 # Claude CLI Agents Workspace
 
@@ -79,7 +79,7 @@ O Claude pergunta só o que impede de começar e abre um clone em `tmp/work/<dat
 /merge <date>-<subject>/my-app
 ```
 
-O gate traz a `developer` atualizada, roda a suíte inteira e as validações, procura segredos, mostra o que sai da base e pede uma revisão contra o seu pedido. Você só é perguntado se aparecer algo que o pedido não explica. Depois, a `developer` avança exatamente para o commit que passou.
+Sem argumento, `/merge` leva o clone desta sessão. O gate traz a `developer` atualizada, roda a suíte inteira e as validações, procura segredos, mostra o que sai da base e pede uma revisão contra o seu pedido. Você só é perguntado se aparecer algo que o pedido não explica. Depois, a `developer` avança exatamente para o commit que passou. O `/merge` também escreve a versão do `CHANGELOG.md` do projeto antes do gate.
 
 **Depois:** para pedidos maiores, monte o pedido com `/draft-prompt` e rode com `/prompt`; a sessão ganha o nome do projeto, numerado (`my-app-1`, `my-app-2`...). O guia completo está em [docs/usage.md](docs/usage.md).
 
@@ -93,7 +93,7 @@ O gate traz a `developer` atualizada, roda a suíte inteira e as validações, p
 ## O que nunca acontece sem você
 
 - **`projects/` fica na `developer` e só muda pelo gate.** Um hook recusa qualquer escrita git em `projects/` ou no core fora dele.
-- **`main` e nuvem só a seu pedido.** A `main` só anda com `bash scripts/aiwp-cmds.sh release`, e o Terraform só aplica com `bash scripts/aiwp-cmds.sh apply`, a partir da `main` e com o plano confirmado.
+- **`main` e nuvem só a seu pedido.** A `main` só anda por `/merge --main <repo>`, uma nova versão com tag, e o Terraform só aplica com `bash scripts/aiwp-cmds.sh apply`, a partir da `main` e com o plano confirmado.
 - **Apagar banco de dados pede a sua confirmação**: volume do Docker, `DROP`, `dropdb` e afins.
 - **Publicar no Docker local é livre**, e `bash scripts/aiwp-cmds.sh up` sempre marca antes a publicação anterior; `rollback` volta para ela.
 - **Segredo não sai da máquina:** a varredura roda antes de cada push e de novo no gate.
@@ -106,7 +106,8 @@ Os hooks: `scripts/guard-bash.sh` (git, Terraform, banco, segredo, o core só de
 
 | Comando | Faz |
 | --- | --- |
-| `/merge <work>/<clone>` | Leva o trabalho de um clone para a `developer` do projeto, pelo gate |
+| `/merge [<work>/<clone>]` | Leva o trabalho de um clone (sem argumento: o desta sessão) para a `developer` do projeto, pelo gate, escrevendo o `CHANGELOG.md` |
+| `/merge --main <repo>` | A release: um clone de release, uma verificação completa em contexto limpo, o `CHANGELOG.md` datado, o gate para a `developer`, depois a `main` e a tag `vX.Y.Z` |
 | `/commit [--all] [--repo <dir>]` | Um commit por mudança lógica, num clone ou no `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Envia o `custom/`, ou reenvia um clone cujo push automático falhou |
 | `/validate [folder] [--only <checks>] [--sonar]` | Roda as validações em Docker e, opcionalmente, o SonarQube |
