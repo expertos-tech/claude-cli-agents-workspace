@@ -23,6 +23,9 @@ and agents. Editing the core was the only way, and an update overwrites it.
   (`skills/<name>/`) and agents (`agents/<name>.md`). It replaces `custom/rules/`, which is read in its place, with a
   warning, until it is renamed. In `.claude/` every own item carries the `custom-` prefix (an agent's `name:` too), so
   none can shadow a core one; an own item with a core name is refused unless a `replace` declares it (rules only).
+  The front matter of an own skill or agent keeps only a closed list of keys: never `hooks`, a permission mode, a
+  tool grant or a model `guard-subagent-model` would refuse, since `custom/` is writable by the session and those keys
+  would run or allow what `guard-bash` and the deny rules hold.
 - The mandatory core is declared in `rules/manifest.json`: `AGENTS.md`, `rules.md`, `git.md`, `security.md`, the
   hooks, the `deny` rules, `/merge`, `/commit`, `/request`, the agents `reviewer` and `verifier` the gate depends on,
   `aiwp-cmds.sh`, `aiwp-gate.sh` and `setup-claude.sh`. The configuration can neither turn these off nor replace them:

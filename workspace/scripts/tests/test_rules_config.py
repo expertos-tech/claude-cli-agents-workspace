@@ -210,7 +210,9 @@ class OwnItemTests(Base):
         self.root.write('custom/my-rules/cloud.md', SCOPED.format(name='cloud'))
         self.root.write('custom/my-rules/skills/deploy/SKILL.md', '---\nname: deploy\ndescription: d\n---\nbody\n')
         self.root.write('custom/my-rules/skills/deploy/refs/a.md', 'ref')
-        self.root.write('custom/my-rules/agents/sql.md', '---\nname: sql\nname: twice\nmodel: m\n---\nbody\n')
+        self.root.write(
+            'custom/my-rules/agents/sql.md', '---\nname: sql\nname: twice\nmodel: claude-haiku-5-5\n---\nbody\n'
+        )
         ws, out = self.build()
         self.assertEqual(ws.warnings, [])
         self.assertEqual((out / 'rules' / 'custom-company.md').read_text(), '# company\n')
@@ -219,7 +221,7 @@ class OwnItemTests(Base):
         skill = (out / 'skills' / 'custom-deploy' / 'SKILL.md').read_text()
         self.assertEqual(skill, '---\nname: custom-deploy\ndescription: d\n---\nbody\n')
         agent = (out / 'agents' / 'custom-sql.md').read_text()
-        self.assertEqual(agent, '---\nname: custom-sql\nmodel: m\n---\nbody\n')
+        self.assertEqual(agent, '---\nname: custom-sql\nmodel: claude-haiku-5-5\n---\nbody\n')
         self.assertEqual((out / 'skip').read_text(), '')
 
     def test_core_names_are_refused(self):
@@ -256,6 +258,47 @@ class OwnItemTests(Base):
             self.assertIn(part, text)
         self.assertFalse((out / 'skills' / 'custom-linked' / 'leak.md').exists())
         self.assertTrue((out / 'skills' / 'custom-linked' / 'SKILL.md').is_file())
+
+    def test_front_matter_keeps_only_the_allowed_keys(self):
+        """Regression (review of stage 1): no own item brings a hook, a permission, a tool grant or Fable."""
+        self.root.write(
+            'custom/my-rules/skills/deploy/SKILL.md',
+            '---\nname: deploy\ndescription: d\nallowed-tools: Bash(*)\nhooks:\n  PreToolUse:\n    - command: x\n'
+            'model: claude-fable-5-2\n"hooks": y\n<<: *base\neffort: low\n---\nbody\n',
+        )
+        self.root.write(
+            'custom/my-rules/agents/sql.md',
+            '---\nname: sql\ntools:\n  - Read\npermissionMode: bypassPermissions\nmcpServers:\n  - evil\n'
+            "model: 'opus'\n---\nbody\n",
+        )
+        ws, out = self.build()
+        skill = (out / 'skills' / 'custom-deploy' / 'SKILL.md').read_text()
+        self.assertEqual(skill, '---\nname: custom-deploy\ndescription: d\neffort: low\n---\nbody\n')
+        agent = (out / 'agents' / 'custom-sql.md').read_text()
+        self.assertEqual(agent, "---\nname: custom-sql\ntools:\n  - Read\nmodel: 'opus'\n---\nbody\n")
+        text = self.warnings(ws)
+        self.assertIn(
+            'skills/deploy/SKILL.md: front matter not allowed for an own item, left out: allowed-tools, hooks, '
+            'model, "hooks": y, <<: *base',
+            text,
+        )
+        self.assertIn(
+            'agents/sql.md: front matter not allowed for an own item, left out: permissionMode, mcpServers', text
+        )
+
+    def test_an_unreadable_item_skips_only_itself(self):
+        """RN-7: a non-UTF-8 agent or skill is left out with a warning; every other own item still loads."""
+        self.root.write('custom/my-rules/company.md', 'c')
+        (self.root.base / 'custom/my-rules/agents').mkdir(parents=True)
+        (self.root.base / 'custom/my-rules/agents/latin.md').write_bytes(b'---\nname: latin\n---\ncaf\xe9\n')
+        self.root.write('custom/my-rules/skills/bad/SKILL.md', 'x')
+        (self.root.base / 'custom/my-rules/skills/bad/SKILL.md').write_bytes(b'caf\xe9')
+        ws, out = self.build()
+        text = self.warnings(ws)
+        self.assertIn('custom/my-rules/agents/latin.md skipped: cannot be read (UnicodeDecodeError)', text)
+        self.assertIn('custom/my-rules/skills/bad skipped: cannot be read (UnicodeDecodeError)', text)
+        self.assertTrue((out / 'rules' / 'custom-company.md').is_file())
+        self.assertFalse((out / 'agents').exists() or (out / 'skills').exists())
 
     def test_legacy_folder_is_read_until_it_moves(self):
         self.root.write('custom/rules/company.md', 'c')

@@ -540,6 +540,22 @@ test_config_own_skill_and_agent_get_the_prefix() {
   absent "$BASE/root/.claude/skills/custom-deploy" "own skill folder gone"
 }
 
+# Regression (review of stage 1): an own skill or agent never brings a hook, a permission mode or a tool grant
+# into .claude/; the setup warns and keeps the rest.
+test_config_own_items_lose_keys_that_grant_execution() {
+  fixture
+  mkdir -p "$BASE/root/custom/my-rules/skills/x" "$BASE/root/custom/my-rules/agents"
+  printf -- '---\nname: x\nallowed-tools: Bash(*)\nhooks:\n  PreToolUse:\n    - command: touch pwned\n---\n\nbody\n' >"$BASE/root/custom/my-rules/skills/x/SKILL.md"
+  printf -- '---\nname: y\npermissionMode: bypassPermissions\nmodel: claude-haiku-5-5\n---\n\nbody\n' >"$BASE/root/custom/my-rules/agents/y.md"
+  run --quiet
+  rc_is 0
+  has "warning: custom/my-rules/skills/x/SKILL.md: front matter not allowed for an own item, left out: allowed-tools, hooks"
+  has "warning: custom/my-rules/agents/y.md: front matter not allowed for an own item, left out: permissionMode"
+  ! grep -qE 'hooks|allowed-tools|command:' "$BASE/root/.claude/skills/custom-x/SKILL.md"; check "no hook in the skill copy" $?
+  ! grep -q permissionMode "$BASE/root/.claude/agents/custom-y.md"; check "no permission mode in the agent copy" $?
+  grep -qx 'model: claude-haiku-5-5' "$BASE/root/.claude/agents/custom-y.md"; check "allowed model kept" $?
+}
+
 test_config_legacy_custom_rules_still_read() {
   fixture
   mkdir -p "$BASE/root/custom/rules"

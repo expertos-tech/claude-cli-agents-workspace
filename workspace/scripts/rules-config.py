@@ -6,7 +6,9 @@ custom/rules-config.json (optional; every field optional):
             "agents": {"exclude": ["infra-engineer"]}},
    "replace": {"review.md": "review.md"}}
 custom/my-rules/ holds the own items: *.md rules (with a paths: front matter they load by path, without it in every
-session), skills/<name>/ and agents/<name>.md. In .claude/ each one carries the custom- prefix. An own item with the
+session), skills/<name>/ and agents/<name>.md. In .claude/ each one carries the custom- prefix, and the front matter
+of an own skill or agent keeps only the keys of SKILL_KEYS and AGENT_KEYS (never hooks, a permission mode, a tool
+grant or a model guard-subagent-model.py would refuse), the rest left out with a warning. An own item with the
 name of a core item is refused unless a "replace" declares it (rules only). A replacement takes the place of the core
 rule: copied to .claude/rules/ when the core rule loads by path, else the effective AGENTS.md points to it.
 The mandatory core (rules/manifest.json) is never turned off nor replaced: the core piece stays, with a warning.
@@ -51,6 +53,15 @@ KINDS = ('rules', 'skills', 'agents')
 ITEM_NAME = re.compile(r'[a-z0-9][a-z0-9_-]*\Z')
 RULE_NAME = re.compile(r'[a-z0-9][a-z0-9._-]*\.md\Z')
 WEIGHTS = ('grave', 'attention', 'suggestion')
+# The front matter keys an own skill or agent keeps in .claude/: none that runs a command (hooks), grants a tool or a
+# permission (allowed-tools, permissionMode, mcpServers) or changes how it runs; the rest is dropped with a warning.
+SKILL_KEYS = frozenset(
+    {'name', 'description', 'argument-hint', 'disable-model-invocation', 'user-invocable', 'model', 'effort', 'paths'}
+)
+AGENT_KEYS = frozenset({'name', 'description', 'tools', 'disallowedTools', 'model', 'effort', 'color'})
+FRONT_MATTER_KEY = re.compile(r'([A-Za-z_][A-Za-z0-9_-]*)\s*:(.*)\Z')
+# The models guard-subagent-model.py allows (its ALLOWED_MODEL): never Fable from an own item.
+ALLOWED_MODEL = re.compile(r'(opus|sonnet|haiku|claude-(opus|sonnet|haiku)-[a-z0-9._\[\]-]+)')
 
 
 class Refused(Exception):
@@ -93,14 +104,29 @@ def has_paths(path):
     return end is not None and any(line.startswith('paths:') for line in lines[1:end])
 
 
-def with_name(text, name):
-    """The text with its front matter name: set to name (one line), or None when it has no front matter."""
+def own_front_matter(text, name, keys):
+    """(text, dropped) for an own skill or agent: its front matter keeps only the keys allowed, a model: only when
+    guard-subagent-model would allow it, and name: set to name; dropped lists what was left out. (None, []) when the
+    text has no front matter. A line that is neither a key nor the continuation of one is dropped too, so no YAML form
+    (a quoted key, a merge key) can bring in a key that is not on the list."""
     lines = text.split('\n')
     end = front_matter_end(lines)
     if end is None:
-        return None
-    body = [line for line in lines[1:end] if not re.match(r'name\s*:', line)]
-    return '\n'.join(['---', f'name: {name}'] + body + lines[end:])
+        return None, []
+    kept, dropped, keep = [], [], False
+    for line in lines[1:end]:
+        key = FRONT_MATTER_KEY.match(line)
+        if key:
+            field, value = key.group(1), key.group(2).strip().strip('\'"').strip().lower()
+            keep = field in keys and field != 'name' and (field != 'model' or ALLOWED_MODEL.fullmatch(value))
+            if not keep and field != 'name':
+                dropped.append(field)
+        elif not (line == '' or line[0] in ' -#'):
+            keep = False
+            dropped.append(line.strip()[:40])
+        if keep:
+            kept.append(line)
+    return '\n'.join(['---', f'name: {name}'] + kept + lines[end:]), dropped
 
 
 def slug(subject):
@@ -365,26 +391,46 @@ class Workspace:
             write(os.path.join(out, 'AGENTS.md'), self.effective_agents(read_text(source)))
         else:
             self.warn('AGENTS.md missing: .claude/AGENTS.md not generated')
-        for name in self.own_rules:
-            copy(os.path.join(self.own_dir, name), os.path.join(out, 'rules', f'custom-{name}'))
-        for rule, own in self.replaced.items():
-            if self.core['rules'][rule]:
-                copy(os.path.join(self.own_dir, own), os.path.join(out, 'rules', f'custom-{own}'))
+        rules = [(name, f'custom-{name}') for name in self.own_rules]
+        rules += [(own, f'custom-{own}') for rule, own in self.replaced.items() if self.core['rules'][rule]]
+        for name, target in rules:
+            self._guarded(name, copy, os.path.join(self.own_dir, name), os.path.join(out, 'rules', target))
         for name in self.own_skills:
-            self._copy_skill(name, os.path.join(out, 'skills', f'custom-{name}'))
+            self._guarded(f'skills/{name}', self._copy_skill, name, os.path.join(out, 'skills', f'custom-{name}'))
         for stem in self.own_agents:
-            text = with_name(read_text(os.path.join(self.own_dir, 'agents', f'{stem}.md')), f'custom-{stem}')
-            if text is None:
-                self.warn(f'{self.own_path("agents/" + stem + ".md")} skipped: an agent needs a front matter')
-                continue
-            write(os.path.join(out, 'agents', f'custom-{stem}.md'), text)
+            self._guarded(f'agents/{stem}.md', self._copy_agent, stem, os.path.join(out, 'agents', f'custom-{stem}.md'))
         skip = [f'rules {n}' for n in self.excluded['rules'] + sorted(self.replaced)]
         skip += [f'{kind} {n}' for kind in ('skills', 'agents') for n in self.excluded[kind]]
         write(os.path.join(out, 'skip'), ''.join(line + '\n' for line in skip))
 
+    def _guarded(self, rel, action, *args):
+        """Runs action(*args) for one own item; an unreadable or non-UTF-8 file skips that item only, with a warning."""
+        try:
+            action(*args)
+        except (OSError, UnicodeDecodeError) as error:
+            self.warn(f'{self.own_path(rel)} skipped: cannot be read ({type(error).__name__})')
+
+    def _filtered(self, rel, text, name, keys):
+        """The text of an own skill or agent with its front matter filtered (own_front_matter), warning what went."""
+        result, dropped = own_front_matter(text, name, keys)
+        if dropped:
+            self.warn(f'{self.own_path(rel)}: front matter not allowed for an own item, left out: {", ".join(dropped)}')
+        return result
+
+    def _copy_agent(self, stem, target):
+        """Writes an own agent to target with its front matter filtered and its name prefixed."""
+        rel = f'agents/{stem}.md'
+        text = self._filtered(rel, read_text(os.path.join(self.own_dir, rel)), f'custom-{stem}', AGENT_KEYS)
+        if text is None:
+            self.warn(f'{self.own_path(rel)} skipped: an agent needs a front matter')
+        else:
+            write(target, text)
+
     def _copy_skill(self, name, target):
-        """Copies an own skill to target: regular files only, SKILL.md with its name prefixed."""
+        """Copies an own skill to target: regular files only, SKILL.md with its front matter filtered and its name
+        prefixed. A file that cannot be read leaves the whole skill out (the copy is written only at the end)."""
         source = os.path.join(self.own_dir, 'skills', name)
+        files_out = []
         for folder, subfolders, files in os.walk(source):
             subfolders[:] = [d for d in sorted(subfolders) if not os.path.islink(os.path.join(folder, d))]
             for file in sorted(files):
@@ -396,9 +442,15 @@ class Workspace:
                     self.warn(f'{self.own_path("skills/" + name + "/" + rel)} skipped: not a regular file')
                 elif rel == 'SKILL.md':
                     text = read_text(path)
-                    write(os.path.join(target, rel), with_name(text, f'custom-{name}') or text)
+                    filtered = self._filtered(f'skills/{name}/SKILL.md', text, f'custom-{name}', SKILL_KEYS)
+                    files_out.append((rel, (filtered if filtered is not None else text).encode('utf-8')))
                 else:
-                    copy(path, os.path.join(target, rel))
+                    with open(path, 'rb') as handle:
+                        files_out.append((rel, handle.read()))
+        for rel, data in files_out:
+            os.makedirs(os.path.dirname(os.path.join(target, rel)), exist_ok=True)
+            with open(os.path.join(target, rel), 'wb') as handle:
+                handle.write(data)
 
     def show(self):
         """The effective rules, skills and agents, as Markdown tables, then the warnings."""

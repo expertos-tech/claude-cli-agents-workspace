@@ -23,7 +23,9 @@ Creates or syncs .claude/ (git-ignored) from rules/ and the custom layer (versio
   custom/my-rules/*.md       -> .claude/rules/custom-*.md (every one: with `paths:` it loads by path,
                                 without it loads in every session; a deleted source makes its copy stale)
   custom/my-rules/skills/<name>/ -> .claude/skills/custom-<name>/
-  custom/my-rules/agents/<name>.md -> .claude/agents/custom-<name>.md (name: set to custom-<name>)
+  custom/my-rules/agents/<name>.md -> .claude/agents/custom-<name>.md (name: set to custom-<name>; an own skill or
+                                agent keeps no front matter key that runs or allows anything: no hooks, no
+                                permission mode, no tool grant)
 custom/rules-config.json turns core rules, skills and agents off (core.<kind>.exclude) and replaces a core rule
 with an own one (replace); the mandatory core of rules/manifest.json always loads, with a warning. A wrong
 configuration never fails the setup: it warns and the rest loads (python3 -I -B scripts/rules-config.py --help).
