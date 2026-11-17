@@ -128,6 +128,6 @@ Stages 2 and 3 run in parallel (disjoint paths); 4 needs both; 5 needs 4.
   installation; two independent reviews (the change, then its fix).
 - **Left:** `release-per-project-proof`, `old-names-leftovers`, `caw-layers-missing-target`, `merge-project-name`,
   `execution-block-after-fixes`, `work-branch-push-before-scan`, `repo-terms-skip-stops-merge`,
-  `clone-path-findings-loop`; the push gate of
+  `clone-path-findings-loop`, `release-main-sha-check`; the push gate of
   `/caw-merge` was added after the second review (its two BLOCKERs);
   30 translations pending for the release.
