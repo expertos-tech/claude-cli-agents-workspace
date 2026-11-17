@@ -66,6 +66,14 @@ Small adjustments, effort low unless noted.
 | `review-docs-only-scope.md` | `CLAUDE.md`, `AGENTS.md` and templates count as documentation and skip the review |
 | `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
 
+### Ready: product fixes
+
+Independent of the rounds above; each runs whenever the owner asks.
+
+| Request | What it fixes |
+| --- | --- |
+| `accordion-motion.md` | The Compose groups and the job dock of the container consoles open and close without motion |
+
 ### Ideas
 
 | Round | Request | What is missing |
