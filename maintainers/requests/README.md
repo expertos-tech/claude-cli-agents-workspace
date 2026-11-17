@@ -25,6 +25,7 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 | Round | Request | State | Notes |
 | --- | --- | --- | --- |
 | 0 | `import-from-fork.md` | ready | The first release after the publication: the first real test of `aiwp update` |
+| 1 | `hotfix-from-main.md` | ready | A patch release from `main`, down to `developer`; product and here |
 | 1 | `rules.md` | ready | Design: `plans/rules-config.md` |
 | 1 | `run-tools.md` | ready | Design: `plans/run-tools.md` |
 | 1 | `prompt-log-results.md` | idea | Two decisions open |
