@@ -54,8 +54,9 @@ Checks, cheapest first, with the time of each; the gate stops at the first failu
               i18n/<locale>/<path> for each locale of I18N_LOCALES, whose line 1 is exactly
               "<!-- source: <path> sha256:<sha256 of the English file> -->", and every file under
               i18n/<locale>/ translates a document that exists. <path> is relative to the repo root. Documents:
-              the root README.md, every README.md of the product and every .md of its docs/, both except
-              docs/decisions/, and every .md of tools/<name>/docs/
+              every README.md of the repo and every .md of the root docs/; in the product, every .md of its
+              docs/ and of tools/<name>/docs/. Never under i18n/, .claude/, tmp/, docs/decisions/ (of the
+              root or the product) or node_modules/ (any depth); git-ignored files are not listed
   settings    rules/agents/settings.json is exactly one JSON document, when changed
   parse       changed files under tools/ parse (*.sh, *.json, *.py), when there are any
   validate    scripts/validate.sh --only <list> --files <changed files>; the list is always "secrets",
@@ -281,21 +282,28 @@ sha256_hex() {
 }
 
 # Returns 0 when $1, a path relative to the repo root, is a document that needs translations; $2 is the product
-# folder relative to the repo root, with its trailing slash (empty when the product is the repo root).
+# folder relative to the repo root, with its trailing slash (empty when the product is the repo root). In scope: every
+# README.md and every .md of the root docs/; in the product, every .md of its docs/ and of tools/<name>/docs/. Never:
+# i18n/, .claude/ and tmp/ (of the root or the product), node_modules/ at any depth, docs/decisions/.
 is_i18n_document() {
-  local p="$1" product="$2" rest tool_rest
-  if [ "$p" = README.md ]; then return 0; fi
-  case "$p" in "$product"*) ;; *) return 1 ;; esac
-  rest="${p#"$product"}"
-  case "$rest" in i18n/* | docs/decisions/*) return 1 ;; esac
-  case "$rest" in README.md | */README.md | docs/*.md) return 0 ;; esac
-  case "$rest" in
-    tools/*/*)
-      tool_rest="${rest#tools/}"
-      tool_rest="${tool_rest#*/}"
-      case "$tool_rest" in docs/*.md) return 0 ;; esac
-      ;;
+  local p="$1" product="$2" rest="$1" tool_rest in_product=0
+  case "$p" in
+    i18n/* | .claude/* | tmp/* | docs/decisions/* | node_modules/* | */node_modules/*) return 1 ;;
   esac
+  case "$p" in "$product"*) rest="${p#"$product"}" in_product=1 ;; esac
+  if [ "$in_product" = 1 ]; then
+    case "$rest" in i18n/* | .claude/* | tmp/* | docs/decisions/*) return 1 ;; esac
+  fi
+  case "$rest" in README.md | */README.md | docs/*.md) return 0 ;; esac
+  if [ "$in_product" = 1 ]; then
+    case "$rest" in
+      tools/*/*)
+        tool_rest="${rest#tools/}"
+        tool_rest="${tool_rest#*/}"
+        case "$tool_rest" in docs/*.md) return 0 ;; esac
+        ;;
+    esac
+  fi
   return 1
 }
 

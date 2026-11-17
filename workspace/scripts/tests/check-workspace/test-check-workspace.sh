@@ -2460,6 +2460,56 @@ test_i18n_fails_on_an_orphan_translation() {
   end_nested_tree
 }
 
+# Writes file $1, relative to the nested repo root, with content $2.
+put_root() { # path content
+  mkdir -p "$NESTED/$(dirname "$1")"
+  printf '%s\n' "${2:-x}" >"$NESTED/$1"
+}
+
+test_i18n_requires_the_repository_documents() {
+  new_i18n_tree i18n-repo-docs
+  put_root maintainers/plans/README.md "# Plans"
+  put_root docs/guide.md "# Project guide"
+  put_root docs/decisions/0001-first.md "# First"
+  put_root node_modules/pkg/README.md "# Package"
+  put_root web/node_modules/pkg/README.md "# Package"
+  put node_modules/pkg/README.md "# Package"
+  put_root .claude/README.md "# Settings"
+  put_root tmp/README.md "# Scratch"
+  cw
+  rc_is 1
+  has "fails" "FAIL i18n"
+  has "a nested README outside the product" "missing translation: i18n/pt-BR/maintainers/plans/README.md (of maintainers/plans/README.md)"
+  has "in both locales" "missing translation: i18n/es/maintainers/plans/README.md"
+  has "a root docs/ document" "missing translation: i18n/es/docs/guide.md (of docs/guide.md)"
+  lacks "a root decision record is not asked" "docs/decisions/0001-first.md"
+  lacks "node_modules/ at any depth is not asked" "node_modules"
+  lacks ".claude/ is not asked" ".claude/README.md"
+  lacks "tmp/ is not asked" "tmp/README.md"
+  lacks "a non-README outside docs/ is not asked" "maintainers/release.md"
+  translate maintainers/plans/README.md
+  translate docs/guide.md
+  cw
+  rc_is 0
+  has "translated, it passes" "PASS i18n"
+  end_nested_tree
+}
+
+test_i18n_fails_on_an_orphan_of_a_root_document() {
+  new_i18n_tree i18n-root-orphan
+  put_root docs/guide.md "# Project guide"
+  translate docs/guide.md
+  cw
+  rc_is 0
+  has "translated, it passes" "PASS i18n"
+  rm "$NESTED/docs/guide.md"
+  cw
+  rc_is 1
+  has "its source is gone" "orphan translation: i18n/pt-BR/docs/guide.md (no document docs/guide.md needs it"
+  has "in both locales" "orphan translation: i18n/es/docs/guide.md"
+  end_nested_tree
+}
+
 # --only <test_name> runs one test; a failed test prints the command that runs it alone.
 # --deep also runs the extreme cases, diffs larger than a pipe (rules/quality.md "Tests").
 ONLY=""
