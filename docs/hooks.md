@@ -14,8 +14,8 @@ the Claude Code permission mode you chose.
 | `guard-subagent-model.sh` | Before every subagent call | Denies forks and models outside the allowed list, asks before a Fable subagent, and sets a model on a call that would inherit one |
 | `setup-claude.sh` | Session start | Builds the git-ignored `.claude/` from the product rules, skills and agents plus your custom layer |
 | `release-notice.sh` | Session start | Runs `aiwp check` (one answer per day, a short timeout, silent offline) and, when a newer release exists, has Claude tell you to close the session and run `aiwp update` in a terminal. It never updates anything |
-| `prompt-log.py` | Session start | Records your prompts from the session transcripts in `custom/prompts/log/`, by project and week, and shows a summary of the last day. It never pushes |
-| `session-title.py` | Each prompt you send | Names the session after the project on `/prompt` (`my-app-1`, `my-app-2`...), and reminds the session when a project you name is not normalized or is behind the workspace version |
+| `prompt-log.py` | Session start | Records your prompts from the session transcripts in `logs/prompts/` at the workspace root, by project and week, never versioned, and shows a summary of the last day |
+| `session-title.py` | Each prompt you send | Names the session after the project on `/request` (`my-app-1`, `my-app-2`...), and reminds the session when a project you name (by folder, path or a nested repo) is not normalized or is behind the workspace version |
 | `aiwp-cmds.sh _stop-check` | When Claude ends an answer | Keeps the answer from ending with a commit that is only on your machine in a work clone |
 
 Secret scans use gitleaks in Docker. No hook sends data anywhere: the only network calls are git's own, to your

@@ -8,7 +8,6 @@ The process that writes these files is in the root `CLAUDE.md` and `.claude/rule
 
 | Folder | What it holds |
 | --- | --- |
-| `backlog/` | Ideas, defects, improvements and debts of the product not yet turned into a request; one item per file |
 | `plans/` | Designs: the problem, the options, a recommendation and the numbered decisions for the owner |
-| `requests/` | Functional requests ready to run with `/caw-prompt`: objective, BR-n, AC-n, out of scope, stages with effort |
+| `requests/` | Functional requests: pending at its root (`idea` or `ready`, run with `/caw-request`), `qa/` once on `developer`, `done/` once released. An idea is a request in state `idea`; there is no backlog |
 | `reviews/` | Reports of independent reviews (for example a final review before a release); created by the first one |

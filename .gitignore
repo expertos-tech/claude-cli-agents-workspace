@@ -2,7 +2,7 @@
 # Personal Claude Code settings of this clone
 .claude/settings.local.json
 CLAUDE.local.md
-# Scratch files, test installations (tmp/test-install/), private analyses of real use and tmp/prompt.md
+# Scratch files, test installations (tmp/test-install/), private analyses of real use and tmp/request.md
 /tmp/
 # Check ledger and hook state of the gate (scripts/check-ledger.sh writes it at the git root)
 /.history/
@@ -12,3 +12,5 @@ __pycache__/
 .DS_Store
 # The registry of installed workspaces, written by aiwp in the data folder (a clone of this repository)
 /workspaces.json
+# Logs of the maintenance (prompt log and others), never versioned
+/logs/

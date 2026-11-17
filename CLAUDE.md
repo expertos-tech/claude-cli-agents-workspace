@@ -23,12 +23,15 @@ The project is documented in `docs/` (install, contribute, maintain, release); t
 
 ## Layout
 
-Maintenance skills carry the prefix `caw-` (`/caw-merge`, `/caw-prompt`...), so they never mix with the product's
-skills in `workspace/rules/skills/` (`/merge`, `/prompt`...).
+Maintenance skills carry the prefix `caw-` (`/caw-merge`, `/caw-request`...), so they never mix with the product's
+skills in `workspace/rules/skills/` (`/merge`, `/request`...). One with a product counterpart is a layer over it: the
+first line of its body is `@workspace/rules/skills/<name>/SKILL.md`, then `---` and the sections "Ignore from the
+product skill", "Mapping" and "CAW rules", which win. This is the one case where this session follows a product file
+as instructions; `tests/check.sh` checks every layer.
 
 `.claude/` (settings, `rules/`, `skills/`, `agents/`; no hooks), `tests/` (`check.sh`; `test-install.sh` arrives with
-the installer), `maintainers/` (`backlog/`, `plans/`, `requests/`, `reviews/`: public), `tmp/` (git-ignored: test
-installations, private analyses, `tmp/prompt.md`), `workspace/` (the product), `docs/` (the project's documentation),
+the installer), `maintainers/` (`plans/`, `requests/` with `qa/` and `done/`, `reviews/`: public), `tmp/` (git-ignored: test
+installations, private analyses, `tmp/request.md`), `logs/` (git-ignored), `workspace/` (the product), `docs/` (the project's documentation),
 `i18n/`, `README.md`, `CHANGELOG.md` (the repository's; the product's is `workspace/CHANGELOG.md`), `LICENSE`.
 
 ## The maintenance process
@@ -39,10 +42,10 @@ Detail in `.claude/rules/process.md`.
    measurements. Findings that name a company, customer or project stay in the git-ignored `tmp/` or the owner's
    custom layer, never in this repository.
 2. **Plan** in `maintainers/plans/`: options, a recommendation and numbered decisions for the owner. A plan the owner
-   approves in a session is recorded at once in `maintainers/requests/done/`.
+   approves in a session is recorded at once as a pending request in `maintainers/requests/`.
 3. **Request**, with the owner's answers, in `maintainers/requests/`: objective, BR-n, AC-n, out of scope, stages with
-   effort (`/caw-draft-prompt`).
-4. **Execute** in stages with subagents (`/caw-prompt`, which works in a clone on a work branch under `tmp/work/`; a
+   effort (`/caw-draft-request`).
+4. **Execute** in stages with subagents (`/caw-request`, which works in a clone on a work branch under `tmp/work/`; a
    session is either on `developer` at the root or in such a clone), always with explicit model and effort (high for
    hooks, the installer, security and risky actions), in parallel only on disjoint paths, and an independent
    clean-context review of hooks and security (`.claude/rules/review.md`).

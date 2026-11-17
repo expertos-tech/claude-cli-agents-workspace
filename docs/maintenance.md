@@ -40,25 +40,34 @@ The work of the maintainers, in the open. Nothing there reaches an installed wor
 
 | Folder | What it holds |
 | --- | --- |
-| `maintainers/backlog/` | Ideas, defects and debts of the product not yet a request, one item per file |
-| `maintainers/plans/` | Designs: problem, options, recommendation, numbered decisions. A plan the owner approves is recorded in `maintainers/requests/done/` at approval |
-| `maintainers/requests/` | Requests ready to run with `/caw-prompt`; the order they run is in its README |
-| `maintainers/requests/done/` | Delivered requests, and the approved plans |
+| `maintainers/plans/` | Designs: problem, options, recommendation, numbered decisions |
+| `maintainers/requests/` | Pending requests, `idea` (decisions open) or `ready`: approved plans, ideas, review findings; the order they run is in its README. There is no backlog |
+| `maintainers/requests/qa/` | Requests on `developer`, not released, each with the "Execution" block of every merge |
+| `maintainers/requests/done/` | Released requests |
 | `maintainers/reviews/` | Reports of independent reviews; created by the first one |
 
 ## Skills
 
 The maintenance skills carry the prefix `caw-`, so they do not collide with the product's skills of the same purpose
-(`/merge`, `/commit`, `/prompt`...). They live in `.claude/skills/`.
+(`/merge`, `/commit`, `/request`...). They live in `.claude/skills/`.
+
+`/caw-merge`, `/caw-request`, `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same
+purpose, so a change of flow in the product reaches them by itself: the first line of the body names the product skill
+(`@workspace/rules/skills/<name>/SKILL.md`, read in full as the procedure), then three sections win over it: "Ignore
+from the product skill", "Mapping" (the product's mechanics to this repository's: `aiwp-cmds.sh` to plain git, the gate
+to `tests/check.sh`, `custom/requests/` to `maintainers/requests/`) and "CAW rules" (what only this repository does:
+the two changelogs, releasing only the product, the translations at the release). `tests/check.sh` fails on a layer
+whose product skill is missing or that lacks a section. `/caw-check` and `/caw-test-install` have no product
+counterpart and are complete skills.
 
 | Skill | Arguments | What it does |
 | --- | --- | --- |
 | `/caw-check` | `[--base <ref>] [--floor] [extra check.sh options]` | Runs `tests/check.sh` on what changed (`--base origin/developer --i18n-pending`) and explains each failure |
 | `/caw-commit` | `[--all]` | One Conventional Commit per logical change of the session, by path; no push, no branch, no tag |
-| `/caw-draft-prompt` | `[plan \| request] [ideas \| path]` | Turns ideas into a plan or a request, asking only what has no best alternative |
-| `/caw-prompt` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `tmp/prompts/`, then `tmp/`; no argument reads `tmp/prompt.md` |
+| `/caw-draft-request` | `[plan \| request] [ideas \| path]` | Turns ideas into a plan or a request, asking only what has no best alternative |
+| `/caw-request` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `tmp/requests/`, then `tmp/`; no argument reads `tmp/request.md` |
 | `/caw-test-install` | `[--keep]` | Installs a disposable workspace from the current tree under `tmp/test-install/` and exercises hooks and scripts |
-| `/caw-merge` | `[<work>/<clone> \| --main]` | Takes the work into `developer` through the gates and both changelogs; `--main` releases the product ([releases](releases.md)) |
+| `/caw-merge` | `[<work>/<clone> \| --main [instructions]]` | Takes the work into `developer` through the gates and both changelogs, and moves the request to `qa/`; `--main` validates `qa/` and releases the product ([releases](releases.md)) |
 
 ## Subagents
 
@@ -79,7 +88,7 @@ The default is no subagent. Subagents never commit or push: the main session doe
 
 ## Where the work happens
 
-- **In a clone:** `/caw-prompt` opens a clone of the repository at `tmp/work/<yyyy-mm-dd>-<slug>/`, on a work branch
+- **In a clone:** `/caw-request` opens a clone of the repository at `tmp/work/<yyyy-mm-dd>-<slug>/`, on a work branch
   `<type>/<slug>` from `origin/developer`, and works only there. The branch is pushed after each commit.
 - **Directly on `developer`:** a session at the root that opened no clone works on `developer`.
 - **Plans and requests** are shown to the owner in the owner's language and saved in English.
@@ -104,8 +113,9 @@ A `reviewer` subagent with a clean context, which did not write the change (`.cl
   risk: `high` for a hook, the installer, `setup-claude.sh`, a gate script, a permission or deny rule or secrets;
   `medium` for other code or rules; no review for documentation alone.
 - **Merge into `main`** (the release): the final review in two rounds, described in [releases](releases.md).
-- **Findings:** a BLOCKER is fixed before the merge and the fix is reviewed. A RECOMMENDED never blocks: it becomes a
-  backlog item, fixed when the owner asks.
+- **Findings:** a BLOCKER is fixed before the merge and the fix is reviewed. A RECOMMENDED never blocks: at a merge into
+  `developer` it becomes a `ready` request, fixed when the owner asks; at the release the owner chooses per finding:
+  fix now or a request.
 
 It never merges with a failing check or an open BLOCKER, and never rewrites `developer` or `main`.
 

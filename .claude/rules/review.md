@@ -15,7 +15,7 @@
 ## How
 
 - The `reviewer` subagent with a clean context: it did not write the change. Give it the code and the range, the
-  requests the range delivers (`maintainers/requests/done/`) or the owner's words, and what the suite already proved.
+  requests the range delivers (`maintainers/requests/qa/`) or the owner's words, and what the suite already proved.
   Never give it your conclusion.
 - It reports only: a correctness defect; a security or data-loss problem with a concrete path; an acceptance criterion
   not met or not proven by a test; a protection that got weaker. Each with `path:line`, the failure scenario and the
@@ -24,14 +24,17 @@
 
 ## Final review
 
-Two reviews, in this order, on `<last tag>..<release clone HEAD>`, after the translations are up to date and the suite
-passed from the last tag. The same applies to the product's `/merge --main` (`workspace/rules/skills/merge/SKILL.md`).
+Two reviews, in this order, on `<last tag>..<release clone HEAD>`, after the translations, the version and dates
+commit, and the strict suite from the last tag. The same applies to the product's `/merge --main` (`workspace/rules/skills/merge/SKILL.md`).
 
-1. **What enters and what leaves** (`reviewer`, claude-opus-5-5, effort `high`). Brief: the range, the requests and
-   plans it delivers, the `Unreleased` sections of the changelogs, the suite's result. It answers, item by item:
+1. **What enters and what leaves** (`reviewer`, claude-opus-5-5, effort `high`). Brief: the range, every request of
+   `maintainers/requests/qa/` with its Execution blocks, the changelog sections of the version being released, the
+   suite's result. It answers, item by item:
    - an inventory of the range: what was added, changed and removed (files, commands, options, functions, tests,
      rules, hooks, deny rules, documented behavior), each with the request or business rule that asked for it, or
      CONSEQUENCE (of what), or UNEXPLAINED;
+   - every qa request with no change behind it, every Execution block the code contradicts, and every acceptance
+     criterion of every qa request, pending ones included: proven or not;
    - regression: everything removed or changed that worked at the last tag and that no request asks to remove or
      change; a test removed, skipped or weakened; a protection that got weaker;
    - intent: a change that does not do what its request asked, does more than it asked, or reads the request wrong;
@@ -47,8 +50,9 @@ passed from the last tag. The same applies to the product's `/merge --main` (`wo
 ## Findings
 
 - BLOCKER: fix it, rerun the suite, and review the fix (the same review, only the fix).
-- RECOMMENDED: never blocks a merge. Each becomes a backlog item (`maintainers/backlog/<kebab-title>.md`, source: the
-  review) and is listed in the summary; it is fixed only when the owner asks.
+- RECOMMENDED: never blocks a merge. At a merge into `developer` each becomes a `ready` request
+  (`maintainers/requests/<kebab-title>.md`, adjustment size, source: the review), listed in the summary and fixed
+  when the owner asks. At the release the owner chooses per finding: fix now, or a request.
 - A finding is not accepted only because it came: check why the code is that way. Still disagree: give the owner both
   positions.
 

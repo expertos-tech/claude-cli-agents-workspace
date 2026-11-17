@@ -53,6 +53,31 @@ terms_list() {
   if [ -f "$repo/workspace/custom/core-terms.txt" ]; then echo "$repo/workspace/custom/core-terms.txt"; fi
 }
 
+# Checks every maintenance skill with a product counterpart (.claude/skills/caw-<name>/ next to
+# workspace/rules/skills/<name>/) is a layer over it: the first line of its body is "@<path of the product skill>",
+# that file exists, and it holds the sections "Ignore from the product skill", "Mapping" and "CAW rules".
+# Prints one line per problem; returns 1 when there is any.
+check_caw_layers() {
+  local dir name product body first bad=0 section
+  for dir in "$repo"/.claude/skills/caw-*/; do
+    [ -f "$dir/SKILL.md" ] || continue
+    name="$(basename "$dir")"
+    name="${name#caw-}"
+    product="workspace/rules/skills/$name/SKILL.md"
+    [ -f "$repo/$product" ] || continue
+    body="$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$dir/SKILL.md")"
+    first="$(printf '%s\n' "$body" | grep -m1 -v '^[[:space:]]*$' || true)"
+    if [ "$first" != "@$product" ]; then
+      echo "  caw-$name: the first line of its body must be @$product"
+      bad=1
+    fi
+    for section in "## Ignore from the product skill" "## Mapping" "## CAW rules"; do
+      printf '%s\n' "$body" | grep -qxF "$section" || { echo "  caw-$name: missing section \"$section\""; bad=1; }
+    done
+  done
+  return "$bad"
+}
+
 list="$(terms_list)" || { echo "error: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2; exit 1; }
 failed=0
 
@@ -67,6 +92,12 @@ rc=$?
 [ "$rc" -eq 0 ] || failed=1
 
 echo "== repository"
+if check_caw_layers; then
+  echo "PASS caw-layers"
+else
+  echo "FAIL caw-layers: a maintenance skill with a product counterpart must be a layer over it (CLAUDE.md)"
+  failed=1
+fi
 if [ -z "$list" ]; then
   echo "SKIP repo-terms: no terms list (set AIWP_TERMS_FILE or AIWP_WORKSPACE)"
 else

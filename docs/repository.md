@@ -11,7 +11,8 @@ English · [Português (Brasil)](../i18n/pt-BR/docs/repository.md) · [Español]
 | `docs/` | The documentation of the repository: how to use the workspace, contribute, maintain and release it |
 | `CHANGELOG.md` | The history of the repository: every change, with the product's changes as summaries ([releases](releases.md)) |
 | `tests/` | The repository's suite (`check.sh`) and the test installation |
-| `maintainers/` | The maintainers' work, in the open: backlog, plans, requests and reviews |
+| `maintainers/` | The maintainers' work, in the open: plans, requests (pending, `qa/`, `done/`) and reviews |
 | `i18n/` | Translations of the documents and READMEs (`pt-BR`, `es`), with the same structure as the repository |
 | `install.sh` | The installer |
-| `tmp/` | Git-ignored scratch: test installations and private notes |
+| `tmp/` | Git-ignored scratch: test installations, work clones (`tmp/work/`) and private notes |
+| `logs/` | Git-ignored logs of the maintenance |

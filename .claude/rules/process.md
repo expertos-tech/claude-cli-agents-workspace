@@ -16,8 +16,8 @@ How the project is maintained. Every change goes through these steps; a typo fix
   recommendation, and numbered decisions (D-1, D-2...) for the owner to answer.
 - Ask only what has no best alternative; list the rest as assumed decisions the owner can overturn.
 - The plan stays the design reference after the request is written; update its status line when the request is built.
-- A plan the owner approves in a session (plan mode) is recorded at once, in English and in the request format, in
-  `maintainers/requests/done/<kebab-name>.md`, with its row in `maintainers/requests/README.md`.
+- A plan the owner approves in a session (plan mode) is recorded at once, in English and in the request format, as a
+  pending request `maintainers/requests/<kebab-name>.md` (`**State:** ready`), with its row in the README.
 - A plan or request is shown to the owner in the language they wrote in, and saved in English; say so in one line.
 
 ## 3. Request
@@ -26,21 +26,21 @@ How the project is maintained. Every change goes through these steps; a typo fix
   objective, business rules (BR-n), acceptance criteria (AC-n, verifiable), out of scope, and the stages with the
   effort of each.
 - Add the request to the table of `maintainers/requests/README.md`, in the order it runs.
-- `/caw-draft-prompt` writes plans and requests; `requirements-analyst` finds the gaps of a long or ambiguous one.
+- `/caw-draft-request` writes plans and requests; `requirements-analyst` finds the gaps of a long or ambiguous one.
 
 ## 4. Execute
 
-- One stage at a time (`/caw-prompt <name>`). Say the effort of each stage as it starts.
+- One stage at a time (`/caw-request <name>`). Say the effort of each stage as it starts.
 - Subagents always get an explicit model and effort (`models.md`). Writers run in parallel only on disjoint paths.
-- `/caw-prompt` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
+- `/caw-request` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
   `tmp/**`), so several requests run in separate sessions, each in its own clone. Respect the order in
   `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/caw-merge` takes
   each into `developer`, one at a time, with `bash tests/check.sh --all` green.
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
 - Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
-  stage closes. A review covers only the difference it is given; a RECOMMENDED finding becomes a backlog item.
-- A stage that cannot finish: write where it stopped and the next steps into the request, or into `tmp/prompt.md`.
+  stage closes. A review covers only the difference it is given; a RECOMMENDED finding becomes a `ready` request.
+- A stage that cannot finish: write where it stopped and the next steps into the request, or into `tmp/request.md`.
 
 ## 5. Prove
 
@@ -54,8 +54,9 @@ How the project is maintained. Every change goes through these steps; a typo fix
 
 - Commit per `git.md` (`/caw-commit`), one logical change per commit. Translations are not updated per commit: one
   agent brings them all up to date at the release (`docs.md`).
-- Update the state of the request in `maintainers/requests/README.md` and of its backlog item, if any. A delivered
-  request moves to `maintainers/requests/done/` (`git mv`) in the same commit, and its row points to the new path.
+- The request lifecycle (`maintainers/requests/README.md`): pending in `requests/` (`idea` or `ready`), `qa/` once
+  `/caw-merge` takes it into `developer` with its "Execution" block, `done/` once `/caw-merge --main` releases it. A
+  request never moves while its stages run. There is no backlog: an idea is a request in state `idea`.
 - `/caw-merge` takes the work into `developer` and writes the root `CHANGELOG.md` and, for a product change,
   `workspace/CHANGELOG.md`. Other pushes only when the owner asks, each request covering that push only. Only the
   product is released, through `/caw-merge --main`; the root sections are dated by that release.

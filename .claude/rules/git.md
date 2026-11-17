@@ -21,13 +21,13 @@
 - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `build`, `ci`, `style`. Breaking change: `!`
   after the scope and a `BREAKING CHANGE:` footer.
 - Scopes: the product's (`ai`, `agents`, `skills`, `scripts`, `docker`, `docs`, `decisions`, `templates`, a tool name),
-  plus `maintenance` (root `CLAUDE.md`, `.claude/`), `tests`, `plans`, `requests`, `backlog`, `i18n`, `release`.
+  plus `maintenance` (root `CLAUDE.md`, `.claude/`), `tests`, `plans`, `requests`, `i18n`, `release`.
 
 ## Remote
 
 - `developer` is the default branch and the base of every change; `main` moves only by `/caw-merge --main`, the
   release of a product version. Maintenance changes alone are never released: they wait on `developer`.
-- The work branch of a clone in `tmp/work/` is pushed at open and after each commit (`/caw-prompt`), so the work is on
+- The work branch of a clone in `tmp/work/` is pushed at open and after each commit (`/caw-request`), so the work is on
   the remote before the clone is deleted. `/caw-merge` pushes that branch and `developer`: running it is the owner's
   order. Any other push only when the owner asks; each request covers that push only, never a later one.
 - Never rewrite published history: no force push, no rebase or amend of a pushed commit, no moved or deleted tag.

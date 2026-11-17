@@ -29,23 +29,30 @@ Both follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semant
 
 ## Releasing the product
 
-`/caw-merge --main`, only when the owner asks. The version is the `Unreleased` one of `workspace/CHANGELOG.md`.
+`/caw-merge --main [instructions]`, only when the owner asks. The version is the `Unreleased` one of
+`workspace/CHANGELOG.md`; with none, there is nothing to release.
 
-1. A release clone `tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/` on the branch `fix/release-vX-Y-Z`.
-2. The translations: one agent brings every pending one up to date.
-3. `workspace/VERSION` to `X.Y.Z`, the product section dated, the root section dated and linked to the release, and
-   the commit `chore(release): X.Y.Z`, so the checks below judge them.
-4. The full suite, strict, from the last tag (translations included), and the test installation.
-5. The final review of everything since the last tag, version and dates included, in two rounds with a clean
-   context: **what enters and what leaves** (effort high: the inventory of what was added, changed and removed, each traced to the request that asked
-   for it; regressions, so nothing that works is removed without a request; whether each change does what was asked;
-   the changelogs), then a **general** reading of the whole tree (effort medium: contradictions, dead references,
-   leftovers). Its BLOCKERs are fixed in the clone; its RECOMMENDED become backlog items.
-6. The clone enters `developer`, at the commit the suite and the review judged.
-7. Each public step is confirmed by the owner, one by one: `main` (a fast-forward from `developer`, or a pull request
+1. The plan: what is released, and every conflict an instruction causes, with its effect and the options, before
+   anything changes (for example "only caw, not the product": `main` can only move to `developer` as a whole).
+2. A release clone `tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/` on the branch `fix/release-vX-Y-Z`.
+3. The translations: one agent brings every pending one up to date.
+4. `workspace/VERSION` to `X.Y.Z`, the product section dated, the root section dated and linked to the release, the
+   requests of `maintainers/requests/qa/` moved to `done/`, and the commit `chore(release): X.Y.Z`, so the checks
+   below judge them.
+5. The full suite, strict, from the last tag (translations included), and the test installation.
+6. The final review of everything since the last tag against every request waiting in `qa/`, in two rounds with a
+   clean context: **what enters and what leaves** (effort high: the inventory of what was added, changed and removed,
+   each traced to its request; every acceptance criterion, pending ones included; every Execution block checked
+   against the code; regressions, so nothing that works is removed without a request; whether each change does what
+   was asked; the changelogs), then a **general** reading of the whole tree (effort medium: contradictions, dead
+   references, leftovers).
+7. The findings, once, in one list: per finding, fix now in the release clone or a request; a BLOCKER sent to a
+   request stops the release.
+8. The clone enters `developer`, at the commit the suite and the review judged.
+9. Each public step is confirmed by the owner, one by one: `main` (a fast-forward from `developer`, or a pull request
    when refused), the tag `vX.Y.Z` (never moved or deleted) and the GitHub release, with the product changelog section
    as its notes.
-8. A check that a fresh installation picks up the new tag.
+10. A check that a fresh installation picks up the new tag.
 
 A refused or failed public step stops the release there. Nothing is forced.
 
