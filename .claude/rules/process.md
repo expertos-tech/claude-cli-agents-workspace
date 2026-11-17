@@ -49,6 +49,7 @@ How the project is maintained. Every change goes through these steps; a typo fix
 
 - Commit per `git.md` (`/commit`), one logical change per commit, with the translations of changed documents in the
   same commit (`docs.md`).
-- Update the state of the request in `maintainers/requests/README.md` and of its backlog item, if any.
+- Update the state of the request in `maintainers/requests/README.md` and of its backlog item, if any. A delivered
+  request moves to `maintainers/requests/done/` (`git mv`) in the same commit, and its row points to the new path.
 - Push only when the owner asks; each request covers that push only. A release only through `/release`.
 - End with a short report: what changed (commits), what was verified (commands and results), what is left.

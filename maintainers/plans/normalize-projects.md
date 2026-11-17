@@ -1,6 +1,6 @@
 # `/normalize-projects`: projects marked with the workspace version
 
-Status: approved design, built in the 0.1.0 publication. Request: `maintainers/requests/normalize-projects.md`.
+Status: approved design, built in the 0.1.0 publication. Request: `maintainers/requests/done/normalize-projects.md`.
 
 ## 1. The idea
 

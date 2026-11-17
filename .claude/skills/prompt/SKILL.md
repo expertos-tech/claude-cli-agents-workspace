@@ -24,6 +24,7 @@ Arguments: `$ARGUMENTS`. Resolve the file from the repository root:
    in words (for example "commit each step") is authorized exactly as written, and nothing adjacent. A push only when
    the file or the owner says so, and that push only.
 5. Prove each step (`/check`; `/test-install` when the installer, a hook or `setup-claude.sh` changed).
-6. Never edit the request while its steps run. When it is delivered, update its State in `maintainers/requests/README.md`.
+6. Never edit the request while its steps run. When it is delivered, update its State in `maintainers/requests/README.md`
+   and move it to `maintainers/requests/done/` (`git mv`), with its row pointing to the new path.
    A step left undone: write where it stopped and the next steps at the end of the request file, in a separate commit.
 7. End with the report of `.claude/rules/process.md` step 6.

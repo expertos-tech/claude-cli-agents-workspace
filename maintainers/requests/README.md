@@ -9,7 +9,7 @@ Run them in this order; each one depends on the ones before it:
 | # | Request | Design | State |
 | --- | --- | --- | --- |
 | 0 | `import-from-fork.md` | — | Pending; first after the publication, with its own release |
-| 1 | `normalize-projects.md` | `plans/normalize-projects.md` | Built in 0.1.0; end-to-end test passed on six projects; a second test on unseen projects pending |
+| 1 | `done/normalize-projects.md` | `plans/normalize-projects.md` | Built in 0.1.0; end-to-end test passed on six projects; a second test on unseen projects pending |
 | 2 | `rules.md` | `plans/rules-config.md` | Pending |
 | 3 | `normalize-rules.md` | `plans/normalize-rules.md` | Pending; needs `rules` |
 | 4 | `run-tools.md` | `plans/run-tools.md` | Pending |
@@ -37,5 +37,6 @@ repository root), merged into `main` one at a time:
 | 3 | `final-review` (with `rules-size-budget` folded in or right before it), which releases the next version once, and tests the update of a real installed workspace dedicated to it |
 | 4 | `os-sandbox-trial` |
 
-Run a request in a new session opened at the repository root, one stage per session when a stage is large. A finished
-request keeps its file; update the State column here.
+Run a request in a new session opened at the repository root, one stage per session when a stage is large. A delivered
+request moves to `done/` (`git mv`, in the commit that closes it); its row stays here with the new path
+and its State.
