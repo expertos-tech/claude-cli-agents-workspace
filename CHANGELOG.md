@@ -23,6 +23,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A request lifecycle (pending, `qa/`, `done/`) with an Execution block at each merge; the release per project with
   the project's own changelog in its root repo; any project layout, nested repos included; `/prompt` becomes
   `/request`; the prompt log moves to `logs/`; no backlog.
+- `/merge --hotfix`: an error in production fixed from `main` as a patch version, then merged down into `developer`;
+  the repo is blocked until it is.
 
 ### Added
 
@@ -37,6 +39,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `maintainers/requests/qa/`: the requests on `developer` not released yet, each with what each merge did; the
   backlog becomes pending requests (`idea` or `ready`).
 - `tests/check.sh` checks every `caw-*` layer: its product skill exists and its three sections are there.
+- `/caw-merge --hotfix <description>`: a fix of the released product from `main`, as a patch version with its tag
+  and GitHub release when the owner says to publish, then `main` merged into `developer` (`--down` resumes it); a
+  maintenance-only fix is not a hotfix. `/caw-merge` and `/caw-request` refuse to start while `main` is not in
+  `developer`.
 - `docs/`: the documentation of the project: getting started, features, commands and updates, hooks, the repository,
   contributing, maintenance, releases and translations.
 - `pt-BR` and `es` translations of `docs/` and of every README outside the product, each with a language links line.
