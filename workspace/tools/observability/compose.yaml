@@ -7,6 +7,10 @@ services:
   # OpenTelemetry Collector, Tempo (traces), Loki (logs), Prometheus (metrics)
   # and Grafana in one image, for development.
   otel-lgtm:
+    x-run-tools:   # read by scripts/run-tools.sh and /run-tools
+      title: Observability
+      description: Local Grafana and OTLP receiver for the Claude Code telemetry and the projects' dashboards
+      url: http://localhost:3000
     image: grafana/otel-lgtm:0.39.0@sha256:4c8056c9c05fcb3c8fd93800e85334bfd79b4d0271b47a54a121a64af41fe1fe
     command: ["bash", "/observability/start.sh"]
     restart: unless-stopped   # telemetry must survive a Docker daemon restart
@@ -38,8 +42,10 @@ services:
       timeout: 3s
       retries: 12
       start_period: 60s
+    networks: [observability]
 
 # Fixed name, so other local stacks can attach to it as external and reach otel-lgtm:4317.
+# Its own key, not default: the root tools/compose.yaml includes several files, and Compose refuses two defaults.
 networks:
-  default:
+  observability:
     name: observability

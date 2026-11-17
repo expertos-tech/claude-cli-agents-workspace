@@ -16,5 +16,5 @@ services:
       - ${SMOKE_PROJECTS_DIR:?set by tests/run-smoke.sh}:/projects:ro
 
 networks:
-  default:
+  observability:
     name: ${SMOKE_NETWORK:?set by tests/run-smoke.sh}

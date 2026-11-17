@@ -1,14 +1,20 @@
 # Login simulator in place of Auth0, always on. Run once from the workspace root; Docker starts it again at boot:
 #   docker compose --env-file custom/env/login-simulator.env -f tools/login-simulator/compose.yaml up -d --build
 # The users and applications come from LOGIN_SIMULATOR_CONFIG (a path relative to this folder), set in
-# custom/env/login-simulator.env (template: .env.example here), else the example config/config.json. Without that
-# file, pass --env-file tools/login-simulator/.env.example. A change to the users file takes effect on restart:
+# custom/env/login-simulator.env (template: .env.example here), else custom/config/login-simulator/config.json; without
+# that file the container is not created (the bind never creates a missing path). To try the example:
+# LOGIN_SIMULATOR_CONFIG=./config/config.json. In the group of every tool: tools/compose.yaml (/run-tools).
+# A change to the users file takes effect on restart:
 #   docker compose --env-file custom/env/login-simulator.env -f tools/login-simulator/compose.yaml restart
 # Details in README.md.
 name: login-simulator
 
 services:
   login-simulator:
+    x-run-tools:   # read by scripts/run-tools.sh and /run-tools
+      title: Login simulator
+      description: Local login in place of Auth0, with fixed fictitious users and one-click login
+      url: http://localhost:28080
     build: .
     image: login-simulator:0.1.0   # also the image a project's test stack runs, with its own config file
     restart: unless-stopped
@@ -24,15 +30,21 @@ services:
     ports:
       - "127.0.0.1:28080:8080"   # browser: http://localhost:28080
     volumes:
-      - ${LOGIN_SIMULATOR_CONFIG:-./config/config.json}:/config/config.json:ro
+      - type: bind
+        source: ${LOGIN_SIMULATOR_CONFIG:-../../custom/config/login-simulator/config.json}
+        target: /config/config.json
+        read_only: true
+        bind:
+          create_host_path: false   # a missing file stops this tool, never becomes an empty folder
     networks:
-      default:
+      login-simulator:
         ipv4_address: 172.31.250.10   # outside ip_range, so no other container takes it first
 
 # Fixed name, so other local stacks can attach to it as external and reach login-simulator:8080.
 # Fixed subnet, so the simulator keeps the address of AVATAR_ORIGIN; other containers get one from ip_range.
+# Its own key, not default: the root tools/compose.yaml includes several files, and Compose refuses two defaults.
 networks:
-  default:
+  login-simulator:
     name: login-simulator
     ipam:
       config:
