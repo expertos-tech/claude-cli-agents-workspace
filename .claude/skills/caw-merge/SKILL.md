@@ -35,11 +35,18 @@ the GitHub release are each confirmed (`--main`).
 | the full test command and gate phase 1 | `bash <clone>/tests/check.sh --base origin/developer --i18n-pending`, with `AIWP_TERMS_FILE` set to the root's `workspace/custom/core-terms.txt` when it exists; `/caw-test-install` from the clone when the range changes `install.sh`, `tests/test-install.sh`, a hook or `workspace/scripts/setup-claude.sh`. Record the sha: `git -C <clone> rev-parse HEAD` |
 | gate phase 2 | at the root, on `developer` with no change: `git fetch -q origin`, `git merge --ff-only origin/developer`; the clone's sha still its HEAD and the remote branch (`git ls-remote origin <branch>`), else back to step 1; `git fetch -q <clone> <branch>`, `git merge --ff-only <sha>`, `git push origin developer`, `git push origin --delete <branch>` |
 | `aiwp-cmds.sh close <work>` | `rm -rf tmp/work/<work>/<clone>`, and the work folder when empty, once `developer` holds the sha |
-| `custom/requests/` (and `qa/<project>/`, `done/<project>/`) | `maintainers/requests/` (and `qa/`, `done/`); commit by path at the root, no `custom/` |
+| `custom/requests/` (and `qa/<project>/`, `done/<project>/`) | `maintainers/requests/` (and `qa/`, `done/`), committed in the clone, or on `developer` when the session has no clone; no `custom/` |
 | a `ready` request made of a RECOMMENDED | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, with its row in the README |
 | `rules/review.md`, `rules/docs.md` | `.claude/rules/review.md`, `.claude/rules/docs.md` (`workspace/rules/docs.md` "CHANGELOG.md" for the changelog rules) |
 
 ## CAW rules
+
+### Push gate
+
+This repository is public. Every push `/caw-merge` makes (the work or release branch, `developer`, `main`) happens
+only right after a passing `tests/check.sh` run on that same commit: record `git rev-parse HEAD` after the run, and
+push only when HEAD still equals it. Anything written after that run (an Execution block, a request made of a
+finding, a fix, a translation) means running the suite again before the push.
 
 ### Where the session is
 
