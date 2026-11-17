@@ -715,7 +715,7 @@ cmd_hotfix() {
         --body "Hotfix $branch ($(git -C "$src" rev-parse --short "$sha")) into main, checked by the gate against main, opened by aiwp-cmds.sh hotfix because the remote refused the direct push of main.")" ||
         die 1 "the pull request could not be opened: open it on the git server ($branch -> main)"
       echo "pull request: $url"
-      echo "no tag yet: the tag waits for the merge of the pull request (a known limit); after it, when the human says publish: bash scripts/aiwp-cmds.sh hotfix-tag $rel vX.Y.Z; then bash scripts/aiwp-cmds.sh hotfix-down $rel"
+      echo "no tag yet: the tag waits for the merge of the pull request (a known limit: no command tags it yet; after the merge the human tags the commit of main by hand, if publishing); after the merge: bash scripts/aiwp-cmds.sh hotfix-down $rel"
       return 0
     fi
   fi

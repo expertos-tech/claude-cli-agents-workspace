@@ -1310,7 +1310,8 @@ test_hotfix_refused_by_a_protected_main_opens_a_pull_request() {
   AIWP_GH="$BASE/gh.sh" gate hotfix "$HW/app" "$sha" --pr-if-refused
   rc_is 0
   has "pull request: https://example.com/acme/app/pull/2"
-  has "no tag yet: the tag waits for the merge of the pull request (a known limit)"
+  has "no tag yet: the tag waits for the merge of the pull request (a known limit: no command tags it yet"
+  hasnt "hotfix-tag"
   grep -q "gh pr create --base main --head fix/login-null" "$BASE/gh.log"; check "gh opened fix -> main" $?
   grep -q "@ $R/projects/app" "$BASE/gh.log"; check "from the project folder" $?
   eq "local main still unchanged" "$main0" "$(local_sha main)"
