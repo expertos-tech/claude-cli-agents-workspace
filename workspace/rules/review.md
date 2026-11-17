@@ -23,6 +23,10 @@ Once per gate, between its two phases (`rules/git.md` "Gate", `/merge`), on ever
 
 `/merge --main` ends with a stronger final review (`rules/skills/merge/SKILL.md` "Release" step 4), on everything since the last release of the project, against every request waiting in `custom/requests/qa/<project>/`, in two rounds: **what enters and what leaves** (effort `high`: the inventory of what was added, changed and removed, each traced to its qa request; every acceptance criterion, pending ones included; every Execution block checked against the code; regressions, so nothing that works is removed without a request; intent, so each change does what was asked and no more; the compatibility of the repos released together; the CHANGELOG) and a **general** reading of the whole tree (effort `medium`: contradictions, dead references, leftovers). UNEXPLAINED removals and regressions are BLOCKERs.
 
+## Hotfix
+
+`/merge --hotfix` reviews the fix against `main`, effort `high` (it goes to production; `rules/skills/merge/SKILL.md` "Hotfix" step 7): every change classified LINKED to the error described or UNRELATED, and every UNRELATED change is a BLOCKER, even when it is right; a cherry-picked commit that depends on anything not on `main` is a BLOCKER. A conflict of the merge down into `developer` is reviewed as its resolution, effort `high`.
+
 ## Findings
 
 - BLOCKER: correctness, security, data loss, a broken or unproven acceptance criterion, a failing test, a weaker gate or hook. Fix it in the clone and run the gate again from phase 1.

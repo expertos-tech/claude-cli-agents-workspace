@@ -1,7 +1,7 @@
 ---
 name: merge
-description: "Take the work of a clone in tmp/work/ into the base of its project (developer) through the gate, writing the versioned CHANGELOG and moving its request to qa; with --main, validate everything in qa and release the project (every repo, the root changelog, the tags). No argument: the clone of this session. Use when a delivery is ready, or when the user asks to merge or release."
-argument-hint: "[<work>/<clone> [request file] | --main <project> [instructions]]"
+description: "Take the work of a clone in tmp/work/ into the base of its project (developer) through the gate, writing the versioned CHANGELOG and moving its request to qa; with --main, validate everything in qa and release the project (every repo, the root changelog, the tags); with --hotfix, fix an error of production from main as a patch version, then merge main down into developer. No argument: the clone of this session. Use when a delivery is ready, or when the user asks to merge, release or fix production."
+argument-hint: "[<work>/<clone> [request file] | --main <project> [instructions] | --hotfix <project> <description>]"
 model: claude-opus-5-5
 effort: high
 ---
@@ -13,6 +13,9 @@ Arguments: `$ARGUMENTS`. Reply in the language of the conversation. This is the 
 - No argument: the clones this session opened (their paths are in the conversation). None named: `bash scripts/aiwp-cmds.sh status`; exactly one clone with commits ahead of its base → that one; several → ask which, in one question; none → say there is nothing to merge and stop. A session with no clone worked on no project: nothing to merge.
 - `<work>/<clone>`: a clone made by `bash scripts/aiwp-cmds.sh open`. Request file: the request of `custom/requests/` the work came from; none given: the one the session ran, else the request as the human typed it in this conversation. No request at all: every item of the audit becomes a question in step 6.
 - `--main <project> [instructions]`: the release of the project: "Release" below.
+- `--hotfix <project> <description>`: an error in production, fixed from `main`: "Hotfix" below.
+
+A repo whose remote `main` holds a commit its remote `developer` does not (a hotfix not merged down yet, after a cancel or a crash, or a release merged by a pull request with a merge commit) is blocked: the gate refuses every merge into its `developer` and `release` refuses its release, with the reason. Clear it first: "Hotfix" step 12, then go on.
 
 ## Merge into developer
 
@@ -80,4 +83,42 @@ Arguments: `$ARGUMENTS`. Reply in the language of the conversation. This is the 
 10. `bash scripts/aiwp-cmds.sh close <yyyy-mm-dd>-release-<project>`.
 11. Summary: the project version and each repo's, what entered `main` (sha), the tags, the inventory of the final review with its classification, the findings and what was done with each, the requests created, the checks with their results.
 
-Never merge with a failing check or an open BLOCKER. Never move `developer` or `main` by any other command. `main` moves only by `bash scripts/aiwp-cmds.sh release <repo>`, and Terraform applies only by `bash scripts/aiwp-cmds.sh apply`, both on the human's explicit request.
+## Hotfix
+
+`/merge --hotfix <project> <description>`: the human found an error in production. The fix starts from the remote `main`, never from `developer`, so nothing not yet released reaches production; it is released as a patch version, then `main` is merged down into `developer`. Besides the release, this is the only way `main` receives a change. The request is the file of `custom/requests/` the human names, else the description, written as `custom/requests/<yyyy-mm-dd>-hotfix-<slug>.md` with a "Requested" section before step 3.
+
+1. **The repo.** The repo of `projects/<project>` the error is in (the project's root repo, a repo inside it at any depth, or the one repo it is); unclear from the description and the code: ask, in one question. A repo without `main`: stop, say so, create nothing. A repo already blocked (above): clear it first (step 12).
+2. **The version:** the newest released version of the repo (its newest `vX.Y.Z` tag, or the newest dated section of the `CHANGELOG.md` of `main`) with the patch bumped: `vX.Y.(Z+1)`. Its tag must be free (`git -C <repo> tag -l` and `ls-remote --tags origin`), else stop and tell the human.
+3. **The clone:** `bash scripts/aiwp-cmds.sh open <yyyy-mm-dd>-hotfix-<slug> <repo> --from-main --branch fix/<slug>`. It starts from the remote `main` and its base is `main`.
+4. **The fix**, only what the error needs, with a test that fails without it. The fix already exists on `developer`: take only that commit (`git cherry-pick -x <sha>`) when it depends on nothing not yet released; otherwise write it again from `main`. Nothing else, even when it is right: it waits for the next release.
+5. **CHANGELOG** of `main` (`rules/docs.md` "CHANGELOG.md"): a dated section `## [X.Y.(Z+1)] - YYYY-MM-DD` (today) above the newest dated one, with `### Fixed`; commit it alone (`docs(changelog): release X.Y.Z`). A project with nested repos: the hotfix is per repo, and the project's root repo then gets its own patch version, in its own hotfix clone (steps 3 to 11), with the "Components" table.
+6. **Phase 1 against `main`:** `bash scripts/aiwp-cmds.sh gate <work>/<clone> --test "<full test command>"` (the full tests, `validate.sh`, the scan and the audit, as in "Merge into developer" step 4). The gate refuses a branch that holds a commit of `developer` not on `main`.
+7. **Review of the fix against `main`:** one `reviewer` subagent, clean context, effort `high` (production), read-only. Brief: the error as the human described it, the audit, the range phase 1 printed, and what phase 1 verified. Ask for this only:
+
+   ```text
+   Classify every change of the range against the error described: LINKED (the fix, its test, its CHANGELOG entry)
+   or UNRELATED. Every UNRELATED change is a BLOCKER, even when it is right. A cherry-picked commit (cherry picked
+   from ...): read the commit it came from on developer and report a BLOCKER when it depends on anything that is not
+   on main (a function, a schema, a configuration, an API). Then report only: a correctness defect; the error not
+   fixed, or no test that proves it; a security or data-loss problem; a CHANGELOG entry that misdescribes the fix.
+   For each: path:line, a concrete failure scenario, the fix.
+   ```
+
+   A BLOCKER: fix it in the clone (a cherry-pick that depends on unreleased work: write the fix again from `main`) and go back to step 6. A RECOMMENDED: a `ready` request in `custom/requests/`, as in "Merge into developer" step 5.
+8. **The human's OK**, in one round, with no BLOCKER open: what goes into `main` (sha, version, the fix). And how `main` publishes (`rules/git.md` "Waves"): a pipeline of the repo deploys from it, or its docs say so → `main` publishes by itself, and the same round asks "publish to production with the fix?". No OK, or no to publishing: `main` does not change and receives no push; the fix waits on its branch (on the remote), the request stays pending with where it stopped (`rules/git.md` "Waves" step 2), and the flow stops here.
+9. **Into `main`:** `bash scripts/aiwp-cmds.sh hotfix <work>/<clone> <sha>` with the sha phase 1 printed (`guard-bash` asks): the fast-forward of the remote `main`, then the local one. "moved after phase 1": back to step 6. A protected `main` refuses the push: `--pr-if-refused` opens a pull request `fix/<slug>` → `main`, and the tag waits for its merge (no command does it yet: `release-tag-after-pull-request`).
+10. **The publication:**
+    - `main` publishes by itself (the human said yes in step 8): the push was the publication; now `bash scripts/aiwp-cmds.sh hotfix-tag <repo> vX.Y.Z` (`guard-bash` asks).
+    - It does not: say `main` received the fix, then ask "publish to production with the fix?". Yes: `hotfix-tag <repo> vX.Y.Z`, then the project's own publication step, as its docs say, on the human's order. No: no tag; go on.
+11. **The request to qa:** its `## Execution` block (as in "Merge into developer" step 8), with the line `Merge into developer pending.`, then moved to `custom/requests/qa/<project>/`; commit and push `custom/`.
+12. **Down into `developer`.** Say that `main` is now merged into `developer`, and do it; the only option offered is to go on. `bash scripts/aiwp-cmds.sh hotfix-down <repo>` (`guard-bash` asks):
+    - clean: a standard merge commit on `developer`, pushed; no new branch and no tests (the fix was tested before `main`; a break that only shows with the unreleased work is caught by the full tests of the next `/merge` into `developer` or of the release).
+    - a conflict, or a fix that must be adapted to the code on `developer` (another API, a moved file, a refactor): `bash scripts/aiwp-cmds.sh open <work> <repo> --branch fix/<slug>-developer` (from `developer`), `git merge origin/main` in it, resolve every conflict and adapt the fix so the error stays fixed on `developer` too, then "Merge into developer" steps 3 to 7, with the review of the resolution (effort `high`) and no CHANGELOG step: in `CHANGELOG.md` the `Unreleased` section of `developer` stays on top and the dated patch section goes below it; an `Unreleased` version not above the patch takes the next one (`rules/docs.md`). Ask the human only when the resolution changes a business rule.
+
+    Never a rebase or a force push; `main` and its tag never change on the way down, and no other branch is touched: every work branch gets the fix through its own `/merge`, whose step 1 merges the updated `developer`.
+13. **The request to done:** once `developer` holds `main` (the merge pushed), move it to `custom/requests/done/<project>/` with `Released in <project> vX.Y.(Z+1)` (or `Not published: vX.Y.(Z+1) on main without a tag`), replacing `Merge into developer pending.`; commit and push `custom/`. `bash scripts/aiwp-cmds.sh close <work>`.
+14. Summary: the version, what entered `main` (sha) and `developer` (sha, clean or resolved), the tag and the publication, the review with its classification, the checks with their results, the request file.
+
+A cancel, a crash or another session between steps 9 and 12 leaves the repo blocked, computed from git: every `/merge` into its `developer` and its release are refused until step 12 is done.
+
+Never merge with a failing check or an open BLOCKER. Never move `developer` or `main` by any other command. `main` moves only by `bash scripts/aiwp-cmds.sh release <repo>` and `hotfix`, `developer` is written outside the gate only by `hotfix-down`, and Terraform applies only by `bash scripts/aiwp-cmds.sh apply`, each on the human's explicit request.

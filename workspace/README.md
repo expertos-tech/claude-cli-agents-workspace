@@ -92,7 +92,7 @@ Without an argument, `/merge` takes the clone of this session. The gate brings `
 ## What never happens without you
 
 - **`projects/` stays on `developer` and changes only through the gate.** A hook refuses any git write in `projects/` or in the core outside it.
-- **`main` and the cloud only at your request.** `main` moves only by `/merge --main <project>`, a new version with a tag, and Terraform applies only with `bash scripts/aiwp-cmds.sh apply`, from `main` and with the plan confirmed.
+- **`main` and the cloud only at your request.** `main` moves only by `/merge --main <project>`, a new version with a tag, or by `/merge --hotfix`, a patch fixed from `main`, and Terraform applies only with `bash scripts/aiwp-cmds.sh apply`, from `main` and with the plan confirmed.
 - **Deleting a database asks for your confirmation**: a Docker volume, `DROP`, `dropdb` and the like.
 - **Publishing to the local Docker is free**, and `bash scripts/aiwp-cmds.sh up` always tags the previous publication first; `rollback` goes back to it.
 - **A secret does not leave the machine:** the scan runs before each push and again at the gate.
@@ -107,6 +107,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | --- | --- |
 | `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to the project's `developer`, through the gate, writing the `CHANGELOG.md` |
 | `/merge --main <project> [instructions]` | The release: a release clone, the full check, the final review (what enters and what leaves, then general), the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
+| `/merge --hotfix <project> <description>` | An error in production: the fix from `main`, the gate and a review against `main`, your OK, the patch version `vX.Y.(Z+1)` (tagged when you say to publish), then `main` merged into `developer` |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |

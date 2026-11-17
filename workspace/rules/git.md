@@ -9,9 +9,9 @@
 ## Authorization
 
 - A clone of `tmp/work/` (`AGENTS.md` "Where work happens"): anything, with no question: commit, amend, rebase, reset, branch. Each commit, rewrite or merge is pushed by the clone's own hooks, after a secret scan of the commits that leave; never push it by hand, and never with `--no-verify`.
-- `projects/`: read only (`status`, `log`, `diff`, `fetch`...). The `guard-bash` hook refuses any other git command there. It changes only by `bash scripts/aiwp-cmds.sh gate`, `release` and `apply` (below), and by the steps of `/normalize-projects`: `developer`, `checkpoint` and `bring` (`bash scripts/aiwp-gate.sh --help`). The core is no repo and changes only by `aiwp update`, run by the person in a terminal.
+- `projects/`: read only (`status`, `log`, `diff`, `fetch`...). The `guard-bash` hook refuses any other git command there. It changes only by `bash scripts/aiwp-cmds.sh gate`, `release`, `hotfix`, `hotfix-tag`, `hotfix-down` and `apply` (below), and by the steps of `/normalize-projects`: `developer`, `checkpoint` and `bring` (`bash scripts/aiwp-gate.sh --help`). The core is no repo and changes only by `aiwp update`, run by the person in a terminal.
 - The custom layer (`custom/`): commit and push the files the session wrote there (requests, lessons, the project index), by path. A POC is worked on in a clone of `custom/`, like a project.
-- A new remote and pushing a tag: only when the human asks. Each request covers that operation only. The tags the workspace pushes: the release tag `vX.Y.Z` of `/merge --main` (`bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z`, annotated, on the released `main`), and the checkpoint tags of `/normalize-projects` (`ai-workspace-migration/<yyyy-mm-dd>/developer` and `.../main`, annotated, on the heads before any change), by `bash scripts/aiwp-cmds.sh checkpoint <repo>` after the human confirms; they are never moved or deleted.
+- A new remote and pushing a tag: only when the human asks. Each request covers that operation only. The tags the workspace pushes: the release tag `vX.Y.Z` of `/merge --main` (`bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z`, annotated, on the released `main`), the patch tag of `/merge --hotfix` (`bash scripts/aiwp-cmds.sh hotfix-tag <repo> vX.Y.Z`, the same way), and the checkpoint tags of `/normalize-projects` (`ai-workspace-migration/<yyyy-mm-dd>/developer` and `.../main`, annotated, on the heads before any change), by `bash scripts/aiwp-cmds.sh checkpoint <repo>` after the human confirms; they are never moved or deleted.
 - Never change git config (user, hooks, remotes) unless asked.
 - Verifying a push block on a remote: read the effective permissions of each branch the block covers. Never test it with a real push.
 
@@ -22,6 +22,7 @@
 - Branch name: `<type>/<kebab-description>`, ASCII, lowercase, with the types of "Commits"; it must not exist on the remote yet.
 - The clone has the repo's local `.env` files (copied by `open`); install its dependencies there.
 - `bash scripts/aiwp-cmds.sh status` lists the clones, what is not pushed and what is not committed; `close <work>` deletes a work folder once everything in it is merged and on the remote.
+- A hotfix (`/merge --hotfix`) works on `fix/<slug>`, in `tmp/work/<yyyy-mm-dd>-hotfix-<slug>/`, opened with `--from-main`: from the remote `main`, which is its base. Its conflict with `developer`, when there is one, on `fix/<slug>-developer`, from `developer`.
 - A release (`/merge --main`) works on `fix/release-vX-Y-Z`, in `tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/`: the full check and the final review of `developer`, its fixes and the dated CHANGELOG.
 - A normalization (`/normalize-projects`) works on `feat/ai-workspace-migration` and goes through the gate like any work, after the human approved its plan and tested the branch.
 
@@ -36,6 +37,8 @@ The base of a project receives only what the gate checked: `/merge [<work>/<clon
 - The normalization branch (`feat/ai-workspace-migration`) is judged on what it adds: line 1 of `README.md` must be the marker of the workspace version, `validate.sh` runs its lint checks on the changed files only, and the secret check is the scan of the commits the branch adds (a new secret or env file fails; one already in the base does not, and is reported by `/normalize-projects`). It applies only to a project that needs it (no marker, or out of date; a `-x-y-z` suffix names a pending migration), and the branch may add or change only documentation, images, `.gitignore` and the sample `.env` (deletions allowed). `--untested` replaces `--test` only when the human chose to go on untested, and `guard-bash` asks before it. The branch stays on the remote after phase 2.
 - Never merge with a BLOCKER open or a failing check.
 - `main` moves only by `/merge --main <project>`, on the human's explicit request: a release clone with the full check, the final review (what enters and what leaves, then general) and its fixes, the CHANGELOG dated, the gate into `developer`, then `bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z` (`developer` into `main` by fast-forward, and the tag).
+- A hotfix (`/merge --hotfix <project> <description>`, on the human's request): a clone from `main`, only what the error needs, phase 1 against `main` and a review of the fix (effort `high`), the human's OK, then `bash scripts/aiwp-cmds.sh hotfix <work>/<clone> <sha>` (`main` by fast-forward), `hotfix-tag <repo> vX.Y.Z` when the human says to publish, and `hotfix-down <repo>`: `main` merged into `developer` (a merge commit; a conflict goes through a `fix/<slug>-developer` clone and the gate).
+- Blocked repo: while the remote `main` holds a commit the remote `developer` does not, the gate refuses every merge into that `developer` (except a branch that holds that `main`, which clears it) and `release` refuses; computed from git at each run, so it survives a cancel or a crash, and clears when `developer` holds `main`.
 - Terraform changes the cloud only by `bash scripts/aiwp-cmds.sh apply <repo> <module>` (plan from `main`), then `... --apply <plan>` after the human confirms that plan; both on the human's explicit request.
 
 ## Waves
@@ -71,8 +74,8 @@ A request goes through three folders of `custom/requests/`, one per state of its
 | Folder | State | Moved by |
 | --- | --- | --- |
 | `custom/requests/` | Pending: `idea` (decisions open) or `ready` | `/draft-request`, the human, a review finding |
-| `custom/requests/qa/<project>/` | On `developer`, not released | `/merge`, after phase 2 |
-| `custom/requests/done/<project>/` | Released | `/merge --main <project>` |
+| `custom/requests/qa/<project>/` | On `developer`, not released; a hotfix: on `main`, marked `Merge into developer pending.` | `/merge`, after phase 2; `/merge --hotfix`, once `main` has the fix |
+| `custom/requests/done/<project>/` | Released | `/merge --main <project>`; `/merge --hotfix`, once `developer` holds `main` |
 
 - A request never moves while its waves run. `<project>` is the project the release names (`rules/rules.md` "Workspace projects"); a request that touched several projects gets one copy per project.
 - At each merge into `developer`, `/merge` appends to the request, after a `---`, `## Execution — <yyyy-mm-dd>, merged into developer at <sha>`: what was done by step with the commits, the decisions taken while running, the deviations from the request, the status of each acceptance criterion (proven: how; pending: what is missing; failed: why), the checks, and what is left. A request with no file gets one in `qa/<project>/` with a "Requested" section that sums up what the human asked.

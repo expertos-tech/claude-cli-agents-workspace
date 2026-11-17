@@ -151,6 +151,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | A gate with something the request does not explain, destruction outside the machine, or a base that publishes to production | one question, in one round, before merging |
 | Deleting a database: `docker volume rm`, `docker compose down -v`, `DROP`/`TRUNCATE`, deleting a `.data/` folder | Claude says what goes, and the hook asks for your confirmation |
 | `aiwp-cmds.sh release` (`main` moves, and the `vX.Y.Z` tag is pushed), run by `/merge --main <project>` | confirmation, and only at your request |
+| `aiwp-cmds.sh hotfix`, `hotfix-tag` and `hotfix-down` (the fix into `main`, its patch tag, `main` merged into `developer`), run by `/merge --hotfix` | confirmation, after your OK to the fix; the question "publish to production with the fix?" comes before the push of a `main` that deploys by itself, after it otherwise |
 | `aiwp-cmds.sh apply --apply` (Terraform in the cloud) | confirmation of the plan shown, and only at your request |
 | `aiwp-cmds.sh close --discard` (deleting work not merged) | confirmation |
 | A git write in `projects/` or in the core, Terraform outside `apply`, `git push --no-verify` | refused by the hook, with the right way |
@@ -163,6 +164,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | --- | --- |
 | `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to `developer`, through the gate, writing the `CHANGELOG.md` and moving the request to `custom/requests/qa/<project>/` with what was done |
 | `/merge --main <project> [instructions]` | The release of the project: every repo in it, each with its own version and tag, then the project version in its root repo; validates every request in `qa/<project>/` against the code (final review: what enters and what leaves, then general), asks per finding (fix now or a request), and warns of any conflict an instruction causes before acting |
+| `/merge --hotfix <project> <description>` | An error in production: a clone from `main`, only the fix, the gate against `main` and a review of the fix, your OK, then `main`, the patch version `vX.Y.(Z+1)` and its tag when you say to publish, and right after it `main` merged into `developer` (a conflict goes through a resolution branch and the gate). Until `developer` holds `main`, the repo is blocked: `/merge` into its `developer` and its release are refused |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
@@ -172,7 +174,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/local-env [folder]` | Creates or completes a filled `.env` without showing values (`custom/env/<name>.env` for `docker/`, `docker/sonar/` and a tool) |
 | `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
 
-The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `apply`, `developer`, `checkpoint`, `bring`).
+The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `hotfix`, `hotfix-tag`, `hotfix-down`, `apply`, `developer`, `checkpoint`, `bring`).
 
 Claude Code's own commands that help most here:
 
@@ -205,7 +207,7 @@ In both modes, unit tests, coverage, lint and the secret scan are Claude's.
 
 - Each project is an independent git repository in `projects/`, never part of the core. The list is in `custom/projects.md`.
 - **Creating:** ask ("create the project X in projects/client-y"). Claude uses `scripts/init-repo.sh`. The folder of a new project is your decision; if you do not say it, Claude asks.
-- **Branches:** the checkout in `projects/` stays on `developer`; the work happens in a clone under `tmp/work/`, on a branch that leaves it and comes back through the gate. `main` moves only when you ask for the release (`/merge --main <project>`, in a release clone `fix/release-vX-Y-Z`, ending in `aiwp-cmds.sh release <repo> --tag vX.Y.Z`): a fast-forward to `developer` and the version tag. Terraform applies only from `main`, with `aiwp-cmds.sh apply`, at your request and with the plan confirmed.
+- **Branches:** the checkout in `projects/` stays on `developer`; the work happens in a clone under `tmp/work/`, on a branch that leaves it and comes back through the gate. `main` moves only when you ask for the release (`/merge --main <project>`, in a release clone `fix/release-vX-Y-Z`, ending in `aiwp-cmds.sh release <repo> --tag vX.Y.Z`): a fast-forward to `developer` and the version tag. An error in production is fixed from `main` (`/merge --hotfix`), as a patch version, and `main` is then merged into `developer`. Terraform applies only from `main`, with `aiwp-cmds.sh apply`, at your request and with the plan confirmed.
 - **Local Docker:** `aiwp-cmds.sh up` publishes and first tags the images it will replace; `aiwp-cmds.sh rollback` goes back to them.
 - **Workspace projects:** the first line of each project's `README.md` (and of each POC folder's) is a marker with the workspace version it was last normalized with: `<!-- AI-WORKSPACE-PROJECT 0.1.0 -->`. `bash scripts/aiwp-project-state.sh` shows the state of each one. When a message names a project without the marker, or one that a newer workspace version asks something of (`migrations/`), Claude says so and asks whether to run `/normalize-projects <project>`. Saying no never blocks the request; the warning comes back the next time you name the project. `aiwp-cmds.sh open` and the gate show the same warning.
 - **Bringing in an existing project:** `/normalize-projects --from <url | folder>` clones it into `projects/` (from a folder, its local branches come along and `origin` points to its real remote; uncommitted changes there are listed, since a clone does not carry them). A project cloned by hand or a POC moved into `custom/pocs/` is normalized the same way: `/normalize-projects <project>`.
