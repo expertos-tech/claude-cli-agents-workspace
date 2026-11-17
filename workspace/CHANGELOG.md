@@ -15,6 +15,8 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 - A repo whose remote `main` holds a commit its remote `developer` does not (a hotfix not merged down, after a cancel or a crash) is blocked, computed from git with no state file: the gate refuses every merge into its `developer` (except the branch that brings `main` down) and `release` refuses its release; `aiwp-project-state.sh`, `aiwp-cmds.sh open` and the warning of a message that names the project say so.
 
 - A request lifecycle in `custom/requests/`: pending (state `idea` or `ready`), `qa/<project>/` once `/merge` takes it into `developer` (with an "Execution" block: what was done, decisions, deviations, the status of each acceptance criterion), `done/<project>/` once released. `/merge --main` validates every request waiting in `qa/<project>/` against the code, gathers every finding, and asks per finding: fix now in the release clone, or a request.
+- `/run-tools`: checkboxes with the local tools of this machine (observability, the login and Safe Browsing simulators, the Azurite console, and this machine's container console: docker-ce on Linux and WSL, Colima on macOS), each with its URL and state; it starts the ones you tick and ends with a table of tool, URL and state. Unticking a tool that is up stops nothing; `/run-tools --down` stops. Behind it, `scripts/run-tools.sh` (`list --json`, `status`, `up`, `down`): a tool whose configuration is missing in `custom/` or whose port is busy is refused with the reason while the others start; each start tags the images it replaces as `<name>:rollback-latest`; a console is installed (`make install`) or its service started.
+- `tools/compose.yaml`: every container tool in one compose project, `claude-cli-agents-tools`, so the container console shows them as one group. Each tool's own `compose.yaml` still starts it alone, for development, and carries an `x-run-tools` block (title, description, URL) on its main service.
 
 ### Changed
 
@@ -23,6 +25,10 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 - The prompt log moves to `logs/prompts/` at the workspace root (a new writable folder), never versioned; `prompt-log.py sync --scan` removes any secret from it. Its sources move to `custom/config/prompt-log/sources.json`.
 - `/commit`, the implementer and the docs writer no longer write `CHANGELOG.md`; `/merge` does.
 - The gate of the product repository (`scripts/check-workspace.sh`, a maintenance tool) requires a `pt-BR` and an `es` translation of every `README.md` of the repository and of every page of its root `docs/`, besides the product's documents.
+- The login and Safe Browsing simulators read their file from the custom layer by default (`custom/config/login-simulator/config.json`, `custom/config/safe-browsing-simulator/threats.json`) instead of the example; without it they do not start, and a missing file is never created as a folder. The example still runs with `LOGIN_SIMULATOR_CONFIG=./config/config.json` or `SAFE_BROWSING_THREATS=./config/threats.json`.
+- Azurite without `AZURITE_ACCOUNT_KEY` exits at start with the reason, and the console never starts; the check moved from Compose into the container, so a tool without its key no longer stops the others of the group.
+- The tools' networks keep their names (`observability`, `login-simulator`, `safe-browsing-simulator`), so other stacks still attach to them as external.
+- `measure.py` says to start observability with `bash scripts/run-tools.sh up observability`.
 
 ### Removed
 
@@ -32,6 +38,7 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 
 - Your custom layer, in this order: `git -C custom mv prompts requests` (the requests and their archive move together); move `custom/requests/log/sources.json` to `custom/config/prompt-log/sources.json`; copy the rest of `custom/requests/log/` to `logs/prompts/` and remove it from `custom/` (`git -C custom rm -r requests/log`); turn each file of `custom/backlog/` into a request in `custom/requests/` with `**State:** idea`; commit and push `custom/`.
 - A project whose `CHANGELOG.md` has a plain `## [Unreleased]` section gets it named by the next `/merge` (`## [X.Y.Z] - Unreleased`); nothing to do by hand.
+- The local tools: put the real files of the simulators in `custom/config/login-simulator/config.json` and `custom/config/safe-browsing-simulator/threats.json` (unless `custom/env/<tool>.env` already points to another file), then run `/run-tools`. A tool still running in its own compose project moves into `claude-cli-agents-tools` at its first start: Azurite's volume `azurite-console_azurite-data` is copied to `claude-cli-agents-tools_azurite-data` and the old one kept until you confirm its deletion. When a project's stack is attached to a tool's network (`login-simulator`, for example), `/run-tools` names it and changes nothing: stop that stack, run `/run-tools` again, and the stack attaches again at its next start.
 
 ## [0.1.0] - 2026-11-16
 

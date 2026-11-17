@@ -25,6 +25,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `/request`; the prompt log moves to `logs/`; no backlog.
 - `/merge --hotfix`: an error in production fixed from `main` as a patch version, then merged down into `developer`;
   the repo is blocked until it is.
+- `/run-tools` and `tools/compose.yaml`: the local tools started by checkbox, the container ones in one compose group,
+  their configuration from `custom/`.
 
 ### Added
 
@@ -61,6 +63,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
 - `/caw-merge --main` ends with the same final review as the product's: what enters and what leaves, then general.
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
+- `docs/features.md` lists `/run-tools` and the tools' compose group.
 
 ### Removed
 
