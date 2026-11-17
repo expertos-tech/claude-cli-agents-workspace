@@ -21,6 +21,7 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 - The prompt log moves to `logs/prompts/` at the workspace root (a new writable folder), never versioned; `prompt-log.py sync --scan` removes any secret from it. Its sources move to `custom/config/prompt-log/sources.json`.
 - `/commit`, the implementer and the docs writer no longer write `CHANGELOG.md`; `/merge` does.
 - The gate of the product repository (`scripts/check-workspace.sh`, a maintenance tool) requires a `pt-BR` and an `es` translation of every `README.md` of the repository and of every page of its root `docs/`, besides the product's documents.
+
 ### Removed
 
 - The backlog (`custom/backlog/`, `templates/backlog-item.md`): an idea is a request in state `idea`.
