@@ -33,7 +33,7 @@ CHECK_ORDER="secrets vuln iac shell dockerfile markdown mermaid terraform python
 # Prints the command reference.
 usage() {
   cat <<'USAGE'
-Usage: scripts/check-workspace.sh [--base <ref>] [--all] [--floor] [--no-cache] [--verbose] [--help]
+Usage: scripts/check-workspace.sh [--base <ref>] [--all] [--floor] [--no-cache] [--i18n-pending] [--verbose] [--help]
 
 Gate of the product repository, a maintenance tool. It judges the checkout that holds this script, from any cwd. When
 that folder is a subfolder of its git repo, only the paths inside it count, relative to it.
@@ -56,7 +56,9 @@ Checks, cheapest first, with the time of each; the gate stops at the first failu
               i18n/<locale>/ translates a document that exists. <path> is relative to the repo root. Documents:
               every README.md of the repo and every .md of the root docs/; in the product, every .md of its
               docs/ and of tools/<name>/docs/. Never under i18n/, .claude/, tmp/, docs/decisions/ (of the
-              root or the product) or node_modules/ (any depth); git-ignored files are not listed
+              root or the product) or node_modules/ (any depth); git-ignored files are not listed. With
+              --i18n-pending (translations are updated at the release) every finding prints as "pending: ..."
+              and i18n passes as "PASS i18n (<n> pending translations)"; never cached
   settings    rules/agents/settings.json is exactly one JSON document, when changed
   parse       changed files under tools/ parse (*.sh, *.json, *.py), when there are any
   validate    scripts/validate.sh --only <list> --files <changed files>; the list is always "secrets",
@@ -84,6 +86,8 @@ Options:
   --all         Full report: every suite, whatever changed, and every check after a failure.
   --floor       Skip the script suites; every other check still runs.
   --no-cache    Run every check even when the check ledger holds a PASS for the same inputs.
+  --i18n-pending  Report each i18n finding as "pending: <finding>" and pass i18n, with the count in its PASS
+                line: translations wait for the release. git failing still fails.
   --verbose     Print the full output of every check instead of the last 30 lines of failures.
   --help        Show this help.
 
@@ -112,6 +116,7 @@ base="main"
 verbose=0
 all=0
 floor=0
+i18n_pending=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -124,6 +129,7 @@ while [ $# -gt 0 ]; do
     --all) all=1 ;;
     --floor) floor=1 ;;
     --no-cache) export CHECK_LEDGER_DISABLE=1 ;;
+    --i18n-pending) i18n_pending=1 ;;
     --verbose) verbose=1 ;;
     --help | -h)
       usage
@@ -187,11 +193,13 @@ changed_under() {
 # Runs one check, prints PASS/FAIL with its time, and shows its output: all of it with --verbose, else the lines that
 # say what ran and the last 30 lines of a failure. Stops the gate at the first failure, unless --all.
 step() {
-  local name="$1" started="$SECONDS"
+  local name="$1" started="$SECONDS" note
   shift
   if "$@" >"$logdir/$name.log" 2>&1; then
-    echo "PASS $name ($((SECONDS - started))s)"
-    if [ "$verbose" -eq 1 ]; then cat "$logdir/$name.log"; else { grep -E '^(CACHED|SLOW|SKIP|suite ok:)' "$logdir/$name.log" || true; } | sed 's/^/  /'; fi
+    note=""
+    if [ -s "$logdir/$name.note" ]; then note=" ($(cat "$logdir/$name.note"))"; fi
+    echo "PASS $name$note ($((SECONDS - started))s)"
+    if [ "$verbose" -eq 1 ]; then cat "$logdir/$name.log"; else { grep -E '^(CACHED|SLOW|SKIP|suite ok:|pending:)' "$logdir/$name.log" || true; } | sed 's/^/  /'; fi
   else
     echo "FAIL $name ($((SECONDS - started))s)"
     failed=1
@@ -321,9 +329,10 @@ i18n_documents() {
 # Fails when a document of the product repository lacks a translation for a locale of I18N_LOCALES, when a
 # translation does not start with the exact source line of its document, when that line holds the hash of an
 # older English file, or when a file under i18n/<locale>/ translates no document. Without i18n/ at the repo root
-# (an installed workspace, a plain checkout) it prints SKIP and passes.
+# (an installed workspace, a plain checkout) it prints SKIP and passes. With --i18n-pending each finding is printed
+# as "pending: <finding>" and passes; their count goes to $logdir/i18n.note, shown on the PASS line by step.
 check_i18n() {
-  local top product docs="$logdir/i18n.docs" files="$logdir/i18n.all" doc loc tr first hash want rc=0 p rest
+  local top product docs="$logdir/i18n.docs" files="$logdir/i18n.all" doc loc tr first hash want rc=0 p rest pending=0
   top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || { echo "git rev-parse failed: the translations were not checked"; return 1; }
   [ -d "$top/i18n" ] || { echo "SKIP i18n: no i18n/ at the repo root"; return 0; }
   product="$(git -C "$root" rev-parse --show-prefix 2>/dev/null)" || { echo "git rev-parse failed: the translations were not checked"; return 1; }
@@ -334,8 +343,7 @@ check_i18n() {
     for loc in $I18N_LOCALES; do
       tr="i18n/$loc/$doc"
       if [ ! -f "$top/$tr" ]; then
-        echo "missing translation: $tr (of $doc)"
-        rc=1
+        i18n_finding "missing translation: $tr (of $doc)"
         continue
       fi
       IFS= read -r first <"$top/$tr" || true
@@ -343,13 +351,12 @@ check_i18n() {
       if [ "$first" = "$want" ]; then continue; fi
       case "$first" in
         "<!-- source: $doc sha256:"*" -->")
-          echo "outdated translation: $tr (its line 1 holds an older hash of $doc: translate the change, then set sha256:$hash)"
+          i18n_finding "outdated translation: $tr (its line 1 holds an older hash of $doc: translate the change, then set sha256:$hash)"
           ;;
         *)
-          echo "no source line: $tr (line 1 must be exactly: $want)"
+          i18n_finding "no source line: $tr (line 1 must be exactly: $want)"
           ;;
       esac
-      rc=1
     done
   done <"$docs"
   git -C "$top" ls-files -z --cached --others --exclude-standard -- i18n >"$files" || { echo "git ls-files failed: the translations were not checked"; return 1; }
@@ -359,11 +366,22 @@ check_i18n() {
     case "$rest" in */*) ;; *) continue ;; esac
     rest="${rest#*/}"
     if ! grep -qxF -- "$rest" "$docs"; then
-      echo "orphan translation: $p (no document $rest needs it: delete it, or move it with its document)"
-      rc=1
+      i18n_finding "orphan translation: $p (no document $rest needs it: delete it, or move it with its document)"
     fi
   done <"$files"
+  if [ "$pending" -gt 0 ]; then echo "$pending pending translations" >"$logdir/i18n.note"; fi
   return "$rc"
+}
+
+# Prints i18n finding $1 of check_i18n: a failure (rc=1), or with --i18n-pending a pending line (counted in pending).
+i18n_finding() {
+  if [ "$i18n_pending" -eq 1 ]; then
+    echo "pending: $1"
+    pending=$((pending + 1))
+  else
+    echo "$1"
+    rc=1
+  fi
 }
 
 # Fails unless file $1 is exactly one JSON document (jq, else python3; neither is a failure). "jq empty" alone

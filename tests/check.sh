@@ -9,7 +9,8 @@ usage() {
 Usage: tests/check.sh [check-workspace.sh options] [--help]
 
 Runs the gate of the repository, from any cwd:
-  1. workspace/scripts/check-workspace.sh with the options given (for example --all, --base <ref>, --floor),
+  1. workspace/scripts/check-workspace.sh with the options given (for example --all, --base <ref>, --floor,
+     --i18n-pending: translation findings are reported as pending and pass, until the release),
      judging the product in workspace/ only;
   2. repo-terms: no file of the repository, tracked or untracked, outside or inside workspace/, matches a line of
      the terms list (extended regex, any case; blank and # lines ignored). Nothing is exempt here: no history, no

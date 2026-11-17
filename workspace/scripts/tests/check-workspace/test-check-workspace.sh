@@ -2510,6 +2510,54 @@ test_i18n_fails_on_an_orphan_of_a_root_document() {
   end_nested_tree
 }
 
+# Tree with one missing, one outdated and one orphan translation.
+i18n_pending_tree() {
+  new_i18n_tree "$1"
+  rm "$NESTED/i18n/es/workspace/docs/guide.md"
+  printf 'changed\n' >>"$NESTED/README.md"
+  mkdir -p "$NESTED/i18n/pt-BR/workspace/docs"
+  printf 'x\n' >"$NESTED/i18n/pt-BR/workspace/docs/gone.md"
+}
+
+test_i18n_pending_reports_and_passes() {
+  i18n_pending_tree i18n-pending
+  cw --i18n-pending
+  rc_is 0
+  has "passes with the count" "PASS i18n (4 pending translations)"
+  has "a missing one is pending" "  pending: missing translation: i18n/es/workspace/docs/guide.md (of workspace/docs/guide.md)"
+  has "an outdated one is pending" "  pending: outdated translation: i18n/pt-BR/README.md"
+  has "in both locales" "  pending: outdated translation: i18n/es/README.md"
+  has "an orphan is pending" "  pending: orphan translation: i18n/pt-BR/workspace/docs/gone.md"
+  lacks "no failure" "FAIL i18n"
+  cw
+  rc_is 1
+  has "without the option it fails as before" "FAIL i18n"
+  has "with the same message" "  missing translation: i18n/es/workspace/docs/guide.md"
+  lacks "and no pending line" "pending:"
+  end_nested_tree
+}
+
+test_i18n_pending_without_findings_has_no_count() {
+  new_i18n_tree i18n-pending-clean
+  cw --i18n-pending
+  rc_is 0
+  has "passes" "PASS i18n ("
+  lacks "no count when nothing is pending" "pending translations"
+  end_nested_tree
+}
+
+test_i18n_pending_is_never_reused_by_a_strict_run() {
+  i18n_pending_tree i18n-pending-ledger
+  branch_gate --i18n-pending
+  rc_is 0
+  has "the pending run passes" "PASS i18n (4 pending translations)"
+  branch_gate
+  rc_is 1
+  has "a strict run on the same inputs still fails" "FAIL i18n"
+  lacks "nothing served from the ledger for i18n" "CACHED i18n"
+  end_nested_tree
+}
+
 # --only <test_name> runs one test; a failed test prints the command that runs it alone.
 # --deep also runs the extreme cases, diffs larger than a pipe (rules/quality.md "Tests").
 ONLY=""
