@@ -11,7 +11,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/tests/test-projects-layout.sh [--help]
 
-Tests repo folders at any depth of projects/ in init-repo.sh (and the marker it writes), history.sh
+Tests repo folders at any depth of projects/, repos inside repos included, in init-repo.sh (and the marker it writes), history.sh
 and scripts/lib/projects.sh, in a throwaway root copy. Exit codes: 0 all passed; 1 a test failed; 2 usage error.
 USAGE
 }
@@ -94,10 +94,11 @@ test_init_client() {
   expect "idempotent" 0
   run init-repo --type project --client acme --name other
   expect "second project in client" 0
-  fake_repo projects/repo-client
+  git -C "$R/projects" init -q repo-client
   run init-repo --type project --client repo-client --name x
-  expect "client holding .git" 1 "inside the repo projects/repo-client"
-  expect_path "nothing created" no projects/repo-client/x
+  expect "a client that is a repo holds a new repo" 0 "nested: projects/repo-client/x is a repo inside the repo projects/repo-client, which does not ignore it"
+  expect_path "nested repo created" yes projects/repo-client/x/.git
+  expect_row "nested row" repo-client/x
   local bad
   for bad in "../x" "a/b" "Acme" "a_b" "-a"; do
     run init-repo --type project --client "$bad" --name x
@@ -129,10 +130,11 @@ test_init_one_level() {
   fake_repo projects/acme/child
   cp "$R/custom/projects.md" "$tmp/index.before"
   run init-repo --type project --name acme
-  expect "client folder as project" 1 "grouping folder"
-  expect_path "no git in client" no projects/acme/.git
-  expect_path "no readme in client" no projects/acme/README.md
-  if cmp -s "$R/custom/projects.md" "$tmp/index.before"; then passed=$((passed + 1)); else echo "FAIL: index changed"; failed=$((failed + 1)); fi
+  expect "a grouping folder becomes the root repo of its project" 0 "git init: projects/acme"
+  expect_path "root repo" yes projects/acme/.git
+  expect_path "its readme" yes projects/acme/README.md
+  expect_path "the repo below stays" yes projects/acme/child/.git
+  expect_row "root repo row" acme
   mkdir -p "$R/projects/plain"
   run init-repo --type project --name plain
   expect "plain folder without child repos" 0
@@ -170,15 +172,18 @@ test_git_file() {
   run init-repo --type project --name wt
   expect "init_git keeps .git file" 0
   if [ "$(cat "$R/projects/wt/.git")" = "gitdir: /elsewhere" ] && [ ! -e "$R/projects/wt/.git/HEAD" ]; then passed=$((passed + 1)); else echo "FAIL: .git file replaced"; failed=$((failed + 1)); fi
-  run init-repo --type project --name gc
-  expect "child .git file makes a grouping folder" 1 "grouping folder"
-  echo "gitdir: /elsewhere" >"$R/projects/wt/.git"
-  run init-repo --type project --client wt --name x
-  expect "client with .git file" 1 "inside the repo"
-  run history show --target projects/wt/x
-  expect "history inside repo with .git file" 2 "inside the repo"
   run history show --target projects/gc
-  expect "history client folder with child .git file" 2 "grouping folder"
+  expect "history of a folder in no repo, a .git file below" 0 "no history"
+  run init-repo --type project --name gc
+  expect "a folder with a .git file below becomes a repo" 0 "git init: projects/gc"
+  mkdir -p "$R/projects/wt/docs"
+  run history show --target projects/wt/docs
+  expect "history inside a repo with a .git file" 2 "inside the repo projects/wt"
+  run init-repo --type project --client wt --name x
+  expect "a repo inside a repo with a .git file" 0 "nested: projects/wt/x is a repo inside the repo projects/wt"
+  if [ "$(cat "$R/projects/wt/.git")" = "gitdir: /elsewhere" ]; then passed=$((passed + 1)); else echo "FAIL: outer .git file changed"; failed=$((failed + 1)); fi
+  run history show --target projects/wt/x
+  expect "history of the repo inside" 0 "no history"
   mkdir -p "$R/projects/wt2/kid"
   echo "gitdir: /elsewhere" >"$R/projects/wt2/.git"
   echo "gitdir: /elsewhere" >"$R/projects/wt2/kid/.git"
@@ -196,24 +201,19 @@ test_history() {
     "$R/custom/tools/mt" "$R/custom/pocs/pc"
   fake_repo projects/acme/billing
   local t
-  for t in projects/repo1 projects/acme/billing custom/tools/mt custom/pocs/pc projects/plain projects/plain/sub; do
+  for t in projects/repo1 projects/acme/billing custom/tools/mt custom/pocs/pc projects/plain projects/plain/sub projects/acme "projects/acme/"; do
     run history show --target "$t"
     expect "valid target [$t]" 0 "no history"
   done
-  for t in . tools/tl custom/tools/mt/x custom custom/other/x projects/repo1/docs projects/acme "projects/acme/" projects/missing projects/acme/missing "projects/a/b/c" "projects/Acme/x" "projects/../x" tools/tl/x other; do
+  for t in . tools/tl custom/tools/mt/x custom custom/other/x projects/repo1/docs projects/missing projects/acme/missing "projects/a/b/c" "projects/Acme/x" "projects/../x" tools/tl/x other; do
     run history show --target "$t"
     expect "invalid target [$t]" 2
   done
-  run history show --target projects/acme
-  expect "client folder message" 2 "grouping folder"
   run history show --target projects/repo1/docs
-  expect "subfolder message" 2 "inside the repo"
+  expect "subfolder message" 2 "inside the repo projects/repo1, not the root of a repo: use projects/repo1"
   run history add --target projects/acme/billing --request r --fact f --files x --author t
   expect "add nested" 0 "recorded: projects/acme/billing/history.txt"
   expect_path "history written" yes projects/acme/billing/history.txt
-  run history add --target projects/acme --request r --fact f --files x --author t
-  expect "add client folder" 2
-  expect_path "no client history" no projects/acme/history.txt
   run history show --target projects/acme/billing
   expect "show" 0 "REQUEST: r"
   run history add --target tools/tl --request r --fact f --files x --author t
@@ -302,28 +302,43 @@ test_any_depth() {
   expect "parent with poc" 2 "--parent is valid only with --type project"
 }
 
-# A repo never holds another, at any depth; nothing is created or indexed.
-test_repo_in_repo() {
+# Any layout: a repo inside a repo at the second and third level, a grouping folder that is no repo, a repo the parent
+# ignores and one it does not; each is indexed, and a .git inside a hidden folder or node_modules is never a repo.
+test_nested_repos() {
   new_root j
   run init-repo --type project --name sample-client
-  cp "$R/custom/projects.md" "$tmp/index.j"
+  printf 'ignored-child/\n' >>"$R/projects/sample-client/.gitignore"
   run init-repo --type project --parent sample-client --name nested
-  expect "create inside a repo" 1 "projects/sample-client/nested is inside the repo projects/sample-client"
-  run init-repo --type project --parent sample-client/sub --name nested
-  expect "create deeper inside a repo" 1 "inside the repo projects/sample-client"
-  expect_path "nothing created" no projects/sample-client/nested
-  expect_path "nothing created deeper" no projects/sample-client/sub
-  if cmp -s "$R/custom/projects.md" "$tmp/index.j"; then passed=$((passed + 1)); else echo "FAIL: index changed"; failed=$((failed + 1)); fi
+  expect "a repo inside a repo" 0 "git init: projects/sample-client/nested"
+  expect "the parent does not ignore it" 0 "nested: projects/sample-client/nested is a repo inside the repo projects/sample-client, which does not ignore it"
+  expect_path "nested repo" yes projects/sample-client/nested/.git
+  expect_path "parent repo kept" yes projects/sample-client/.git
+  expect_row "nested row" sample-client/nested
+  run init-repo --type project --parent sample-client --name ignored-child
+  expect "a repo the parent ignores" 0 "nested: projects/sample-client/ignored-child is a repo inside the repo projects/sample-client, which ignores it"
+  run init-repo --type project --parent sample-client/nested/sub --name deep
+  expect "three levels of repos, through a plain folder" 0 "inside the repo projects/sample-client/nested,"
+  expect_path "third-level repo" yes projects/sample-client/nested/sub/deep/.git
+  expect_path "the folder between stays plain" no projects/sample-client/nested/sub/.git
+  expect_row "third-level row" sample-client/nested/sub/deep
+  run init-repo --type project --parent sample-client/nested/sub --name deep
+  expect "idempotent inside a repo" 0
   mkdir -p "$R/projects/g/a"
   fake_repo projects/g/a/s
-  run init-repo --type project --name g
-  expect "a folder with a repo two levels below is a grouping folder" 1 "grouping folder"
   run init-repo --type project --parent g --name a
-  expect "grouping folder at the second level" 1 "grouping folder"
-  expect_path "grouping folder stays plain" no projects/g/a/.git
+  expect "a grouping folder at the second level becomes a repo" 0 "git init: projects/g/a"
+  expect_path "the repo below stays" yes projects/g/a/s/.git
+  expect_path "the grouping folder above stays plain" no projects/g/.git
+  if [[ "$OUT" == *nested:* ]]; then echo "FAIL: no repo above, yet a nested: line"; failed=$((failed + 1)); else passed=$((passed + 1)); fi
   fake_repo projects/plain/.cache/tool
   run init-repo --type project --name plain
-  expect "a .git inside a hidden folder makes no grouping folder (the walk of projects_repos)" 0 "git init: projects/plain"
+  expect "a plain folder becomes a repo" 0 "git init: projects/plain"
+  RC=0
+  OUT="$(bash -c '. "$1/scripts/lib/projects.sh"; projects_repos "$1"' _ "$R" 2>&1)" || RC=$?
+  local want
+  want="$(printf '%s\n' projects/g/a projects/g/a/s projects/plain projects/sample-client projects/sample-client/ignored-child \
+    projects/sample-client/nested projects/sample-client/nested/sub/deep)"
+  if [ "$RC" -eq 0 ] && [ "$OUT" = "$want" ]; then passed=$((passed + 1)); else echo "FAIL: nested repos listed: [$OUT]"; failed=$((failed + 1)); fi
 }
 
 # History of a repo at the first and at the third level; folders inside it and grouping folders refused.
@@ -337,21 +352,42 @@ test_history_any_depth() {
     run history add --target "$t" --request r --fact f --files x --author t
     expect "history of [$t]" 0 "recorded: $t/history.txt"
   done
-  for t in projects/sample-client/docs projects/g/a/s/x projects/g projects/g/a; do
+  for t in projects/sample-client/docs projects/g/a/s/x; do
     run history show --target "$t"
     expect "refused target [$t]" 2
   done
   run history show --target projects/g/a/s/x
   expect "inside a deep repo" 2 "inside the repo projects/g/a/s"
-  run history show --target projects/g/a
-  expect "deep grouping folder" 2 "grouping folder"
+  for t in projects/g projects/g/a; do
+    run history show --target "$t"
+    expect "a grouping folder in no repo [$t]" 0 "no history"
+  done
+  # A repo inside a repo inside a repo: each keeps its own history; a folder belongs to the nearest repo.
+  fake_repo projects/sample-client/inner
+  fake_repo projects/sample-client/inner/core
+  mkdir -p "$R/projects/sample-client/inner/core/src" "$R/projects/sample-client/inner/docs"
+  for t in projects/sample-client/inner projects/sample-client/inner/core; do
+    run history add --target "$t" --request r --fact f --files x --author t
+    expect "history of the nested repo [$t]" 0 "recorded: $t/history.txt"
+  done
+  run history show --target projects/sample-client/inner/core/src
+  expect "the nearest repo is named" 2 "inside the repo projects/sample-client/inner/core,"
+  run history show --target projects/sample-client/inner/docs
+  expect "the nearest repo, one level up" 2 "inside the repo projects/sample-client/inner,"
 }
 
-# The repo list of scripts/lib/projects.sh: any depth, sorted, never inside a repo, a hidden folder or a link.
+# The repo list of scripts/lib/projects.sh: any depth, sorted, repos inside repos included (15 levels too), never inside
+# .git, a hidden folder, node_modules or a link.
 test_projects_repos() {
   new_root l
   fake_repo projects/one
   fake_repo projects/one/vendor/inner
+  fake_repo projects/one/node_modules/dep
+  local deep=projects/d i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    deep="$deep/l$i"
+    fake_repo "$deep"
+  done
   fake_repo projects/g/two
   fake_repo projects/g/a/three
   fake_repo projects/.hidden/four
@@ -363,8 +399,15 @@ test_projects_repos() {
   RC=0
   OUT="$(bash -c '. "$1/scripts/lib/projects.sh"; projects_repos "$1"' _ "$R" 2>&1)" || RC=$?
   local want
-  want="$(printf '%s\n' projects/g/a/three projects/g/two projects/link-to-repo projects/one projects/wt)"
+  want="$(printf '%s\n' projects/g/a/three projects/g/two projects/link-to-repo projects/one projects/one/vendor/inner projects/wt)"
+  OUT="$(printf '%s\n' "$OUT" | grep -v '^projects/d/')"
   if [ "$RC" -eq 0 ] && [ "$OUT" = "$want" ]; then passed=$((passed + 1)); else echo "FAIL: projects_repos: [$OUT]"; failed=$((failed + 1)); fi
+  OUT="$(bash -c '. "$1/scripts/lib/projects.sh"; projects_repos "$1"' _ "$R" | grep -c '^projects/d/')"
+  if [ "$OUT" = 15 ]; then passed=$((passed + 1)); else echo "FAIL: 15 nested levels: $OUT"; failed=$((failed + 1)); fi
+  OUT="$(bash -c '. "$1/scripts/lib/projects.sh"; projects_repo_of "$1" "$2"' _ "$R" "$deep/src/x")"
+  if [ "$OUT" = "$deep" ]; then passed=$((passed + 1)); else echo "FAIL: nearest repo of a deep path: $OUT"; failed=$((failed + 1)); fi
+  if ! bash -c '. "$1/scripts/lib/projects.sh"; projects_repo_of "$1" projects/g/a' _ "$R" >/dev/null; then
+    passed=$((passed + 1)); else echo "FAIL: a grouping folder belongs to no repo"; failed=$((failed + 1)); fi
 }
 
 # init-repo.sh: a POC that custom/pocs/.gitignore excludes is refused, with nothing written.
@@ -438,7 +481,7 @@ test_init_writes_the_marker
 test_history
 test_git_file
 test_any_depth
-test_repo_in_repo
+test_nested_repos
 test_history_any_depth
 test_projects_repos
 test_init_ignored_poc

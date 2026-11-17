@@ -10,8 +10,10 @@ usage() {
 Usage: scripts/init-repo.sh --type <project|poc|tool> --name <kebab-name> [--parent <folder>[/<folder>...]] [--help]
 
   project  projects/<name>/ as an independent git repo (README, CHANGELOG, docs/, .gitignore).
-           With --parent: projects/<parent>/<name>/ is the repo, at any depth; the folders of <parent> stay
-           plain folders. Where a project goes is the human's decision.
+           With --parent: projects/<parent>/<name>/ is the repo, at any depth. Any layout is accepted: the folders
+           of <parent> stay as they are (plain folders, or repos: a repo may hold others). Where a project goes is
+           the human's decision. Inside a repo, a nested: line names it and says whether it ignores the new repo
+           (its .gitignore; the developer's choice: not ignored, it shows there as untracked).
   --client <kebab-name>  same as --parent with a single folder.
   poc      custom/pocs/<name>/, with a hypothesis README and CHANGELOG, and its row in custom/pocs/README.md.
   tool     custom/tools/<name>/, a tool of your own, with README and CHANGELOG, and its row in custom/tools/README.md.
@@ -28,14 +30,13 @@ The README.md of a project and of a POC starts with the marker of the workspace 
 Idempotent: existing files are never overwritten. Prints created paths only. The index row goes right below the last
 row of the index's first table (at the end when it has none), once per name.
 
-Exit 1 (nothing created) when: a folder above the project holds a .git (a repo never holds another); the project
-folder exists with no .git and a folder below it holds one (a grouping folder); custom/ is missing or not a repo of
-its own (poc, tool); or the item is ignored by the custom layer (custom/pocs/.gitignore keeps excluded POCs out).
-Exit 2 on usage errors.
+Exit 1 (nothing created) when: custom/ is missing or not a repo of its own (poc, tool); or the item is ignored by the
+custom layer (custom/pocs/.gitignore keeps excluded POCs out). Exit 2 on usage errors.
 
 Example:
   bash scripts/init-repo.sh --type project --name billing-api
   bash scripts/init-repo.sh --type project --parent acme --name billing-api
+  bash scripts/init-repo.sh --type project --parent billing --name billing-api   # billing/ may be a repo itself
   bash scripts/init-repo.sh --type tool --name log-viewer
 USAGE
 }
@@ -48,6 +49,7 @@ type=""
 parent_flag=""
 name=""
 parent=""
+outer=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -153,8 +155,14 @@ index_row() {
 if [ "$type" = "project" ]; then
   label="${parent:+$parent/}$name"
   dir="$root/projects/$label"
-  projects_check_repo_root "$root" "projects/$label" || exit 1
   init_git "$dir"
+  if outer="$(projects_repo_above "$root" "projects/$label")"; then
+    if git -C "$root/$outer" check-ignore -q -- "${dir#"$root/$outer"/}/" 2>/dev/null; then
+      echo "nested: projects/$label is a repo inside the repo $outer, which ignores it"
+    else
+      echo "nested: projects/$label is a repo inside the repo $outer, which does not ignore it (your choice: its .gitignore)"
+    fi
+  fi
   write_gitignore "$dir"
   write_changelog "$dir"
   write_new "$dir/README.md" <<RM

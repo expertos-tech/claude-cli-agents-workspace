@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Work area of the workspace: every change to a project or POC is made in a local clone under tmp/work/, pushed to the
 # remote at every commit, and reaches the base only through the gate.
+# shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
 # Prints the command reference.
@@ -14,13 +15,19 @@ the gate. <work> is <yyyy-mm-dd>-<kebab-slug>, one folder per request.
 
 Commands:
   open <work> <repo>... [--branch <type>/<slug>]
-        <repo> is a repo folder relative to projects/ (e.g. billing-api, acme/billing-web), or "custom" for
-        a POC. For each: clones it to tmp/work/<work>/<last folder of repo>/, points the clone's origin at the real
-        remote of the repo, creates the branch (default feat/<slug of work>) from the base (developer, else main),
-        installs the clone's git hooks (below), copies the repo's .env and local.settings.json files, and pushes the
-        branch. Prints "path: <clone>". An existing clone of the same repo is reused. For a repo of projects/ it also
-        prints its state (scripts/aiwp-project-state.sh): with no marker or out of date, an attention: line asks
-        for authorization to run /normalize-projects; the work goes on either way.
+        <repo> is a repo folder relative to projects/, at any depth (e.g. billing-api, acme/billing-web), a repo
+        inside another one included (billing/billing-api, where billing/ is a repo itself), or "custom" for a POC.
+        For each: clones it to tmp/work/<work>/<clone>/, points the clone's origin at the real remote of the repo,
+        creates the branch (default feat/<slug of work>) from the base (developer, else main), installs the clone's
+        git hooks (below), copies the repo's .env and local.settings.json files (never those of a repo inside it),
+        and pushes the branch. Prints "path: <clone>". An existing clone of the same repo is reused (a clone named
+        by the last folder, as before 0.2.0, too). For a repo of projects/ it also prints its state
+        (scripts/aiwp-project-state.sh): with no marker or out of date, an attention: line asks for authorization to
+        run /normalize-projects; the work goes on either way.
+        <clone>: the repo's path relative to projects/ with each / written as -- (billing-api -> billing-api,
+        billing/billing-api -> billing--billing-api, acme/billing/billing-api -> acme--billing--billing-api);
+        "custom" for custom/. Two repos never share it while folder names are kebab-case (no --); a clone folder
+        that belongs to another repo is refused, never reused.
   run <work>/<clone> -- <command>...
         Runs the command with the clone as the current folder. Refuses a path outside tmp/work/.
   status [<work>]
@@ -111,8 +118,33 @@ source_repo() {
     src="$root/projects/$repo"
   fi
   src="$(physical "$src")" || die 1 "repo not found: $1"
+  [ "$src" != "$root/projects" ] || die 2 "<repo> is a folder relative to projects/: $1"
   [ "$(git -C "$src" rev-parse --show-toplevel 2>/dev/null)" = "$src" ] || die 1 "not the root of a git repo: $1"
   echo "$src"
+}
+
+# Prints the folder name of the clone of a source repo in tmp/work/<work>/: "custom" for custom/; for a repo of
+# projects/, its path relative to projects/ with each / written as -- (billing/billing-api -> billing--billing-api).
+clone_name() {
+  local repo="${1%/}" src="$2" rel
+  if [ "$repo" = custom ]; then
+    echo custom
+    return 0
+  fi
+  case "$src/" in
+    "$root/projects/"*) rel="${src#"$root"/projects/}" ;;
+    *)
+      # A link of projects/ to a folder elsewhere: the path given, without ./ and empty segments.
+      rel="/$repo/"
+      while [[ "$rel" == *//* || "$rel" == */./* ]]; do
+        rel="${rel//\/\//\/}"
+        rel="${rel//\/.\//\/}"
+      done
+      rel="${rel#/}"
+      rel="${rel%/}"
+      ;;
+  esac
+  printf '%s\n' "${rel//\//--}"
 }
 
 # Writes the git hooks of a clone; they call this script by its absolute path. The $(...) in the hook text is meant
@@ -130,10 +162,17 @@ write_hooks() {
   chmod +x "$hooks/post-commit" "$hooks/post-rewrite" "$hooks/post-merge" "$hooks/pre-push"
 }
 
-# Copies the local env files of the source repo (git-ignored, never in a clone) to the same paths in the clone.
+# Copies the local env files of the source repo (git-ignored, never in a clone) to the same paths in the clone; those
+# of a repo inside it belong to that repo and stay.
 copy_env_files() {
-  local src="$1" clone="$2" f rel
+  local src="$1" clone="$2" f rel nested=() n inner
+  while IFS= read -r n; do [ -n "$n" ] && nested+=("$n"); done < <(projects_find_repos "$src")
   while IFS= read -r -d '' f; do
+    inner=0
+    for n in ${nested[@]+"${nested[@]}"}; do
+      case "$f" in "$n"/*) inner=1 ;; esac
+    done
+    [ "$inner" -eq 0 ] || continue
     rel="${f#"$src"/}"
     [ -e "$clone/$rel" ] && continue
     mkdir -p "$(dirname "$clone/$rel")"
@@ -259,13 +298,22 @@ cmd_open() {
   done
   [[ "$work" =~ $work_re ]] || die 2 "<work> must be <yyyy-mm-dd>-<kebab-slug>: $work"
   [ "${#repos[@]}" -gt 0 ] || die 2 "open needs at least one <repo>"
+  # Loaded here, before any clone, and only by open: the Stop hook (_stop-check) never depends on it.
+  [ -r "$root/scripts/lib/projects.sh" ] || die 1 "scripts/lib/projects.sh not found"
+  # shellcheck source=lib/projects.sh
+  . "$root/scripts/lib/projects.sh"
   slug="${work:11}"
   [ -n "$branch" ] || branch="feat/$slug"
   [[ "$branch" =~ ^[a-z]+/[a-z0-9]+(-[a-z0-9]+)*$ ]] || die 2 "--branch must be <type>/<kebab-slug>: $branch"
   [[ "${branch#*/}" =~ $protected_re ]] && die 2 "--branch cannot be a base: $branch"
   for repo in "${repos[@]}"; do
     src="$(source_repo "$repo")"
-    name="${src##*/}"
+    name="$(clone_name "$repo" "$src")"
+    # A clone opened before the name had the whole path (the last folder only) is reused under its name.
+    if [ ! -e "$work_root/$work/$name" ] && [ -e "$work_root/$work/${src##*/}" ] &&
+      [ "$(git -C "$work_root/$work/${src##*/}" config --get aiwp.source 2>/dev/null)" = "$src" ]; then
+      name="${src##*/}"
+    fi
     clone="$work_root/$work/$name"
     case "$src/" in "$root/projects/"*) state_note "${src#"$root"/projects/}" ;; esac
     if [ -e "$clone" ]; then

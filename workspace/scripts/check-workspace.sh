@@ -519,7 +519,7 @@ suite_inputs() {
     tests/setup-claude/test-setup-claude.sh) echo "setup-claude.sh tests/setup-claude" ;;
     tests/heavy-run/test-heavy-run.sh) echo "heavy-run.sh tests/heavy-run" ;;
     tests/single-agent/test-single-agent.sh) echo "single-agent.sh single-claude.sh history.sh lib/projects.sh tests/single-agent tests/lib ../rules/single-agent ../rules/agents/settings.json" ;;
-    tests/aiwp-cmds/test-aiwp-cmds.sh) echo "aiwp-cmds.sh tests/aiwp-cmds" ;;
+    tests/aiwp-cmds/test-aiwp-cmds.sh) echo "aiwp-cmds.sh lib/projects.sh tests/aiwp-cmds" ;;
     tests/aiwp-gate/test-aiwp-gate.sh) echo "aiwp-gate.sh aiwp-cmds.sh aiwp-project-state.sh lib/projects.sh tests/aiwp-gate" ;;
     tests/aiwp-project-state/test-aiwp-project-state.sh) echo "aiwp-project-state.sh lib/projects.sh tests/aiwp-project-state" ;;
     tests/aiwp/test-aiwp.sh) echo "aiwp.sh release-notice.sh tests/aiwp ../rules/agents/settings.json" ;;

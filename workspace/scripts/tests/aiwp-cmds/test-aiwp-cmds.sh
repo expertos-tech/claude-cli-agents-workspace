@@ -37,8 +37,9 @@ eq() { [ "$2" = "$3" ]; check "$1: expected [$2] got [$3]" $?; }
 fixture() {
   R="$BASE/ws.$CURRENT"
   rm -rf "$R" "$BASE/remote.$CURRENT.git"
-  mkdir -p "$R/scripts" "$R/projects" "$R/tmp"
+  mkdir -p "$R/scripts/lib" "$R/projects" "$R/tmp"
   cp "$SCRIPT" "$R/scripts/aiwp-cmds.sh"
+  cp "$(dirname "$SCRIPT")/lib/projects.sh" "$R/scripts/lib/"
   git init -q --bare -b main "$BASE/remote.$CURRENT.git"
   git init -q -b main "$R/projects/app"
   printf '.env\n' >"$R/projects/app/.gitignore"
@@ -459,6 +460,46 @@ test_a_commit_on_a_detached_head_is_not_lost() {
   rc_is 1
   has "commits not on the remote"
   [ -d "$c" ]; check "the clone stays" $?
+}
+
+# Creates a repo at projects/$1 with one commit on main and developer, and no remote.
+local_repo() {
+  git init -q -b main "$R/projects/$1"
+  printf '%s\n' "$1" >"$R/projects/$1/readme.txt"
+  git -C "$R/projects/$1" add readme.txt
+  git -C "$R/projects/$1" commit -q -m base
+  git -C "$R/projects/$1" switch -q -c developer
+}
+
+# A repo inside a repo: its clone is named after its whole path (/ as --), run and status reach it, a clone opened
+# under the last folder (as before) is reused, and a clone folder of another repo with the same name is refused.
+test_open_names_a_nested_repo_after_its_path() {
+  fixture
+  local_repo app/inner
+  run open "$W" app/inner
+  rc_is 0
+  has "path: tmp/work/$W/app--inner"
+  eq "source" "$R/projects/app/inner" "$(git -C "$(clone app--inner)" config aiwp.source)"
+  run run "$W/app--inner" -- git rev-parse --abbrev-ref HEAD
+  rc_is 0
+  has "feat/sample-change"
+  run status "$W"
+  has "tmp/work/$W/app--inner  branch=feat/sample-change"
+  mv "$(clone app--inner)" "$(clone inner)"
+  run open "$W" app/inner
+  rc_is 0
+  has "path: tmp/work/$W/inner (already open)"
+  [ ! -e "$(clone app--inner)" ]; check "no second clone of the same repo" $?
+  local w2="2026-11-17-other-change"
+  local_repo app--inner
+  run open "$w2" app--inner
+  rc_is 0
+  has "path: tmp/work/$w2/app--inner"
+  run open "$w2" app/inner
+  rc_is 1
+  has "tmp/work/$w2/app--inner exists and is not a clone of app/inner"
+  run open "$w2" .
+  rc_is 2
 }
 
 test_usage() {

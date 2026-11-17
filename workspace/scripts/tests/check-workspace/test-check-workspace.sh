@@ -997,7 +997,7 @@ test_AC25_root_config_allowlists_only_the_top_level_tmp() {
 # Decisions of the exclusions in validate.sh and gitleaks.toml, each with its test below:
 # - coverage: a .coveragerc under tools/ is skipped, one elsewhere runs: test_AC25_coverage_skips_pocs_and_tools
 # - files() and listed_files(): the console's generated dist is pruned with and without --path, the same path in
-#   another tool is not, node_modules and .data are pruned, and a root scan skips projects/:
+#   another tool is not, node_modules and .data are pruned, and a root scan skips projects/ and logs/:
 #   test_AC25_generated_and_local_folders_are_skipped
 # - generated_skip_dir(): the Trivy entry per target: test_AC25_trivy_skip_is_relative_to_the_target
 # - gitleaks allowlist: the console's dist and node_modules are ignored, another dist is scanned:
@@ -1022,6 +1022,8 @@ test_AC25_generated_and_local_folders_are_skipped() {
   : >"$TREE/docs/node_modules/d/dep.sh"
   : >"$TREE/docs/.data/local.sh"
   : >"$TREE/projects/p/own.sh"
+  mkdir -p "$TREE/logs/prompts/p"
+  : >"$TREE/logs/prompts/p/log.sh"
   vl --only shell
   rc_is 0
   log_has "AC-25 the same path in another tool is checked" "/work/$kept/kept.sh"
@@ -1029,6 +1031,7 @@ test_AC25_generated_and_local_folders_are_skipped() {
   log_lacks "AC-25 node_modules is skipped" "dep.sh"
   log_lacks "AC-25 .data is skipped" "local.sh"
   log_lacks "AC-25 a root scan skips projects/" "own.sh"
+  log_lacks "AC-25 a root scan skips logs/" "log.sh"
   local path
   for path in tools tools/container-console-docker-ce; do
     : >"$STUB_LOG"
@@ -1066,7 +1069,7 @@ test_AC25_trivy_skip_is_relative_to_the_target() {
   mkdir -p "$TREE/$dist" "$TREE/$worktree/$dist" "$TREE/docs"
   vl --only vuln,iac
   rc_is 0
-  trivy_skip_is "a root scan names the whole path" "**/$dist,tmp,projects,custom"
+  trivy_skip_is "a root scan names the whole path" "**/$dist,tmp,projects,custom,logs"
   local case_line path entry
   for case_line in \
     "tools|container-console-docker-ce/internal/webui/dist " \
@@ -1192,8 +1195,8 @@ test_AC25_vuln_and_iac_skip_tmp_only_at_the_root() {
   local vuln_old="--skip-dirs refs,.history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist --skip-files **/.env /work/projects/x"
   local iac_old="--skip-dirs .history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist /work/projects/x"
   vl --only vuln,iac
-  log_has "AC-25 root vuln skips tmp and projects" "--skip-dirs refs,.history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist,tmp,projects,custom --skip-files **/.env /work"
-  log_has "AC-25 root iac skips tmp and projects" "--skip-dirs .history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist,tmp,projects,custom /work"
+  log_has "AC-25 root vuln skips tmp and projects" "--skip-dirs refs,.history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist,tmp,projects,custom,logs --skip-files **/.env /work"
+  log_has "AC-25 root iac skips tmp and projects" "--skip-dirs .history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist,tmp,projects,custom,logs /work"
   : >"$STUB_LOG"
   vl --only vuln,iac --path projects/x
   log_has "a project's vuln line is unchanged" "$vuln_old"
@@ -1923,7 +1926,7 @@ test_AC25_validate_files_keeps_the_exclusions_and_the_target() {
   new_validate_tree files-exclusions
   local p list="$BASE_DIR/files.list"
   : >"$list"
-  for p in tmp/worktrees/r/b/a.sh projects/x/b.sh node_modules/c.sh docs/node_modules/d.sh refs/e.sh .history/f.sh \
+  for p in tmp/worktrees/r/b/a.sh projects/x/b.sh logs/prompts/x/l.sh node_modules/c.sh docs/node_modules/d.sh refs/e.sh .history/f.sh \
     .claude/g.sh docs/.data/h.sh tools/container-console-docker-ce/internal/webui/dist/i.sh ok/kept.sh; do
     mkdir -p "$TREE/$(dirname "$p")"
     : >"$TREE/$p"
@@ -2088,11 +2091,12 @@ test_gate_runs_only_the_suite_of_what_changed() {
   new_tree selection-lib
   put scripts/lib/projects.sh
   branch_gate
-  eq "a shared library runs the suites of the scripts that source it, or call one that does" "4" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "a shared library runs the suites of the scripts that source it, or call one that does" "5" "$(grep -c '^suite ' "$STUB_LOG")"
   eq "the projects layout suite" "1" "$(grep -c '^suite tests/test-projects-layout.sh' "$STUB_LOG")"
   eq "and the single-agent suite" "1" "$(grep -c '^suite tests/single-agent/' "$STUB_LOG")"
   eq "and the project state suite" "1" "$(grep -c '^suite tests/aiwp-project-state/' "$STUB_LOG")"
-  eq "and the gate suite (bring)" "1" "$(grep -c '^suite tests/aiwp-gate/' "$STUB_LOG")"
+  eq "and the gate suite (its clean checks)" "1" "$(grep -c '^suite tests/aiwp-gate/' "$STUB_LOG")"
+  eq "and the work area suite (open)" "1" "$(grep -c '^suite tests/aiwp-cmds/' "$STUB_LOG")"
   new_tree selection-test-lib
   put scripts/tests/lib/lib.sh
   branch_gate

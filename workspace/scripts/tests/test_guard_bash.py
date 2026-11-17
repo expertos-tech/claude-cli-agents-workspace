@@ -31,7 +31,7 @@ CUSTOM = '/w/custom'
 ELSEWHERE = '/elsewhere/r'
 NO_REPO = '/norepo'
 # What scripts/aiwp.sh _writable prints (a part of it: the root folders, .aiwp and one tool output).
-WRITABLE = 'custom\nprojects\ntmp\n.claude\n.history\n.aiwp\ntools/observability/.data\n'
+WRITABLE = 'custom\nprojects\ntmp\nlogs\n.claude\n.history\n.aiwp\ntools/observability/.data\n'
 
 
 class FakeRun:
@@ -167,6 +167,31 @@ class GitTests(unittest.TestCase):
                 self.assertIn('would write', result['permissionDecisionReason'])
                 self.assertIn(where, result['permissionDecisionReason'])
                 self.assertIn('aiwp-cmds.sh gate', result['permissionDecisionReason'])
+
+    def test_git_writes_in_repos_inside_repos_are_denied_at_any_depth(self):
+        # Any layout: projects/a is a repo, a/b a repo inside it, a/b/c/d one more inside (ignored by b or not: git
+        # finds the nearest .git either way), g a plain folder; with the core repo and with no repo at the root.
+        nested = {'/w/projects/a': {}, '/w/projects/a/b': {}, '/w/projects/a/b/c/d': {}, CLONE: {}}
+        for repos in ({ROOT: {}, **nested}, nested):
+            run = FakeRun(repos)
+            for command, cwd in (
+                ('git -C projects/a/b commit -m x', ROOT),
+                ('git -C /w/projects/a/b push', CLONE),
+                ('cd projects/a/b/c/d && git reset --hard', ROOT),
+                ('git -C projects/a/b/c/d/src checkout main', ROOT),
+                ('git commit -m x', '/w/projects/a/b/src'),
+                ('git tag v1', '/w/projects/a/b/c/d'),
+                ('git -C projects/a push', ROOT),
+                ('git init projects/a/b/new', ROOT),
+                ('git -C projects/g/x init', ROOT),
+                ('git --git-dir=/w/projects/a/b/c/d/.git --work-tree=/tmp commit -m x', CLONE),
+            ):
+                result = decision(command, cwd=cwd, run=run)
+                self.assertEqual(result and result['permissionDecision'], 'deny', (sorted(repos), command, cwd))
+            self.assertIsNone(decision('git -C projects/a/b/c/d log', cwd=ROOT, run=run))
+        result = decision('git -C projects/g push', cwd=ROOT, run=FakeRun(nested))
+        self.assertEqual(result and result['permissionDecision'], 'deny')
+        self.assertIn('a repository of projects/', result['permissionDecisionReason'])
 
     def test_forms_that_look_like_reads_but_write_are_denied(self):
         for command in (
@@ -1403,7 +1428,7 @@ class InstalledWorkspaceTests(unittest.TestCase):
             'chmod 777 ' + self.outside + '/rules', 'chmod -R 777 /nonexistent-x/y', 'F=custom/env/x.env; chmod 600 $F',
             'chmod --help', 'git init --help', 'ssh host chmod 777 ' + self.ws + '/rules',
             'docker exec c chmod -R 777 /', 'chmod 777 tmp/new-file', 'ln -s ../tmp tmp/t && chmod 777 tmp/t',
-            'chmod 755 custom/env/*.env projects/x/run.sh',
+            'chmod 755 custom/env/*.env projects/x/run.sh', 'chmod -R u+w logs/prompts',
         ):  # fmt: skip
             self.assertIsNone(self.verdict(command), command)
         for command, cwd in (

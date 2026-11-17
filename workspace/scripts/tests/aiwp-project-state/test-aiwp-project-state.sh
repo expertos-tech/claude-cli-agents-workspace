@@ -206,6 +206,31 @@ test_names_paths_and_nested_repos() {
   rc_is 1
 }
 
+# A project root repo with repos inside it, at the second and third level: each is listed and named at its depth.
+test_repos_inside_repos_are_listed_at_their_depth() {
+  fixture 0.1.0 0.1.0
+  project billing "$(printf '%s 0.1.0 -->' "$MARK")"
+  printf 'billing-web/\n' >"$R/projects/billing/.gitignore"
+  project billing/billing-api "# api"
+  project billing/billing-web "$(printf '%s 0.1.0 -->' "$MARK")"
+  mkdir -p "$R/projects/billing/billing-api/libs"
+  project billing/billing-api/libs/core "# core"
+  state
+  rc_is 0
+  has "projects/billing: up to date"
+  has "projects/billing/billing-api: not a workspace project"
+  has "projects/billing/billing-web: up to date"
+  has "projects/billing/billing-api/libs/core: not a workspace project"
+  state --porcelain billing/billing-api/libs/core
+  rc_is 0
+  has "$(printf 'project\tcore\tprojects/billing/billing-api/libs/core\tnone')"
+  state billing-web
+  rc_is 0
+  has "projects/billing/billing-web: up to date"
+  state billing/billing-api/libs
+  rc_is 1
+}
+
 test_usage_and_a_broken_version() {
   fixture 0.1.0 0.1.0
   state --help

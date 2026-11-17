@@ -1039,8 +1039,11 @@ test_bring_from_a_local_folder_keeps_local_branches_and_points_origin_to_its_rem
   gate bring "$src" acme/billing-api
   rc_is 1
   has "exists already"
+  # Any layout: a project brought inside a repo is a repo inside that repo.
   gate bring "$src" acme/billing-api/inner
-  rc_is 1
+  rc_is 0
+  has "brought: projects/acme/billing-api/inner"
+  eq "a repo of its own inside the repo" "$dest/inner" "$(git -C "$dest/inner" rev-parse --show-toplevel)"
   gate bring "$R/projects/app" copy
   rc_is 1
   has "inside this workspace"
@@ -1062,6 +1065,77 @@ test_bring_from_a_url_checks_out_developer() {
   gate bring "file://$BASE/missing.git" nothing
   rc_is 1
   has "could not clone"
+}
+
+# Creates projects/$1 as a repo on developer with a bare remote, one committed file and, when given, a .gitignore $2.
+nested_project() {
+  local dir="$R/projects/$1" remote="$BASE/remote.$CURRENT.${1//\//-}.git"
+  rm -rf "$remote"
+  git init -q --bare -b main "$remote"
+  git init -q -b main "$dir"
+  printf '%s\n' "$1" >"$dir/readme.txt"
+  [ -z "${2:-}" ] || printf '%s\n' "$2" >"$dir/.gitignore"
+  git -C "$dir" add readme.txt ${2:+.gitignore}
+  git -C "$dir" commit -q -m base
+  git -C "$dir" switch -q -c developer
+  git -C "$dir" remote add origin "$remote"
+  git -C "$dir" push -q origin main developer
+}
+
+# A project root repo with two repos inside it (one it ignores, one it does not) and a repo of the same last folder
+# name elsewhere: open names each clone after its whole path, the gate merges and release releases each at its depth,
+# and the parent's checkout counts as clean with its nested repos, never with a stray file.
+test_nested_repos_are_handled_at_their_depth() {
+  fixture
+  local w="2026-11-17-nested-change" rel name
+  nested_project billing "$(printf 'billing-web/\n.env')"
+  nested_project billing/billing-api ".env"
+  nested_project billing/billing-web
+  nested_project other/billing-api
+  printf 'ROOT=1\n' >"$R/projects/billing/.env"
+  printf 'API=1\n' >"$R/projects/billing/billing-api/.env"
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh open "$w" billing billing/billing-api billing/billing-web other/billing-api 2>&1)"
+  RC=$?
+  rc_is 0
+  for name in billing billing--billing-api billing--billing-web other--billing-api; do
+    has "path: tmp/work/$w/$name"
+  done
+  has "attention: projects/billing/billing-api has no AI-WORKSPACE-PROJECT marker"
+  eq "the root's own .env copied" "ROOT=1" "$(cat "$R/tmp/work/$w/billing/.env" 2>/dev/null)"
+  [ ! -e "$R/tmp/work/$w/billing/billing-api" ]; check "the nested repo stays out of the root's clone" $?
+  eq "the nested repo's .env in its own clone" "API=1" "$(cat "$R/tmp/work/$w/billing--billing-api/.env" 2>/dev/null)"
+  eq "same last folder, two sources" "$R/projects/other/billing-api" "$(git -C "$R/tmp/work/$w/other--billing-api" config aiwp.source)"
+  for rel in billing billing/billing-api billing/billing-web; do
+    name="${rel//\//--}"
+    printf 'change\n' >"$R/tmp/work/$w/$name/change.txt"
+    git -C "$R/tmp/work/$w/$name" add change.txt
+    git -C "$R/tmp/work/$w/$name" commit -q -m "change $rel" >/dev/null 2>&1
+    gate gate "$w/$name" --test "test -f change.txt"
+    rc_is 0
+    has "gate: checks passed for"
+    gate gate --merge "$w/$name" "$(git -C "$R/tmp/work/$w/$name" rev-parse HEAD)"
+    rc_is 0
+    eq "developer of projects/$rel" "$(git -C "$R/tmp/work/$w/$name" rev-parse HEAD)" "$(git -C "$R/projects/$rel" rev-parse developer)"
+    [ -f "$R/projects/$rel/change.txt" ]; check "checkout of projects/$rel updated" $?
+  done
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh status "$w" 2>&1)"
+  has "tmp/work/$w/billing--billing-api  branch=feat/nested-change"
+  gate release billing/billing-api
+  rc_is 0
+  eq "main of the nested repo" "$(git -C "$R/projects/billing/billing-api" rev-parse developer)" "$(git -C "$R/projects/billing/billing-api" rev-parse main)"
+  eq "the root does not ignore billing-api: git sees it" "?? billing-api/" "$(git -C "$R/projects/billing" status --porcelain)"
+  printf 'stray\n' >"$R/projects/billing/stray.txt"
+  gate release billing
+  rc_is 1
+  has "projects/billing has changes in its checkout"
+  rm "$R/projects/billing/stray.txt"
+  gate release billing
+  rc_is 0
+  eq "main of the root repo" "$(git -C "$R/projects/billing" rev-parse developer)" "$(git -C "$R/projects/billing" rev-parse main)"
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh close "$w" 2>&1)"
+  RC=$?
+  rc_is 0
+  has "closed: tmp/work/$w"
 }
 
 test_usage() {

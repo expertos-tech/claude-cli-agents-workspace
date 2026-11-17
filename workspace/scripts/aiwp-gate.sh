@@ -65,6 +65,11 @@ apply <repo> <module folder> --apply <plan file>
       apply of that plan file in a new temporary worktree of main. Only on the human's request, confirmed before it
       runs.
 
+<repo>: a repo folder relative to projects/, at any depth, a repo inside another one included (billing/billing-api,
+where billing/ may be a repo itself); a path belongs to the nearest .git above it. bring may put a project inside a
+repo. A clean checkout: git status shows nothing but the repos inside it, ignored by it or not, and the commits of
+the ones it tracks as gitlinks.
+
 Terraform runs on the host when it is on PATH, else in the workspace Docker toolbox with the ARM_* and TF_VAR_*
 variables of the environment (the image has no az CLI). AIWP_TERRAFORM replaces it (tests), and AIWP_GH replaces gh.
 Exit: 0 ok; 1 refused or failed; 2 usage error.
@@ -74,6 +79,9 @@ USAGE
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 work_root="$root/tmp/work"
 cmds="$root/scripts/aiwp-cmds.sh"
+[ -r "$root/scripts/lib/projects.sh" ] || { echo "error: scripts/lib/projects.sh not found" >&2; exit 2; }
+# shellcheck source=lib/projects.sh
+. "$root/scripts/lib/projects.sh"
 # The branch of /normalize-projects: the first one, or the one of a later version when that one is on the remote.
 NORMALIZATION_RE='^feat/ai-workspace-migration(-[0-9]+-[0-9]+-[0-9]+)?$'
 # The checks of validate.sh that judge only the files they are given; the others judge the whole tree.
@@ -114,10 +122,18 @@ project_repo() {
   echo "$src"
 }
 
+# Fails unless the checkout of a source repo has no change. A repo inside it, ignored or not, is not a change of it
+# (projects_changes): any layout of projects/ passes.
+require_clean() {
+  local changes
+  changes="$(projects_changes "$1")" || die 1 "git status failed in ${1#"$root"/}: tell the human"
+  [ -z "$changes" ] || die 1 "${1#"$root"/} has changes in its checkout; nobody edits projects/: tell the human"
+}
+
 # Fails unless a repo checkout has no change and is on the given branch.
 require_clean_on() {
   local repo="$1" branch="$2" current
-  [ -z "$(git -C "$repo" status --porcelain)" ] || die 1 "${repo#"$root"/} has changes in its checkout; nobody edits projects/: tell the human"
+  require_clean "$repo"
   current="$(git -C "$repo" symbolic-ref -q --short HEAD || echo detached)"
   [ "$current" = "$branch" ] || die 1 "${repo#"$root"/} is on $current, not $branch: tell the human"
 }
@@ -527,7 +543,7 @@ cmd_developer() {
     *) die 2 "unknown option: $2" ;;
   esac
   require_remote "$src"
-  [ -z "$(git -C "$src" status --porcelain)" ] || die 1 "${src#"$root"/} has changes in its checkout; nobody edits projects/: tell the human"
+  require_clean "$src"
   timeout 120 git -C "$src" fetch -q --prune origin || die 1 "could not fetch from the remote of ${src#"$root"/}"
   if ! git -C "$src" rev-parse -q --verify refs/remotes/origin/developer >/dev/null; then
     [ "$create" = 1 ] || die 1 "developer is not on the remote of ${src#"$root"/}: ask the person, then run again with --create"
@@ -630,9 +646,6 @@ cmd_bring() {
   [[ "$rel" =~ ^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*$ ]] || die 2 "<path> is kebab-case folders joined by /: $rel"
   dest="$root/projects/$rel"
   [ ! -e "$dest" ] || die 1 "projects/$rel exists already"
-  # shellcheck source=lib/projects.sh
-  . "$root/scripts/lib/projects.sh"
-  projects_check_repo_root "$root" "projects/$rel" || exit 1
   if [ -d "$from" ]; then
     local_src="$(physical "$from")"
     case "$local_src/" in "$root/"*) die 1 "the source is inside this workspace: $from" ;; esac

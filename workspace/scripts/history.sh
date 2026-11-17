@@ -15,7 +15,9 @@ Usage:
   scripts/history.sh show --target <dir> [--last <n>]
 
   --target  a repo folder of projects/ at any depth (projects/<name>, projects/<folder>/<name>...),
-            a tool of your own, custom/tools/<name>, or a POC, custom/pocs/<name>. The history of a
+            a repo inside another one included, or a folder of projects/ in no repo; a tool of your
+            own, custom/tools/<name>; or a POC, custom/pocs/<name>. A folder inside a repo that is
+            not a repo root is refused (the history of a repo is at its root). The history of a
             tool lives with it in the custom layer; tools/<name> (the product's tools, read-only)
             and the workspace root are refused.
   add       queues one entry and writes the queue to <target>/history.txt. Never waits:
@@ -57,9 +59,9 @@ die() {
   exit "$code"
 }
 
-# Refuses project targets that are not a repo root: a folder inside a repo and a grouping folder.
+# Refuses a project target inside a repo that is not the root of a repo: the history of a repo is at its root.
 check_project_target() {
-  projects_check_repo_root "$root" "$1" || exit 2
+  projects_check_target "$root" "$1" || exit 2
 }
 
 # Validates a --target value and prints it normalized (no trailing slash).

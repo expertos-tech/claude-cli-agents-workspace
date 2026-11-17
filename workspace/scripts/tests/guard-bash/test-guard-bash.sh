@@ -26,6 +26,7 @@
 #  D19 installed workspace: writable paths, other trees, no manifest -> silent .. test_installed_writable_silent
 #  D20 aiwp update, rollback, repair, forget, open -> deny; check, version, list, new -> silent  test_aiwp_core_commands
 #  D21 scripts/aiwp.sh _writable fails -> ask (never a silent pass) ............. test_writable_list_failure_asks
+#  D22 a repo inside a repo of projects/, at any depth, ignored or not -> deny .. test_nested_repos_denied
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -163,6 +164,40 @@ test_git_write_denied() {
   has "a repo that cannot be told asks" '"permissionDecision": "ask"'
   hook_in "git push --no-verify" "$root/tmp/work/c" "$root"
   has "a push without its hooks is denied in a clone too" '"permissionDecision": "deny"'
+}
+
+test_nested_repos_denied() {
+  local root
+  root="$(new_root nested)"
+  # projects/a: a repo; a/b: a repo inside it, not ignored; a/ign: one it ignores; a/b/c/d: three levels down;
+  # g: a plain folder.
+  new_repo "$root/projects/a"
+  printf 'ign/\n' >"$root/projects/a/.gitignore"
+  new_repo "$root/projects/a/b"
+  new_repo "$root/projects/a/ign"
+  new_repo "$root/projects/a/b/c/d"
+  mkdir -p "$root/projects/a/b/src" "$root/projects/g/x"
+  local command
+  for command in "git -C projects/a/b commit -m x" "git -C projects/a/ign push" "cd projects/a/b/c/d && git reset --hard" \
+    "git -C projects/a/b/src checkout -b x" "git -C projects/a/b/c/d tag v1" "git init projects/a/b/new" \
+    "git -C projects/g/x init"; do
+    hook_in "$command" "$root" "$root"
+    has "denied: $command" '"permissionDecision": "deny"'
+  done
+  hook_in "git commit -m x" "$root/projects/a/b/c/d" "$root"
+  has "a write from inside the deepest repo is denied" "to a repository of projects/"
+  hook_in "git -C projects/a/b/c/d log -1" "$root" "$root"
+  silent "a git read in a nested repo prints nothing"
+  # An installed workspace has no repo at its root: a plain folder of projects/ is still projects/.
+  local ws
+  ws="$(new_installed nested-installed)"
+  mkdir -p "$ws/projects/g/x"
+  new_repo "$ws/projects/g/x/r"
+  new_repo "$ws/projects/g/x/r/n"
+  for command in "git -C projects/g/x init" "git -C projects/g/x/r/n commit -m x" "git -C projects/g/x/r push"; do
+    hook_in "$command" "$ws" "$ws"
+    has "installed, denied: $command" "to a repository of projects/"
+  done
 }
 
 test_terraform_and_database() {
@@ -481,6 +516,7 @@ PY
 test_help_and_args
 test_silent
 test_git_write_denied
+test_nested_repos_denied
 test_terraform_and_database
 test_python_missing_asks
 test_malformed_asks

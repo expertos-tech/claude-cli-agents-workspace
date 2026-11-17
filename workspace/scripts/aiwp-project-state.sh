@@ -27,7 +27,8 @@ States:
 
 <project>: a folder relative to projects/ (billing-api, acme/billing-web), projects/<path>, custom/pocs/<poc>,
 pocs/<poc>, or a bare name, matched against the last folder of every repo of projects/ and every POC (all matches
-are printed). No <project>: every repo of projects/, at any depth, and every POC that custom/pocs/.gitignore keeps.
+are printed). No <project>: every repo of projects/, at any depth, a repo inside another one included
+(billing/billing-api, where billing/ is a repo too), and every POC that custom/pocs/.gitignore keeps.
 
 Output, one line per project:
   <path>: <state in words>; developer <exists|missing>; checkout on <branch>

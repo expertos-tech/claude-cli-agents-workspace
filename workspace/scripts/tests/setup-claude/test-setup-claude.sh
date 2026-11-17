@@ -241,6 +241,24 @@ custom_rule() {
   fi
 }
 
+# Excludes of repos at any depth, a repo inside another one included: the root repo's file, a nested repo's file and a
+# glob over the repos inside the root repo all reach the settings.
+test_claude_md_excludes_of_nested_repos_reach_the_settings() {
+  fixture
+  printf '{\n  "claudeMdExcludes": []\n}\n' >"$BASE/root/rules/agents/settings.json"
+  mkdir -p "$BASE/root/custom"
+  printf 'projects/billing/CLAUDE.md\nprojects/billing/billing-api/CLAUDE.md\nprojects/billing/*/AGENTS.md\nprojects/a/b/c/d/e/CLAUDE.md\n' >"$BASE/root/custom/claude-md-excludes.txt"
+  run
+  rc_is 0
+  local got want
+  got="$(python3 -I -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["claudeMdExcludes"]))' "$BASE/root/.claude/settings.json")"
+  for want in "$BASE/root/projects/billing/CLAUDE.md" "$BASE/root/projects/billing/billing-api/CLAUDE.md" \
+    "$BASE/root/projects/billing/*/AGENTS.md" "$BASE/root/projects/a/b/c/d/e/CLAUDE.md"; do
+    case " $got " in *" $want "*) check "merged $want" 0 ;; *) check "merged $want: [$got]" 1 ;; esac
+  done
+  case "$OUT" in *skipped*) check "nothing skipped" 1 ;; *) check "nothing skipped" 0 ;; esac
+}
+
 test_claude_md_excludes_of_the_custom_layer_reach_the_settings() {
   fixture
   printf '{\n  "claudeMdExcludes": ["**/tmp/work/**"],\n  "model": "opus"\n}\n' >"$BASE/root/rules/agents/settings.json"
