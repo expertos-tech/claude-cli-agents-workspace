@@ -7,7 +7,7 @@ Only the product is released. The maintenance of the repository is recorded but 
 ## Branches
 
 - `developer` is the default branch: every change enters it, through `/caw-merge`.
-- `main` moves only by a product release.
+- `main` moves only by a product release, or by a hotfix of the product ([below](#hotfix)).
 
 ## The two changelogs
 
@@ -55,6 +55,25 @@ Both follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semant
 10. A check that a fresh installation picks up the new tag.
 
 A refused or failed public step stops the release there. Nothing is forced.
+
+## Hotfix
+
+`/caw-merge --hotfix <description>`, only when the owner asks: an error of the released product, fixed from `main`
+so nothing not yet released reaches the installations. A fix that touches only the maintenance is not a hotfix: it
+follows the normal flow through `developer`.
+
+1. A clone on `fix/<slug>`, from the remote `main`; only what the error needs, with its test.
+2. The patch version: `workspace/VERSION` to `X.Y.(Z+1)`, a dated section in both changelogs, the commit
+   `chore(release): X.Y.Z`.
+3. The strict suite from the last tag and the test installation; no commit that only `developer` has.
+4. A review of the fix against `main` (effort high): every change not linked to the error is a BLOCKER.
+5. The owner's OK, then `main` by fast-forward. Then "publish?": yes, the tag `vX.Y.(Z+1)` and the GitHub release,
+   each confirmed; no, no tag.
+6. Right after, `main` is merged into `developer`: a merge commit when it is clean; a conflict is resolved in a
+   branch that goes through `/caw-merge`, with the `Unreleased` sections kept on top of the patch section.
+
+Until `developer` holds `main`, `/caw-merge` and `/caw-request` refuse to start: the merge down comes first
+(`/caw-merge --hotfix --down`). It is computed from git, so it survives a cancelled or crashed session.
 
 ## Installers and tags
 

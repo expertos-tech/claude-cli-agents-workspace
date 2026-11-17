@@ -36,6 +36,9 @@ Read that file in full and follow it as the procedure, with the sections below o
   `maintainers/requests/<name>`, `tmp/requests/<name>`, `tmp/<name>`, exactly as given (never add `.md`, complete a
   prefix or pick a similar name; never `maintainers/requests/qa/` or `done/`, which are not run again); a path → only
   that file, relative to the root or absolute. Not found: list every exact path tried and stop.
+- Blocked: before anything, `git fetch -q origin` and `git merge-base --is-ancestor origin/main origin/developer`.
+  False (a hotfix on `main` not merged into `developer` yet): refuse to start and say that `/caw-merge --hotfix --down`
+  comes first (`.claude/skills/caw-merge/SKILL.md` "Blocked").
 - Read the plan the request names too.
 - Prove each step: `/caw-check`; `/caw-test-install` when the installer, a hook or `setup-claude.sh` changed.
 - The request never moves here: `/caw-merge` moves it to `qa/` with its Execution block.

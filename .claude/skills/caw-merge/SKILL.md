@@ -1,7 +1,7 @@
 ---
 name: caw-merge
-description: "Take the work of this session into developer through the gates, writing the two changelogs (CHANGELOG.md of the repository, workspace/CHANGELOG.md of the product) and moving the request to qa; with --main, validate everything in qa and release the product (main, tag and GitHub release, each public step confirmed). No argument: the clone of this session in tmp/work/, else the session on developer. Use only when the owner asks."
-argument-hint: "[<work>/<clone> | --main [instructions]]"
+description: "Take the work of this session into developer through the gates, writing the two changelogs (CHANGELOG.md of the repository, workspace/CHANGELOG.md of the product) and moving the request to qa; with --main, validate everything in qa and release the product (main, tag and GitHub release, each public step confirmed); with --hotfix, fix an error of the released product from main as a patch version, then merge main down into developer. No argument: the clone of this session in tmp/work/, else the session on developer. Use only when the owner asks."
+argument-hint: "[<work>/<clone> | --main [instructions] | --hotfix <description> | --hotfix --down]"
 disable-model-invocation: true
 model: claude-opus-5-5
 effort: high
@@ -25,6 +25,8 @@ the GitHub release are each confirmed (`--main`).
   repository, and only the product is released ("Release", below).
 - Step 6 of "Merge into developer" for a base that publishes to production: `developer` publishes nothing here.
 - The review effort `high` for every merge: here by risk (`.claude/rules/review.md` "When").
+- The product's "Hotfix" steps 1, 3, 9, 10, 12 and 13 (`aiwp-cmds.sh open --from-main`, `hotfix`, `hotfix-tag`,
+  `hotfix-down`, the project's repos, the request in `qa/` marked pending): here "Hotfix", below, with plain git.
 
 ## Mapping
 
@@ -120,6 +122,78 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    (`git tag -a vX.Y.Z -m "vX.Y.Z" <sha of main>`, `git push origin vX.Y.Z`; never moved or deleted); the GitHub
    release, with the product CHANGELOG section as its notes.
 10. Check that a fresh installation (`install.sh`) picks up the new tag. Summary as the product's step 11.
+
+### Blocked
+
+Every `/caw-merge` and `/caw-request` starts with `git fetch -q origin` and
+`git merge-base --is-ancestor origin/main origin/developer`. False (a hotfix not merged down, after a cancel or a
+crash, or a pull request merged into `main` with a merge commit): refuse to start, say that `main` must be merged into
+`developer` first, and point to step 9 of "Hotfix" (`/caw-merge --hotfix --down`). Only that step, and a
+`/caw-merge` of a `fix/<slug>-developer` clone whose HEAD holds `origin/main`, may run. No visual warning (out of
+scope).
+
+### Hotfix
+
+`/caw-merge --hotfix <description>`: an error of the released product, fixed from `main` (the product's "Hotfix",
+with this mapping). Only a fix to the product (`workspace/`, `install.sh`) is a hotfix: a fix that touches only the
+maintenance (`CLAUDE.md`, `.claude/`, `tests/`, `maintainers/`, `docs/`, `i18n/`, the root `README.md`) is not; say so
+and point to the normal flow (`/caw-request`, `/caw-merge` into `developer`), and stop. The request: the file the owner
+names in `maintainers/requests/`, else the description.
+
+1. **The version:** the newest `vX.Y.Z` tag with the patch bumped; tag free (`git tag -l`, `git ls-remote --tags`).
+2. **Clone from `main`:** `git clone -q --local . tmp/work/<yyyy-mm-dd>-hotfix-<slug>/claude-cli-agents-workspace`,
+   origin set to the root's URL, `git -C <clone> fetch -q origin`, `git -C <clone> switch -c fix/<slug> origin/main`;
+   not pushed yet (the push gate: after step 5).
+3. **The fix** (the product's step 4): only what the error needs, with a test that fails without it; a commit of
+   `developer` taken by `git cherry-pick -x` only when it depends on nothing not released. A doc it changes that has a
+   translation: the translation in the same fix (the strict suite checks it).
+4. **Version and changelogs:** `workspace/VERSION` to `X.Y.(Z+1)`; in `workspace/CHANGELOG.md` a dated section
+   `## [X.Y.(Z+1)] - YYYY-MM-DD` above the newest one, with `### Fixed`; in the root `CHANGELOG.md` (created when
+   `main` has none) the same dated section with under `### Product` the line `Released [vX.Y.Z](<repo
+   URL>/releases/tag/vX.Y.Z): see its [changelog](<repo URL>/blob/vX.Y.Z/workspace/CHANGELOG.md).`; commit
+   (`chore(release): X.Y.Z`).
+5. **The gate against `main`:** `bash <clone>/tests/check.sh --all --base <last tag>` (with `AIWP_TERMS_FILE` as in
+   the mapping) and `bash <clone>/tests/test-install.sh`; and no commit of `origin/main..HEAD` may be one that only
+   `developer` has (`comm -12` of the sorted `git -C <clone> rev-list origin/main..HEAD` and
+   `git -C <clone> rev-list origin/main..origin/developer` is empty). Passed: record `git -C <clone> rev-parse HEAD`
+   and push `fix/<slug>` with upstream.
+6. **Review against `main`** (the product's step 7: `reviewer`, claude-opus-5-5, effort `high`) on
+   `origin/main..<sha>`, with the error described. A BLOCKER: fix in the clone and back to step 5. A RECOMMENDED: a
+   `ready` request in `maintainers/requests/`, written in the down step (step 9), never on `main`.
+7. **Into `main`:** `main` here does not publish by itself (the installers take only tags), so: the owner's OK, with no
+   BLOCKER open and HEAD still the recorded sha; then `git -C <clone> push origin <sha>:refs/heads/main` (a
+   fast-forward; refused: a pull request `fix/<slug>` → `main`, and the tag waits for its merge,
+   `release-tag-after-pull-request`). Say `main` received the fix.
+8. **The publication:** ask "publish to production with the fix?". Yes, asking before each one (each answer covers
+   that step only): the tag (`git tag -a vX.Y.Z -m "vX.Y.Z" <sha>`, `git push origin vX.Y.Z`; never moved or deleted),
+   then the GitHub release with the `workspace/CHANGELOG.md` section as its notes; then check that a fresh `install.sh`
+   picks up the tag. No: no tag; go on.
+9. **Down into `developer`** (`/caw-merge --hotfix --down` resumes here, in the hotfix clone, or in a new clone
+   `tmp/work/<yyyy-mm-dd>-hotfix-down/claude-cli-agents-workspace` made as in step 2 when it is gone): say that `main`
+   is now merged into `developer`, and do it; the only option offered is to go on. In the clone: `git fetch -q origin`, `git switch -c fix/<slug>-developer
+   origin/developer`, `git merge --no-ff origin/main -m "Merge branch 'main' into developer"`.
+   - Clean: a standard merge commit, no new branch on the remote. Then the request's `## Execution` block (the
+     product's step 11) with `Released in vX.Y.(Z+1)` (or `Not published: vX.Y.(Z+1) on main without a tag`), the
+     file moved to `maintainers/requests/done/` and its row in the README, and the requests made of RECOMMENDED
+     findings; commit (`docs(requests): ...`). The suite `--base origin/developer --i18n-pending` (the push gate: the
+     request and the merge are scanned; the fix's own tests already passed on `main`), then
+     `git -C <clone> push origin HEAD:refs/heads/developer` (a fast-forward of `origin/developer`; refused because it
+     moved: back to the start of this step).
+   - A conflict, or a fix to adapt: resolve it in this branch and adapt the fix so the error stays fixed on
+     `developer`; in the changelogs, the `Unreleased` sections of `developer` stay on top and the dated patch sections
+     go below them (an `Unreleased` version not above the patch takes the next one); `workspace/VERSION` keeps the
+     version of `developer` when it is above. Then the request as in the clean case, push the branch, and take it into
+     `developer` by "Merge into developer" of this skill (the suite, the review of the resolution with effort `high`,
+     phase 2). Ask the owner only when the resolution changes a business rule.
+
+   `main` and its tag never change on the way down; never a rebase or a force push; no other branch is touched.
+10. Delete the clone once `developer` holds `origin/main`, and remove the remote `fix/<slug>` (and
+    `fix/<slug>-developer`) branch. Summary: the version, `main` and `developer` (shas), the tag and the release,
+    the review, the checks with their results, the request.
+
+The request lives only on `developer` (`main` has no `maintainers/requests/` of today), so here it goes straight to
+`done/` in step 9, with the merge down; until then it stays pending in `maintainers/requests/`, and a stop between steps
+7 and 9 appends where it stopped to it (`.claude/rules/process.md` step 4).
 
 A refused or failed public step stops the release there: report where it stopped, never force it. Never merge with a
 failing check or an open BLOCKER. Never move `developer` or `main` by any other command, and never rewrite either.

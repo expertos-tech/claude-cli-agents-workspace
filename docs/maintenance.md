@@ -104,6 +104,8 @@ Only when the owner asks. Running it is the owner's order for the pushes it make
 - **On developer:** the same gates over the commits since the last changelog commit (`docs(changelog)` or
   `chore(release)`), then the push.
 - **`--main`:** the release of the product ([releases](releases.md)).
+- **`--hotfix`:** an error of the released product, fixed from `main` as a patch, then merged into `developer`
+  ([releases](releases.md#hotfix)).
 
 ## Reviews
 
