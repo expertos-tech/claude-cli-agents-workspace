@@ -50,6 +50,9 @@ session and clone under `tmp/work/` (`/caw-request`), and enters `developer` thr
 | — | `old-names-leftovers.md` | ready | A review finding |
 | — | `caw-layers-missing-target.md` | ready | A review finding |
 | — | `merge-project-name.md` | ready | A review finding |
+| — | `execution-block-after-fixes.md` | ready | A review finding |
+| — | `work-branch-push-before-scan.md` | ready | A review finding |
+| — | `repo-terms-skip-stops-merge.md` | idea | A review finding: today no terms list exists here |
 
 ## QA
 
