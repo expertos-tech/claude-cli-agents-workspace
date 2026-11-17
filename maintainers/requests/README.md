@@ -8,6 +8,7 @@ Run them in this order; each one depends on the ones before it:
 
 | # | Request | Design | State |
 | --- | --- | --- | --- |
+| 0a | `done/merge-versioned-changelog.md` | — | In progress; plan approved 2026-11-17, recorded at approval |
 | 0 | `import-from-fork.md` | — | Pending; first after the publication, with its own release |
 | 1 | `done/normalize-projects.md` | `plans/normalize-projects.md` | Built in 0.1.0; end-to-end test passed on six projects; a second test on unseen projects pending |
 | 2 | `rules.md` | `plans/rules-config.md` | Pending |
@@ -31,12 +32,14 @@ repository root), merged into `main` one at a time:
 
 | Round | Requests |
 | --- | --- |
+| 0a | `merge-versioned-changelog`, alone: `developer` as the base, the versioned changelog and `/merge --main` |
 | 0 | `import-from-fork`, alone, with its own minor release: the first real test of `aiwp update` |
 | 1 | `rules`, `run-tools`, `readme-get-involved-first`, `prompt-log-results`, `gate-audit-gaps`, `work-status-docker-stacks`, `aiwp-remove`, `measure-quality-indicators` |
 | 2 | `normalize-rules`, `fork-my-rules`, `tools-hub`, `onboard` |
 | 3 | `final-review` (with `rules-size-budget` folded in or right before it), which releases the next version once, and tests the update of a real installed workspace dedicated to it |
 | 4 | `os-sandbox-trial` |
 
-Run a request in a new session opened at the repository root, one stage per session when a stage is large. A delivered
+Run a request in a new session opened at the repository root, one stage per session when a stage is large. A plan the owner
+approves in a session is recorded at once, in English and in this format, in `done/`, with its row here. A delivered
 request moves to `done/` (`git mv`, in the commit that closes it); its row stays here with the new path
 and its State.

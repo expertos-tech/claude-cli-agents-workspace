@@ -90,7 +90,7 @@ and hooks to work safely across several projects.
   - **minor** (`0.X.0`): any behavior change, such as a rule that applies differently, a hook that blocks or asks
     something new, a new command or a security fix.
 
-  The release process is `/release` (`.claude/skills/release/SKILL.md`): `VERSION`, `CHANGELOG.md` in English, the suite and the test
+  The release process is `/merge --main` (`.claude/skills/merge/SKILL.md`): `VERSION`, `CHANGELOG.md` in English, the suite and the test
   installation. If a fix asks something of the projects, it also goes into `migrations/`.
 - RN-8: the push, the tag and the GitHub release are public actions. They happen only with the owner's explicit
   confirmation, at each step.
