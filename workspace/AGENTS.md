@@ -18,7 +18,7 @@ Loaded in every session through `CLAUDE.md`. It is short on purpose: what must n
 
 - Linux with Docker Engine. Company, cloud, visual identity, projects and their ports: the custom layer in `custom/` (`rules/rules.md` "Custom layer").
 - Before a task that can demand much CPU or GPU (graphics, 3D rendering): run it through `bash scripts/heavy-run.sh`, which waits for the machine to cool (`rules/machine-load.md`). Test suites, builds and containers run directly.
-- The core holds `AGENTS.md`, `rules/`, `scripts/`, `docker/`, `docs/` and `tools/`; in an installed workspace it is read only. Each project is its own git repo under `projects/`, ignored by it; so is `custom/`, the custom layer, with the written requests in `custom/prompts/`, the POCs in `custom/pocs/`, your own tools in `custom/tools/` (`tools/` holds the product's) and the filled `.env` files in `custom/env/`. New project, POC or tool: `bash scripts/init-repo.sh` (`rules/rules.md`).
+- The core holds `AGENTS.md`, `rules/`, `scripts/`, `docker/`, `docs/` and `tools/`; in an installed workspace it is read only. Each project is its own git repo under `projects/`, ignored by it; so is `custom/`, the custom layer, with the written requests in `custom/requests/`, the POCs in `custom/pocs/`, your own tools in `custom/tools/` (`tools/` holds the product's) and the filled `.env` files in `custom/env/`. New project, POC or tool: `bash scripts/init-repo.sh` (`rules/rules.md`).
 - `.claude/` is generated from `rules/` and `custom/rules/` by `scripts/setup-claude.sh`, which a session-start hook runs.
 - Checks run in Docker through `bash scripts/validate.sh`. Never install validation tools on the host.
 
@@ -27,16 +27,16 @@ Loaded in every session through `CLAUDE.md`. It is short on purpose: what must n
 - A question or read-only work: answer it. Nothing is opened.
 - A change to a project or a POC: in a clone, `bash scripts/aiwp-cmds.sh open <yyyy-mm-dd>-<slug> <repo>` (`rules/git.md` "Work area"). Tell the human the clone's path, and work only there. Inside a clone everything is allowed; each commit reaches the remote by itself.
 - A project or POC without the marker, or out of date (the hook, `open` and the gate say so; `rules/rules.md` "Workspace projects"): tell the human and ask for authorization to run `/normalize-projects <project>`. Refused: go on with the request; never block it.
-- `projects/` stays on `developer` and changes only through the gate: `/merge` when the work is ready (`rules/git.md` "Gate"). `main` moves only by `/merge --main <repo>` (a new version: its CHANGELOG dated and a `vX.Y.Z` tag, through `aiwp-cmds.sh release`), and Terraform applies only by `aiwp-cmds.sh apply`, both on the human's explicit request.
+- `projects/` stays on `developer` and changes only through the gate: `/merge` when the work is ready (`rules/git.md` "Gate"). `main` moves only by `/merge --main <project>` (a new version: its CHANGELOG dated and a `vX.Y.Z` tag, through `aiwp-cmds.sh release`), and Terraform applies only by `aiwp-cmds.sh apply`, both on the human's explicit request.
 - The core is read only here, and the workspace root is an installation, not a git repository: the repositories are `custom/` and each project. The core changes through a pull request to the product repository, and reaches this workspace by an update the person runs in a terminal (`aiwp update`). When the session start says a new workspace version was detected, tell the person to close this session and run `aiwp update` in a terminal. Never run `aiwp update`, `rollback` or `repair` yourself: they change the rules of the open session, and `guard-bash` refuses them. `custom/` is the custom layer and is free to edit; a change to `custom/rules/` changes the rules of the next sessions.
 - Publishing to the local Docker: `bash scripts/aiwp-cmds.sh up`, which tags the replaced images as the rollback checkpoint; `rollback` returns to it.
 - The commit is the record of a request. A decision record only for a choice that is hard to reverse (`rules/docs.md`).
 
 ## Definition of Done
 
-- The work went through the gate (phase 2 merged), or the wave stopped before it with every commit on the remote and a resume prompt (`rules/git.md` "Waves").
+- The work went through the gate (phase 2 merged), or the wave stopped before it with every commit on the remote and its resume point appended to the request (`rules/git.md` "Waves").
 - The tests pass (`rules/quality.md`), and the docs that describe what changed are updated in the same commit (`rules/docs.md`).
-- A request that changed files closes its wave by `rules/git.md` "Waves", with the closing board as the report (what changed, what was verified and how, what is left). Before the board, `python3 -I -B scripts/prompt-log.py sync --commit` records the session's prompts in `custom/prompts/log/`. Then stop.
+- A request that changed files closes its wave by `rules/git.md` "Waves", with the closing board as the report (what changed, what was verified and how, what is left). Before the board, `python3 -I -B scripts/prompt-log.py sync --scan` records the session's prompts in `logs/prompts/` and removes any secret from them. Then stop.
 - Never report done with a failing check: say it failed and show the output.
 
 ## Safety
@@ -70,7 +70,7 @@ Read one of these only when the task needs it.
 | `rules/models.md` | delegating to a subagent |
 | `rules/rules.md` | creating, bringing in or normalizing a project or POC, choosing a port, a layout or a technology |
 | `rules/machine-load.md` | a task heavy on CPU or GPU (graphics, 3D rendering) |
-| `templates/request.md`, `rules/prompt-project.md` | writing a functional request |
+| `templates/request.md`, `rules/request-writing.md` | writing a functional request |
 | `scripts/README.md`, `docker/README.md` | using a workspace script or a validation tool |
 
 These load by themselves when you touch a matching file: `rules/quality.md` and `rules/security.md` (code), `rules/frontend.md` (UI), `rules/infra.md` (Terraform), `rules/docs.md` (README, CHANGELOG, `docs/`), `rules/scripts.md` (shell).

@@ -7,4 +7,4 @@
 | [single-agent.md](single-agent.md) | Guide to the single-agent mode: installing `single-claude`, opening a session, options, `/single-agent` and how to take the work to `main` |
 | [decisions/](decisions/README.md) | One record per decision about the workspace itself, with the index |
 
-What belongs to a company and its projects lives in the custom layer, `custom/`: lessons in `custom/docs/lessons.md`, the backlog in `custom/backlog/`, the visual identity, the cloud and the project index (`rules/rules.md` "Custom layer").
+What belongs to a company and its projects lives in the custom layer, `custom/`: lessons in `custom/docs/lessons.md`, the requests in `custom/requests/`, the visual identity, the cloud and the project index (`rules/rules.md` "Custom layer").

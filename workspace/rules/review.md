@@ -21,12 +21,12 @@ Once per gate, between its two phases (`rules/git.md` "Gate", `/merge`), on ever
 
 ## Release
 
-`/merge --main` ends with a stronger final review (`rules/skills/merge/SKILL.md` "Release" step 3), on everything since the last release, in two rounds: **what enters and what leaves** (effort `high`: the inventory of what was added, changed and removed, each traced to its request; regressions, so nothing that works is removed without a request; intent, so each change does what was asked and no more; the CHANGELOG) and a **general** reading of the whole tree (effort `medium`: contradictions, dead references, leftovers). UNEXPLAINED removals and regressions are BLOCKERs.
+`/merge --main` ends with a stronger final review (`rules/skills/merge/SKILL.md` "Release" step 4), on everything since the last release of the project, against every request waiting in `custom/requests/qa/<project>/`, in two rounds: **what enters and what leaves** (effort `high`: the inventory of what was added, changed and removed, each traced to its qa request; every acceptance criterion, pending ones included; every Execution block checked against the code; regressions, so nothing that works is removed without a request; intent, so each change does what was asked and no more; the compatibility of the repos released together; the CHANGELOG) and a **general** reading of the whole tree (effort `medium`: contradictions, dead references, leftovers). UNEXPLAINED removals and regressions are BLOCKERs.
 
 ## Findings
 
 - BLOCKER: correctness, security, data loss, a broken or unproven acceptance criterion, a failing test, a weaker gate or hook. Fix it in the clone and run the gate again from phase 1.
-- RECOMMENDED: everything else. It never returns the branch and never opens a round: fix it in the same pass when it is cheap, else list it in the delivery summary.
+- RECOMMENDED: everything else. It never returns the branch and never opens a round. At a merge into `developer` it becomes a `ready` request in `custom/requests/`; at a release the human chooses per finding: fix now, or a request (`rules/skills/merge/SKILL.md` "Release" step 5).
 - A finding is not accepted only because it came. Check why the code is that way. Still disagree: give the human both positions and let the human decide.
 - Never report style the formatter fixes. Never praise.
 

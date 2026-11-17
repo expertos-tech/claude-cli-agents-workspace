@@ -25,6 +25,18 @@ paths:
 - The next version is always named: `## [X.Y.Z] - Unreleased`. L is the higher of the newest dated header and the newest `vX.Y.Z` tag (neither: `0.0.0`). No `Unreleased` section: bump L by the Conventional Commit types of what enters: a `feat` → minor; only `fix`, `docs`, `refactor`, `chore`, `test`, `perf`, `build` or `ci` → patch; breaking (`!`) → major from 1.0.0, minor before. A section that is a patch of L (same X.Y) becomes X.(Y+1).0 when a new `feat` enters; a minor or major section keeps its number and only gains entries.
 - A fix of something that entered the same `Unreleased` version is not a fix: no `### Fixed` entry and no bump. Adjust the original entry, only when the behavior it describes changed. `### Fixed` is only for what a dated version already published.
 - `/merge --main` dates the section (`## [X.Y.Z] - YYYY-MM-DD`) and tags `main` with `vX.Y.Z`. Never edit a dated section.
+- A project root repo (a repo that holds the project's repos, `rules/rules.md` "Workspace layout") keeps the project's `CHANGELOG.md`: the version of the whole. `/merge` writes in it the changes of the project as a whole (a repo added or removed, shared docs, compose, CI); `/merge --main <project>` adds to its dated section the table of the versions released:
+
+  ```markdown
+  ### Components
+
+  | Repository | Version | Changes |
+  | --- | --- | --- |
+  | billing-api | 1.4.0 | [changelog](billing-api/CHANGELOG.md) |
+  | billing-web | 2.1.0 | unchanged |
+  ```
+
+  The project version bumps by the largest bump of the release: a repo's minor or a `feat` of the root → minor; fixes only → patch; a breaking change → major. Its `README.md` keeps the production versions table (repository, version, date), updated by the same release.
 - The workspace: `CHANGELOG.md` gets one section per release, written by `/merge` of the product repository; a session of an installed workspace never edits it.
 
 ## docs/ of a project

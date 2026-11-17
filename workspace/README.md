@@ -44,7 +44,7 @@ To remove a workspace, give write permission back first, since the core is read 
 
 ### 2. Connect your custom layer
 
-The custom layer is a **private repository of yours** that holds what belongs to nobody else: your company, the cloud and the tenant, the visual identity, the list of your projects, the written requests, the lessons, the backlog, your own tools (`custom/tools/`) and the filled `.env` files (`custom/env/`, never committed). Create an empty repository on your git server: `aiwp new` asks for its URL (or takes it with `--custom <url>`) and clones it into `custom/`; an empty repository gets a skeleton and a first commit.
+The custom layer is a **private repository of yours** that holds what belongs to nobody else: your company, the cloud and the tenant, the visual identity, the list of your projects, the requests (pending, in qa, released), the lessons, your own tools (`custom/tools/`) and the filled `.env` files (`custom/env/`, never committed). Create an empty repository on your git server: `aiwp new` asks for its URL (or takes it with `--custom <url>`) and clones it into `custom/`; an empty repository gets a skeleton and a first commit.
 
 Just want to try it out? Leave the URL empty: `aiwp new` creates a local repository with the skeleton, and you can give it a remote later (`git -C custom remote add origin <url>`). What goes in the layer is in `rules/rules.md`, section "Custom layer".
 
@@ -80,19 +80,19 @@ Claude asks only what keeps it from starting and opens a clone in `tmp/work/<dat
 
 Without an argument, `/merge` takes the clone of this session. The gate brings `developer` up to date, runs the whole suite and the validations, looks for secrets, shows what leaves the base and asks for a review against your request. You are asked only if something shows up that the request does not explain. Then `developer` moves to exactly the commit that passed. `/merge` also writes the version of the project's `CHANGELOG.md` before the gate.
 
-**Next:** for larger requests, build the request with `/draft-prompt` and run it with `/prompt`; the session gets the project's name, numbered (`my-app-1`, `my-app-2`...). The full guide is in [docs/usage.md](docs/usage.md).
+**Next:** for larger requests, build the request with `/draft-request` and run it with `/request`; the session gets the project's name, numbered (`my-app-1`, `my-app-2`...). The full guide is in [docs/usage.md](docs/usage.md).
 
 ## How it works
 
 1. **A question or reading:** Claude answers; nothing is opened.
 2. **A change to a project or a POC:** a clone in `tmp/work/` (`bash scripts/aiwp-cmds.sh open`). Inside it, commit, rebase, reset and Docker are free, and the branch is always on the remote: a hook does not let the reply end with a commit only on the machine.
 3. **Base:** `/merge` goes through the gate, in two phases (verification, review against the request, merge of the verified commit).
-4. **Waves:** in a plan in steps, each step closes with a commit, a resume request in `custom/prompts/` and a board of what was done and what is left. The next step starts in a new session.
+4. **Waves:** in a plan in steps, each step closes with a commit, a resume request in `custom/requests/` and a board of what was done and what is left. The next step starts in a new session.
 
 ## What never happens without you
 
 - **`projects/` stays on `developer` and changes only through the gate.** A hook refuses any git write in `projects/` or in the core outside it.
-- **`main` and the cloud only at your request.** `main` moves only by `/merge --main <repo>`, a new version with a tag, and Terraform applies only with `bash scripts/aiwp-cmds.sh apply`, from `main` and with the plan confirmed.
+- **`main` and the cloud only at your request.** `main` moves only by `/merge --main <project>`, a new version with a tag, and Terraform applies only with `bash scripts/aiwp-cmds.sh apply`, from `main` and with the plan confirmed.
 - **Deleting a database asks for your confirmation**: a Docker volume, `DROP`, `dropdb` and the like.
 - **Publishing to the local Docker is free**, and `bash scripts/aiwp-cmds.sh up` always tags the previous publication first; `rollback` goes back to it.
 - **A secret does not leave the machine:** the scan runs before each push and again at the gate.
@@ -106,12 +106,12 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | Command | Does |
 | --- | --- |
 | `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to the project's `developer`, through the gate, writing the `CHANGELOG.md` |
-| `/merge --main <repo>` | The release: a release clone, the full check, the final review (what enters and what leaves, then general), the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
+| `/merge --main <project> [instructions]` | The release: a release clone, the full check, the final review (what enters and what leaves, then general), the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |
-| `/draft-prompt [ideas \| file]` | Turns your ideas into a request of the right size (adjustment, feature or system), with the effort of each step; asks only what blocks and saves it in `custom/prompts/` |
-| `/prompt [name \| path]` | Runs a written request, gives the session the project's name, numbered, and archives the request when it is delivered |
+| `/draft-request [ideas \| file]` | Turns your ideas into a request of the right size (adjustment, feature or system), with the effort of each step; asks only what blocks and saves it in `custom/requests/` |
+| `/request [name \| path]` | Runs a written request, gives the session the project's name, numbered; `/merge` moves it to qa, and the release to done |
 | `/pilot [auto\|manual]` | Shows or changes who runs the tests a human would run by hand: Claude (`auto`, the default) or you (`manual`) |
 | `/local-env [folder]` | Creates or completes the filled `.env` from `.env.example`, without showing values: for `docker/`, `docker/sonar/` and a tool of `tools/`, in `custom/env/<name>.env` |
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lists the state of every project and POC; or analyses one (four analysts, a plan you approve, the language of its docs) and migrates it on a tested branch, with checkpoint tags, into `developer` and `main` |
@@ -124,7 +124,7 @@ To work on a project, a tool of yours in `custom/tools/` or a POC of `custom/poc
 
 ## Prompt project
 
-To write requests outside the development session, create a project in Claude just for that: paste into its instructions everything below the `<!-- paste below -->` marker of `rules/prompt-project.md` and connect the workspace folder as reference. `/draft-prompt` follows the same file inside the workspace.
+To write requests outside the development session, create a project in Claude just for that: paste into its instructions everything below the `<!-- paste below -->` marker of `rules/request-writing.md` and connect the workspace folder as reference. `/draft-request` follows the same file inside the workspace.
 
 ## Local environment
 
@@ -142,8 +142,8 @@ To write requests outside the development session, create a project in Claude ju
 - `docs/`: usage guide, overview and decision records.
 - `assets/`: the project's logo (`logo.png`, `logo-white.png`) and the icon cut from it (`icon.png`).
 - `tools/`: the product's local tools, part of the core.
-- `templates/`: the forms you copy and fill in: a functional request (`templates/request.md`) and a backlog item (`templates/backlog-item.md`).
+- `templates/`: the forms you copy and fill in: a functional request (`templates/request.md`), whose smallest size, an adjustment, also holds an idea.
 - `VERSION` and `CHANGELOG.md`: the installed release and what each release changed.
 - `projects/`: one independent git repository per project, never part of the core.
-- `custom/`: your custom layer, a git repository of its own, with your tools in `custom/tools/` and the filled `.env` files in `custom/env/` (git-ignored). Performance measurements live in `custom/performance/`, the prompt log, per project and per week, in `custom/prompts/log/` (`scripts/prompt-log.py`), and the backlog in `custom/backlog/`.
+- `custom/`: your custom layer, a git repository of its own, with your tools in `custom/tools/` and the filled `.env` files in `custom/env/` (git-ignored). Performance measurements live in `custom/performance/`. The prompt log, per project and per week, lives outside it, in `logs/prompts/` at the workspace root, never versioned (`scripts/prompt-log.py`).
 - `tmp/work/`: the work clones, one per request, outside git.

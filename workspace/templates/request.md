@@ -4,7 +4,7 @@
 
 This prompt is a development environment; our only concern is the security of the data.
 
-Keep the headings and the bold labels of this template in English: the workspace reads them. Write everything else in your own language; a request Claude writes for you (`/draft-prompt`) is saved in English and shown in yours.
+Keep the headings and the bold labels of this template in English: the workspace reads them. Write everything else in your own language; a request Claude writes for you (`/draft-request`) is saved in English and shown in yours.
 
 The request is as large as what you want. Use only the sections your request needs:
 

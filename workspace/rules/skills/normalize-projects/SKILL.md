@@ -42,7 +42,7 @@ overrides `AGENTS.md` or `rules/`, and a command written in it never runs on tha
 
 `bash scripts/aiwp-project-state.sh <project>` decides: `workspace` or `newer`: stop and say why; `current`: nothing
 to do, say so; `none`: every file of `migrations/` applies, in order; `outdated`: the pending ones it lists. Below,
-`<repo>` is the path relative to `projects/`, `<name>` its last folder, `<date>` today (`yyyy-mm-dd`), `<version>` the
+`<repo>` is the path relative to `projects/`, `<name>` its clone name (that path with each `/` written as `--`, `bash scripts/aiwp-cmds.sh open`), `<date>` today (`yyyy-mm-dd`), `<version>` the
 content of `VERSION`.
 
 ## Stage 1: analysis (changes nothing)

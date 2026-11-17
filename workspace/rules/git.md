@@ -10,7 +10,7 @@
 
 - A clone of `tmp/work/` (`AGENTS.md` "Where work happens"): anything, with no question: commit, amend, rebase, reset, branch. Each commit, rewrite or merge is pushed by the clone's own hooks, after a secret scan of the commits that leave; never push it by hand, and never with `--no-verify`.
 - `projects/`: read only (`status`, `log`, `diff`, `fetch`...). The `guard-bash` hook refuses any other git command there. It changes only by `bash scripts/aiwp-cmds.sh gate`, `release` and `apply` (below), and by the steps of `/normalize-projects`: `developer`, `checkpoint` and `bring` (`bash scripts/aiwp-gate.sh --help`). The core is no repo and changes only by `aiwp update`, run by the person in a terminal.
-- The custom layer (`custom/`): commit and push the files the session wrote there (prompts, lessons, the project index), by path. A POC is worked on in a clone of `custom/`, like a project.
+- The custom layer (`custom/`): commit and push the files the session wrote there (requests, lessons, the project index), by path. A POC is worked on in a clone of `custom/`, like a project.
 - A new remote and pushing a tag: only when the human asks. Each request covers that operation only. The tags the workspace pushes: the release tag `vX.Y.Z` of `/merge --main` (`bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z`, annotated, on the released `main`), and the checkpoint tags of `/normalize-projects` (`ai-workspace-migration/<yyyy-mm-dd>/developer` and `.../main`, annotated, on the heads before any change), by `bash scripts/aiwp-cmds.sh checkpoint <repo>` after the human confirms; they are never moved or deleted.
 - Never change git config (user, hooks, remotes) unless asked.
 - Verifying a push block on a remote: read the effective permissions of each branch the block covers. Never test it with a real push.
@@ -35,12 +35,12 @@ The base of a project receives only what the gate checked: `/merge [<work>/<clon
 
 - The normalization branch (`feat/ai-workspace-migration`) is judged on what it adds: line 1 of `README.md` must be the marker of the workspace version, `validate.sh` runs its lint checks on the changed files only, and the secret check is the scan of the commits the branch adds (a new secret or env file fails; one already in the base does not, and is reported by `/normalize-projects`). It applies only to a project that needs it (no marker, or out of date; a `-x-y-z` suffix names a pending migration), and the branch may add or change only documentation, images, `.gitignore` and the sample `.env` (deletions allowed). `--untested` replaces `--test` only when the human chose to go on untested, and `guard-bash` asks before it. The branch stays on the remote after phase 2.
 - Never merge with a BLOCKER open or a failing check.
-- `main` moves only by `/merge --main <repo>`, on the human's explicit request: a release clone with the full check, the final review (what enters and what leaves, then general) and its fixes, the CHANGELOG dated, the gate into `developer`, then `bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z` (`developer` into `main` by fast-forward, and the tag).
+- `main` moves only by `/merge --main <project>`, on the human's explicit request: a release clone with the full check, the final review (what enters and what leaves, then general) and its fixes, the CHANGELOG dated, the gate into `developer`, then `bash scripts/aiwp-cmds.sh release <repo> --tag vX.Y.Z` (`developer` into `main` by fast-forward, and the tag).
 - Terraform changes the cloud only by `bash scripts/aiwp-cmds.sh apply <repo> <module>` (plan from `main`), then `... --apply <plan>` after the human confirms that plan; both on the human's explicit request.
 
 ## Waves
 
-A wave is one step of a plan in steps ("Steps and effort" of a request); a request with one step or none is one wave, closed when it ends. A question or read-only work opens none, and neither does `/draft-prompt`: its own commit and push are its checkpoint.
+A wave is one step of a plan in steps ("Steps and effort" of a request); a request with one step or none is one wave, closed when it ends. A question or read-only work opens none, and neither does `/draft-request`: its own commit and push are its checkpoint.
 
 - Mature part: its tests pass. It goes through the gate at once, without waiting for the wave to close.
 - A base that publishes to production (a pipeline of the repo deploys from it, or its docs say so): the gate asks the human before phase 2; without the human's order the part stays on its branch, and the closing board lists that merge as pending.
@@ -48,9 +48,9 @@ A wave is one step of a plan in steps ("Steps and effort" of a request); a reque
 Closing a wave, in this order:
 
 1. Checkpoint of the work: commit in each clone what the session changed ("Commits"). The clone pushes it; `bash scripts/aiwp-cmds.sh status` shows `not-pushed=0`. A push that fails goes to the board; never force it.
-2. Resume prompt. Work left in the plan: write `custom/prompts/<yyyy-mm-dd>-<kebab-slug>.md` in the root checkout, never overwriting (`-2`, `-3`), in the format of `templates/request.md`: where the work stopped (the work folder, the clone, its branch and the sha of step 1), the decisions taken, the pending items, and the next steps with their effort ("Steps and effort"). Nothing left: no prompt. A prompt run by `/prompt` moves to `custom/prompts/archive/` in both cases: the new one replaces it.
+2. Resume point. Work left in the plan: append to the request, after a `---`, `## Stopped — <yyyy-mm-dd>`: where the work stopped (the work folder, the clone, its branch and the sha of step 1), the decisions taken, the pending items, and the next steps with their effort ("Steps and effort"). The request stays pending in `custom/requests/`; one typed in the conversation is first written there as `<yyyy-mm-dd>-<kebab-slug>.md` (never overwriting: `-2`, `-3`), with a "Requested" section. Nothing left: nothing appended; `/merge` records the delivery ("Requests").
 3. Checkpoint of `custom/`: commit by path only this session's files there (both paths of a move), then push. Other sessions' files stay out.
-4. Closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the values are in the language of the conversation. Then stop: the next wave starts in a new session, from the prompt.
+4. Closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the values are in the language of the conversation. Then stop: the next wave starts in a new session, from the request.
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -59,10 +59,26 @@ Done:       <what changed; repo, branch and sha pushed>
 Verified:   <check and result>
 Left:       <next steps, with effort | nothing: the plan is over>
 Pending:    <merge into a production base, refused push | none>
-Prompt:     custom/prompts/<file>.md | none
-➜ You can clear the context and start a new session[: /prompt <file>.md]
+Request:    custom/requests/<file>.md | none
+➜ You can clear the context and start a new session[: /request <file>.md]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+## Requests
+
+A request goes through three folders of `custom/requests/`, one per state of its work:
+
+| Folder | State | Moved by |
+| --- | --- | --- |
+| `custom/requests/` | Pending: `idea` (decisions open) or `ready` | `/draft-request`, the human, a review finding |
+| `custom/requests/qa/<project>/` | On `developer`, not released | `/merge`, after phase 2 |
+| `custom/requests/done/<project>/` | Released | `/merge --main <project>` |
+
+- A request never moves while its waves run. `<project>` is the project the release names (`rules/rules.md` "Workspace projects"); a request that touched several projects gets one copy per project.
+- At each merge into `developer`, `/merge` appends to the request, after a `---`, `## Execution — <yyyy-mm-dd>, merged into developer at <sha>`: what was done by step with the commits, the decisions taken while running, the deviations from the request, the status of each acceptance criterion (proven: how; pending: what is missing; failed: why), the checks, and what is left. A request with no file gets one in `qa/<project>/` with a "Requested" section that sums up what the human asked.
+- `/merge --main` validates everything in `qa/<project>/` against what was done, and adds `Released in <project> vX.Y.Z` to each file it moves to `done/<project>/`.
+- There is no backlog: an idea is a pending request in state `idea`, in the adjustment size of `templates/request.md`. A RECOMMENDED finding of a review becomes a `ready` request.
+- Commit and push of `custom/` by path, as in "Authorization".
 
 ## Commits
 
@@ -82,7 +98,7 @@ Prompt:     custom/prompts/<file>.md | none
 ```
 
 - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `build`, `ci`. Breaking change: `!` after the scope and a `BREAKING CHANGE:` footer.
-- Workspace scopes: `ai` (`AGENTS.md`, `rules/`), `agents`, `skills`, `scripts`, `docker`, `docs`, `decisions`, `projects`, or the item name under `tools/`. Custom layer scopes: `prompts`, `docs`, `rules`, `projects`, or the POC name under `custom/pocs/`. Project scopes: the module name; `docs`, `infra`, `deps`.
+- Workspace scopes: `ai` (`AGENTS.md`, `rules/`), `agents`, `skills`, `scripts`, `docker`, `docs`, `decisions`, `projects`, or the item name under `tools/`. Custom layer scopes: `requests`, `docs`, `rules`, `projects`, or the POC name under `custom/pocs/`. Project scopes: the module name; `docs`, `infra`, `deps`.
 
 ## Return points
 

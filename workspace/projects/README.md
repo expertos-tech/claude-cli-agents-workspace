@@ -4,7 +4,7 @@ The repositories of the projects the workspace works on live here. The folder be
 
 ## How the folder works
 
-- **One repository per project.** Each project is an independent git repository, in `projects/<name>/`. A folder may group repositories (for example, those of one client: `projects/<client>/<name>/`); the grouping folder is not a repository.
+- **Any structure.** Any folder, at any depth, may be a git repository, inside another one too: one repository per project, a root repository that holds the project's repositories (`projects/billing/` with `billing-api/` and `billing-web/` inside), or a plain folder that groups repositories. The structure is yours; a path belongs to the nearest `.git` above it. A root repository keeps the project's own `CHANGELOG.md`: the version of the whole, with the versions of its repositories (`rules/docs.md`).
 - **The project list lives in the custom layer**, in `custom/projects.md`: path, remote, purpose and ports of each project. A new project is registered there, with a commit in the `custom/` repository.
 - **Always on `developer`.** The checkout of each repository stays on `developer` (or on `main`, when the project has no `developer`) and is not edited here. All work happens in a clone under `tmp/work/` (`bash scripts/aiwp-cmds.sh open`) and reaches this folder only through the gate (`/merge`). A hook refuses any git write in this folder outside it.
 - **Open Claude at the workspace root**, not inside a project, so that `AGENTS.md`, `rules/` and the hooks apply.

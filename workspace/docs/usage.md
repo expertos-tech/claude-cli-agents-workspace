@@ -52,7 +52,7 @@ cd <workspace> && aiwp
 - **Always at the workspace root**, even to work on a project: that is where `AGENTS.md`, the rules and the hooks apply.
 - **One session per request.** When the subject is over, use `/clear` or open another session. A long session gets expensive: each step reads the whole context again.
 - **Effort:** `medium` fits work with a clear scope. Raise it to `high` with `/effort high` when the change touches a hook, a permission, a merge or security, or to debug a hard failure. For a single hard step, write `ultrathink` in the prompt.
-- **Session name:** `/prompt <file>` names the session after the project, numbered (`billing-api-1`, `billing-api-2`...), from the request's `**Project:**` line: the number is one more than the highest among the open sessions of that project. Without `/prompt`, Claude Code picks a title on its own; `/rename <name>` changes it.
+- **Session name:** `/request <file>` names the session after the project, numbered (`billing-api-1`, `billing-api-2`...), from the request's `**Project:**` line: the number is one more than the highest among the open sessions of that project. Without `/request`, Claude Code picks a title on its own; `/rename <name>` changes it.
 - **Language:** Claude replies in the language you write in.
 
 ## The registry and updating
@@ -86,17 +86,17 @@ fix the broken link in the README of my-project
 
 | Way | How |
 | --- | --- |
-| From loose ideas | `/draft-prompt I want a monthly report of...`; Claude asks only what blocks, marks the rest as "assumed decision" and saves it in `custom/prompts/` |
-| Yourself | copy `templates/request.md` to `tmp/prompt.md` and fill it in |
+| From loose ideas | `/draft-request I want a monthly report of...`; Claude asks only what blocks, marks the rest as "assumed decision" and saves it in `custom/requests/` |
+| Yourself | copy `templates/request.md` to `tmp/request.md` and fill it in |
 
-Then `/prompt <file>` reads `custom/prompts/<file>`; `/prompt` alone reads `tmp/prompt.md`.
+Then `/request <file>` reads `custom/requests/<file>`; `/request` alone reads `tmp/request.md`.
 
-- The requests of `/draft-prompt` live in `custom/prompts/`, inside the custom layer, a git repository of its own: the history of the requests is versioned there.
-- A delivered request moves to `custom/prompts/archive/`. What is at the root of `custom/prompts/` still has to run.
-- `/draft-prompt` commits and pushes the request it created, at every version. The rest (archiving the delivered request, the resume request of a wave) goes into the wave's checkpoint ([Waves](#waves-checkpoint-merge-and-resume)).
+- The requests of `/draft-request` live in `custom/requests/`, inside the custom layer, a git repository of its own: the history of the requests is versioned there.
+- A request goes through three folders: pending at the root of `custom/requests/` (state `idea` or `ready`); `custom/requests/qa/<project>/` once `/merge` took it into `developer`, with an "Execution" block of what was done; `custom/requests/done/<project>/` once `/merge --main` released it, after validating it against the code. An idea is a request in state `idea`; there is no backlog.
+- `/draft-request` commits and pushes the request it created, at every version; `/merge` commits and pushes the moves to qa and done, and a wave its resume point ([Waves](#waves-checkpoint-merge-and-resume)).
 - `aiwp new` sets up `custom/`: it clones the repository whose URL you give (an empty one gets a skeleton), or starts a local one. If the folder is missing later, the session says so at the start, and `bash scripts/setup-claude.sh --custom-repo <url>` in a terminal clones it.
 
-The written request is as large as what you asked for. `/draft-prompt` picks one of three sizes before writing, and says which one:
+The written request is as large as what you asked for. `/draft-request` picks one of three sizes before writing, and says which one:
 
 | Size | When | What comes out | Ceiling |
 | --- | --- | --- | --- |
@@ -125,7 +125,7 @@ What to expect:
 ## Where the work happens
 
 - **A question or reading:** Claude answers; nothing is opened.
-- **A change to a project or a POC:** Claude opens a clone in `tmp/work/<date>-<subject>/<repo>/` (`bash scripts/aiwp-cmds.sh open`), says the path and works only there. In the clone everything is allowed: commit, rebase, reset, delete, start Docker. Each commit goes to the remote by itself, after a secret scan of the commits that leave; a commit with a secret or a `.env` stays in the clone.
+- **A change to a project or a POC:** Claude opens a clone in `tmp/work/<date>-<subject>/<clone>/` (`<clone>`: the repo's path relative to `projects/`, each `/` written as `--`) (`bash scripts/aiwp-cmds.sh open`), says the path and works only there. In the clone everything is allowed: commit, rebase, reset, delete, start Docker. Each commit goes to the remote by itself, after a secret scan of the commits that leave; a commit with a secret or a `.env` stays in the clone.
 - **Taking it to the base:** `/merge [<work>/<clone>]`; with no argument, the clone of this session. `/merge` merges `developer` into the clone and writes the version of the project's `CHANGELOG.md` (`## [X.Y.Z] - Unreleased`; the bump rules are in `rules/docs.md`) before the gate. The gate brings `developer` up to date, runs the full suite and the complete `validate.sh`, scans every incoming commit for secrets, writes the audit of what leaves the base (files deleted or renamed away, tests removed or disabled, destructive SQL, infra, dependencies) and asks for a review against the request. You are asked only about what the request does not explain. Then `developer` moves by fast-forward to exactly the commit that passed, and the clone can be closed (`aiwp-cmds.sh close`).
 - **`projects/` always stays on `developer`.** Nobody edits there; only the gate moves the base.
 
@@ -136,8 +136,8 @@ A wave is each step of a plan in steps (the request's "Steps and effort" table).
 - **A mature part goes to the base at once**, through the gate, without waiting for the end of the wave. A base that publishes to production: the gate asks before merging. A migration branch also waits for your order.
 - **When the wave closes**, Claude:
   1. makes the checkpoint: a commit in the clone, which goes to the remote by itself (`aiwp-cmds.sh status` shows `not-pushed=0`);
-  2. writes the resume request in `custom/prompts/`, in the format of `templates/request.md`: where it stopped (the work, the clone, the branch and the sha), decisions taken, open items and the next steps with their effort. The request that was running moves to `custom/prompts/archive/`;
-  3. ends the reply with a highlighted board: what was done, what was verified, what is left and the path of the resume request. After the board the session stops; the next wave starts in a new session, with `/prompt <file>`.
+  2. appends to the request that was running, in `custom/requests/`, where it stopped (the work, the clone, the branch and the sha), decisions taken, open items and the next steps with their effort; the request stays pending;
+  3. ends the reply with a highlighted board: what was done, what was verified, what is left and the path of the request to resume. After the board the session stops; the next wave starts in a new session, with `/request <file>`.
 - The session does not end its reply with a commit missing from the remote: a hook makes it try again or say why it could not.
 
 Full rule: `rules/git.md`, sections "Gate" and "Waves".
@@ -150,7 +150,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | --- | --- |
 | A gate with something the request does not explain, destruction outside the machine, or a base that publishes to production | one question, in one round, before merging |
 | Deleting a database: `docker volume rm`, `docker compose down -v`, `DROP`/`TRUNCATE`, deleting a `.data/` folder | Claude says what goes, and the hook asks for your confirmation |
-| `aiwp-cmds.sh release` (`main` moves, and the `vX.Y.Z` tag is pushed), run by `/merge --main <repo>` | confirmation, and only at your request |
+| `aiwp-cmds.sh release` (`main` moves, and the `vX.Y.Z` tag is pushed), run by `/merge --main <project>` | confirmation, and only at your request |
 | `aiwp-cmds.sh apply --apply` (Terraform in the cloud) | confirmation of the plan shown, and only at your request |
 | `aiwp-cmds.sh close --discard` (deleting work not merged) | confirmation |
 | A git write in `projects/` or in the core, Terraform outside `apply`, `git push --no-verify` | refused by the hook, with the right way |
@@ -161,13 +161,13 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 
 | Command | Does |
 | --- | --- |
-| `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to `developer`, through the gate, writing the `CHANGELOG.md` |
-| `/merge --main <repo>` | The release: a release clone `fix/release-vX-Y-Z`, the full check, the final review (what enters and what leaves, then general), fixes, the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
+| `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to `developer`, through the gate, writing the `CHANGELOG.md` and moving the request to `custom/requests/qa/<project>/` with what was done |
+| `/merge --main <project> [instructions]` | The release of the project: every repo in it, each with its own version and tag, then the project version in its root repo; validates every request in `qa/<project>/` against the code (final review: what enters and what leaves, then general), asks per finding (fix now or a request), and warns of any conflict an instruction causes before acting |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
-| `/draft-prompt [ideas \| file]` | Builds a functional request from ideas |
-| `/prompt [name \| path]` | Runs the request written in a file |
+| `/draft-request [ideas \| file]` | Builds a functional request from ideas |
+| `/request [name \| path]` | Runs the request written in a file |
 | `/pilot [auto\|manual]` | Shows or changes who runs the manual tests |
 | `/local-env [folder]` | Creates or completes a filled `.env` without showing values (`custom/env/<name>.env` for `docker/`, `docker/sonar/` and a tool) |
 | `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
@@ -205,7 +205,7 @@ In both modes, unit tests, coverage, lint and the secret scan are Claude's.
 
 - Each project is an independent git repository in `projects/`, never part of the core. The list is in `custom/projects.md`.
 - **Creating:** ask ("create the project X in projects/client-y"). Claude uses `scripts/init-repo.sh`. The folder of a new project is your decision; if you do not say it, Claude asks.
-- **Branches:** the checkout in `projects/` stays on `developer`; the work happens in a clone under `tmp/work/`, on a branch that leaves it and comes back through the gate. `main` moves only when you ask for the release (`/merge --main <repo>`, in a release clone `fix/release-vX-Y-Z`, ending in `aiwp-cmds.sh release <repo> --tag vX.Y.Z`): a fast-forward to `developer` and the version tag. Terraform applies only from `main`, with `aiwp-cmds.sh apply`, at your request and with the plan confirmed.
+- **Branches:** the checkout in `projects/` stays on `developer`; the work happens in a clone under `tmp/work/`, on a branch that leaves it and comes back through the gate. `main` moves only when you ask for the release (`/merge --main <project>`, in a release clone `fix/release-vX-Y-Z`, ending in `aiwp-cmds.sh release <repo> --tag vX.Y.Z`): a fast-forward to `developer` and the version tag. Terraform applies only from `main`, with `aiwp-cmds.sh apply`, at your request and with the plan confirmed.
 - **Local Docker:** `aiwp-cmds.sh up` publishes and first tags the images it will replace; `aiwp-cmds.sh rollback` goes back to them.
 - **Workspace projects:** the first line of each project's `README.md` (and of each POC folder's) is a marker with the workspace version it was last normalized with: `<!-- AI-WORKSPACE-PROJECT 0.1.0 -->`. `bash scripts/aiwp-project-state.sh` shows the state of each one. When a message names a project without the marker, or one that a newer workspace version asks something of (`migrations/`), Claude says so and asks whether to run `/normalize-projects <project>`. Saying no never blocks the request; the warning comes back the next time you name the project. `aiwp-cmds.sh open` and the gate show the same warning.
 - **Bringing in an existing project:** `/normalize-projects --from <url | folder>` clones it into `projects/` (from a folder, its local branches come along and `origin` points to its real remote; uncommitted changes there are listed, since a clone does not carry them). A project cloned by hand or a POC moved into `custom/pocs/` is normalized the same way: `/normalize-projects <project>`.
@@ -214,7 +214,7 @@ In both modes, unit tests, coverage, lint and the secret scan are Claude's.
 - **Ports:** POCs and `docker/` stacks from 20000 up; tools and projects on their conventional port.
 - **Language:** English code is recommended in your projects, not required (`rules/rules.md` "Language").
 - **Infrastructure:** you do not size it. Without a number from you, it starts at the smallest size that runs the delivery (consumption plan, one node, one region) and ready to grow: the limits are Terraform variables, and the project's docs say which signal tells it is time to scale and how much the next step costs. If you have a real requirement (a volume, a deadline, a budget ceiling), say it in the request and it becomes a requirement. Before creating a resource that is billed, Claude gives the monthly estimate.
-- **Backlog:** ideas not yet turned into a request go to `custom/backlog/`, one item per file, from `templates/backlog-item.md`.
+- **Ideas:** an idea not yet ready is a request in `custom/requests/` in state `idea`, in the adjustment size of `templates/request.md` (What, Where, Done when, Effort).
 
 ## Several sessions at once
 
@@ -268,7 +268,7 @@ The checks live in `docker/compose.yaml`, with a fixed version and digest. A che
 | Validation tools | `docker/README.md` |
 | Decisions | `docs/decisions/` |
 | Lessons | `custom/docs/lessons.md` |
-| Written requests | `custom/prompts/` (in the custom layer) |
-| Backlog | `custom/backlog/` |
+| Written requests | `custom/requests/` (in the custom layer) |
+| Requests (pending, `qa/<project>/`, `done/<project>/`) | `custom/requests/` |
 | Company: cloud, visual identity, projects and ports | `custom/` (`custom/README.md`) |
 | Work clones | `tmp/work/<work>/` (outside git; `aiwp-cmds.sh status`) |
