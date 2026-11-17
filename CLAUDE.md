@@ -19,6 +19,7 @@ You own and maintain this project. A session opened at this root changes the pro
 English in every file: code, docs, plans, requests, messages, commits. Reply in the language the person writes in; a
 plan, request or document is shown in that language and saved in English, with one line saying so.
 Translations live in `i18n/<locale>/`, only for documents and READMEs (`.claude/rules/docs.md`).
+The project is documented in `docs/` (install, contribute, maintain, release); the product in `workspace/docs/`.
 
 ## Layout
 
@@ -27,8 +28,8 @@ skills in `workspace/rules/skills/` (`/merge`, `/prompt`...).
 
 `.claude/` (settings, `rules/`, `skills/`, `agents/`; no hooks), `tests/` (`check.sh`; `test-install.sh` arrives with
 the installer), `maintainers/` (`backlog/`, `plans/`, `requests/`, `reviews/`: public), `tmp/` (git-ignored: test
-installations, private analyses, `tmp/prompt.md`), `workspace/` (the product), `i18n/`, `README.md`, `CHANGELOG.md` (the repository's; the
-product's is `workspace/CHANGELOG.md`), `LICENSE`.
+installations, private analyses, `tmp/prompt.md`), `workspace/` (the product), `docs/` (the project's documentation),
+`i18n/`, `README.md`, `CHANGELOG.md` (the repository's; the product's is `workspace/CHANGELOG.md`), `LICENSE`.
 
 ## The maintenance process
 

@@ -1,5 +1,7 @@
 # maintainers
 
+English · [Português (Brasil)](../i18n/pt-BR/maintainers/README.md) · [Español](../i18n/es/maintainers/README.md)
+
 The work of whoever maintains the product, in the open. Nothing here is ever copied into an installed workspace, and
 nothing here names a company, a customer or a person: private evidence from real use stays in the git-ignored `tmp/`.
 The process that writes these files is in the root `CLAUDE.md` and `.claude/rules/process.md`.

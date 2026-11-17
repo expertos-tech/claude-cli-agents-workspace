@@ -1,7 +1,7 @@
 # Changelog
 
 The history of this repository: the maintenance of the project (`CLAUDE.md`, `.claude/`, `tests/`, `maintainers/`,
-`i18n/`, this `README.md`) in detail, and each product change as a summary under "Product". The product's own
+`i18n/`, `docs/`, `README.md`) in detail, and each product change as a summary under "Product". The product's own
 changelog, with the detail, is [`workspace/CHANGELOG.md`](workspace/CHANGELOG.md).
 
 Only the product is released (tags `vX.Y.Z` and GitHub releases). The versions here are never released on their own:

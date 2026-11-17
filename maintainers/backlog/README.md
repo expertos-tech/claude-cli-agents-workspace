@@ -1,5 +1,7 @@
 # Backlog
 
+English · [Português (Brasil)](../../i18n/pt-BR/maintainers/backlog/README.md) · [Español](../../i18n/es/maintainers/backlog/README.md)
+
 The backlog of the workspace itself: ideas, defects, improvements and technical debts of the product in `workspace/`
 that have not become a request yet. One item per file. No rule loads this folder: Claude reads or changes an item only
 when you ask.

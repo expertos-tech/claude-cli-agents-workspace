@@ -1,5 +1,7 @@
 # Plans
 
+English · [Português (Brasil)](../../i18n/pt-BR/maintainers/plans/README.md) · [Español](../../i18n/es/maintainers/plans/README.md)
+
 The approved designs behind the requests in `maintainers/requests/`. A plan says what to build and why; its request
 says what must be true when it is done. Read the plan before running its request.
 

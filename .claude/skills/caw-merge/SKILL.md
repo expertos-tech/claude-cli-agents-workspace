@@ -20,7 +20,7 @@ types of what enters each one, and a fix of something that entered the same `Unr
 - **Product**, `workspace/CHANGELOG.md`: only a change to `workspace/` or `install.sh`, in detail, for someone who uses
   the workspace, with what they must do after updating, if anything. Only the product is released.
 - **Repository**, `CHANGELOG.md` at the root: every change. A change of the maintenance (`CLAUDE.md`, `.claude/`,
-  `tests/`, `maintainers/`, `i18n/`, the root `README.md`) in detail, under its type; a product change as one summary
+  `tests/`, `maintainers/`, `i18n/`, `docs/`, the root `README.md`) in detail, under its type; a product change as one summary
   line of the feature under `### Product`, pointing to the product changelog. Its versions are never released on
   their own: a section is dated by the product release that ships it ("Release" step 4).
 
