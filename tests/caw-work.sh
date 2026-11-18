@@ -102,7 +102,8 @@ part of any repository). They call this script by the absolute path it had when 
                              destination, an absolute path (no named remote, no URL) to a folder inside the clone's
                              own tmp/, links resolved (the throwaway repository of tests/test-install.sh), any
                              branch passes, developer and main included; a tag, a ref outside refs/heads/ and a force
-                             push stay refused there too, and the scan below still runs. Then it scans what
+                             push stay refused there too, and the scan below still runs, with the commits origin
+                             already has counted as sent (scanned when they left). Then it scans what
                              leaves, the commits the remote does not have (git ls-remote): every version of a file
                              they add or change, the paths of those files, their messages, and their author and
                              committer names and e-mails, against the terms list (tests/lib/terms.sh, the
@@ -817,12 +818,15 @@ accept_terms() {
 }
 
 # Scans what pushing <sha> to <remote> sends: the commits of <sha> the remote does not have (git ls-remote, never the
-# tracking refs), against the terms list less the accepted terms (terms_active). With <accept> 1, the terms that match
+# tracking refs), against the terms list less the accepted terms (terms_active). With <also> (a remote name, for a
+# scratch destination: origin), the commits that remote has count as already sent too, read the same way: they were
+# scanned when they left; that remote unreadable only widens the scan. With <accept> 1, the terms that match
 # are recorded as accepted (accept_terms) and it may leave. Returns 0 when it may leave (no match, only accepted terms,
 # no terms list: SKIP), 1 when refused (AIWP_TERMS_FILE naming no file, the remote unreadable, the scan failed, the
 # accepted terms not recorded), 3 when a company term would leave: the WARNING is printed, after the matching lines.
 scan_leaving() {
-  local clone="$1" remote="$2" local_sha="$3" accept="${4:-0}" list patterns remote_list known=() sha rc=0 p matched=""
+  local clone="$1" remote="$2" local_sha="$3" accept="${4:-0}" also="${5:-}" list patterns remote_list known=() sha rc=0
+  local p matched=""
   list="$(terms_list "$root")" || {
     echo "caw-work: refused: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2
     return 1
@@ -841,6 +845,13 @@ scan_leaving() {
     echo "caw-work: refused: the remote cannot be read to know what is already there" >&2
     return 1
   }
+  if [ -n "$also" ]; then
+    if sha="$(with_timeout 60 git -C "$clone" ls-remote "$also" 'refs/heads/*' 2>/dev/null)"; then
+      remote_list+=$'\n'"$sha"
+    else
+      echo "caw-work: $also cannot be read: the terms scan covers every commit this push sends" >&2
+    fi
+  fi
   while read -r sha _; do
     [ -n "$sha" ] && git -C "$clone" cat-file -e "$sha^{commit}" 2>/dev/null && known+=("$sha")
   done <<<"$remote_list"
@@ -926,7 +937,11 @@ cmd_prepush() {
   for i in ${lines[@]+"${!lines[@]}"}; do
     read -r _ local_sha _ <<<"${lines[$i]}"
     [[ "$local_sha" =~ $zero_re ]] && continue
-    scan_leaving "$clone" "$remote" "$local_sha" || return 1
+    if [ "$scratch" -eq 1 ]; then
+      scan_leaving "$clone" "$remote" "$local_sha" 0 origin || return 1
+    else
+      scan_leaving "$clone" "$remote" "$local_sha" || return 1
+    fi
   done
   return 0
 }
