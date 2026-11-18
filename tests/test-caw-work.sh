@@ -987,15 +987,17 @@ test_accept_terms_keeps_the_hard_refusals() {
   has "never pushes a tag"
 }
 
-# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work suite are stubs (the gate
-# copies the terms list it gets to GATE_TERMS_OUT).
+# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work and caw-layers suites are
+# stubs (the gate copies the terms list it gets to GATE_TERMS_OUT).
 test_check_repo_terms_skips_accepted_terms() {
   local k="$BASE/check.$CURRENT" list="$BASE/terms.$CURRENT.txt"
   rm -rf "$k"
   mkdir -p "$k/tests/lib" "$k/workspace/scripts"
   cp "$HERE/check.sh" "$k/tests/check.sh"
   cp "$HERE/lib/terms.sh" "$k/tests/lib/terms.sh"
+  cp "$HERE/lib/layers.sh" "$k/tests/lib/layers.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-work.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-layers.sh"
   cat >"$k/workspace/scripts/check-workspace.sh" <<'STUB'
 #!/usr/bin/env bash
 cp "$AIWP_TERMS_FILE" "$GATE_TERMS_OUT"

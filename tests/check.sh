@@ -17,7 +17,9 @@ Runs the gate of the repository, from any cwd:
      exempt here: no history, no changelog. No terms list prints SKIP. A line the owner kept after the warning of a
      work clone's push (bash tests/caw-work.sh push <work> --accept-terms, recorded in <terms list>.accepted) is
      skipped: PASS says how many matching lines it skipped, never the term.
-  3. caw-layers: every maintenance skill with a product counterpart is a layer over it (CLAUDE.md "Layout").
+  3. caw-layers: every maintenance skill (.claude/skills/caw-<name>) and rule (.claude/rules/<name>.md) with a
+     product counterpart is a layer over it, with its three sections (CLAUDE.md "Layout"; tests/lib/layers.sh);
+     caw-layers-tests: tests/test-caw-layers.sh, the scenarios of that check on throwaway trees.
   4. caw-work: tests/test-caw-work.sh, the scenarios of tests/caw-work.sh (work clones under tmp/work/ and their
      git hooks), in a throwaway repository with a local remote; it never touches this repository.
 
@@ -48,45 +50,9 @@ gate="$repo/workspace/scripts/check-workspace.sh"
 [ -r "$repo/tests/lib/terms.sh" ] || { echo "error: tests/lib/terms.sh not found" >&2; exit 2; }
 # shellcheck source=lib/terms.sh
 . "$repo/tests/lib/terms.sh"
-
-# Checks the maintenance skills that are layers over a product skill (CLAUDE.md "Layout"). A layer is any
-# .claude/skills/caw-*/SKILL.md whose body starts with "@<path>", whatever its name: the path must be an existing
-# workspace/rules/skills/<skill>/SKILL.md, and the body must hold the sections "Ignore from the product skill",
-# "Mapping" and "CAW rules". A caw-<name> next to a product skill workspace/rules/skills/<name>/ must be a layer over
-# that one: its "@" line names it, and a missing "@" line fails.
-# Prints one line per problem; returns 1 when there is any.
-check_caw_layers() {
-  local dir name product body first target bad=0 section
-  for dir in "$repo"/.claude/skills/caw-*/; do
-    [ -f "$dir/SKILL.md" ] || continue
-    name="$(basename "$dir")"
-    product="workspace/rules/skills/${name#caw-}/SKILL.md"
-    body="$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$dir/SKILL.md")"
-    first="$(printf '%s\n' "$body" | grep -m1 -v '^[[:space:]]*$' || true)"
-    if [ "${first:0:1}" != "@" ]; then
-      if [ -f "$repo/$product" ]; then
-        echo "  $name: the first line of its body must be @$product"
-        bad=1
-      fi
-      continue
-    fi
-    target="${first#@}"
-    if [ -f "$repo/$product" ] && [ "$target" != "$product" ]; then
-      echo "  $name: the first line of its body must be @$product"
-      bad=1
-    elif [[ ! "$target" =~ ^workspace/rules/skills/[^/]+/SKILL\.md$ ]] || [[ "$target" == *..* ]]; then
-      echo "  $name: the target of its @ line is not a product skill: ${target:-<empty>}"
-      bad=1
-    elif [ ! -f "$repo/$target" ]; then
-      echo "  $name: the target of its @ line does not exist: $target"
-      bad=1
-    fi
-    for section in "## Ignore from the product skill" "## Mapping" "## CAW rules"; do
-      printf '%s\n' "$body" | grep -qxF "$section" || { echo "  $name: missing section \"$section\""; bad=1; }
-    done
-  done
-  return "$bad"
-}
+[ -r "$repo/tests/lib/layers.sh" ] || { echo "error: tests/lib/layers.sh not found" >&2; exit 2; }
+# shellcheck source=lib/layers.sh
+. "$repo/tests/lib/layers.sh"
 
 list="$(terms_list "$repo")" || { echo "error: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2; exit 1; }
 failed=0
@@ -112,10 +78,17 @@ rc=$?
 [ "$rc" -eq 0 ] || failed=1
 
 echo "== repository"
-if check_caw_layers; then
+if check_caw_layers "$repo"; then
   echo "PASS caw-layers"
 else
-  echo "FAIL caw-layers: a caw-* layer must point at an existing product skill and hold its three sections (CLAUDE.md)"
+  echo "FAIL caw-layers: a skill or rule layer must point at its product file and hold its three sections (CLAUDE.md)"
+  failed=1
+fi
+if layers_out="$(bash "$repo/tests/test-caw-layers.sh" 2>&1)"; then
+  echo "PASS caw-layers-tests"
+else
+  printf '%s\n' "$layers_out"
+  echo "FAIL caw-layers-tests: the scenarios of tests/lib/layers.sh above failed (bash tests/test-caw-layers.sh)"
   failed=1
 fi
 if caw_out="$(bash "$repo/tests/test-caw-work.sh" 2>&1)"; then
