@@ -1,7 +1,8 @@
 # shellcheck shell=bash
-# Checks of the maintenance layers over the product (CLAUDE.md "Layout"), shared by tests/check.sh and
-# tests/test-caw-layers.sh. Sourced, never run. Every function takes the repository root as its first argument and
-# reads only; it prints one line per problem, indented two spaces and naming the file, and returns 1 when there is any.
+# Checks of the maintenance layers over the product (CLAUDE.md "Layout"), the session index and its hook included,
+# shared by tests/check.sh and tests/test-caw-layers.sh. Sourced, never run. Every function takes the repository root
+# as its first argument and reads only; it prints one line per problem, indented two spaces and naming the file, and
+# returns 1 when there is any.
 
 # Prints the body of the markdown file <file>: the file without its YAML frontmatter (a "---" first line up to the
 # next "---" line), so the first line of a body is never a frontmatter line.
@@ -95,10 +96,75 @@ check_rule_layers() {
   return "$bad"
 }
 
-# Checks every maintenance layer of <repo>: the skills, then the rules. Returns 1 when either has a problem.
+# Checks the session index of <repo>, .claude/session-index.md, a layer over the product's index: it must exist, the
+# first line of its body must be "@workspace/AGENTS.md", and it must hold the sections "Ignore from the product
+# index", "Mapping" and "CAW index" (tests/caw-session-index.py reads them).
+check_session_index() {
+  local repo="$1" label=".claude/session-index.md" body first bad=0
+  if [ ! -f "$repo/$label" ]; then
+    echo "  $label: missing: the SessionStart hook tests/caw-session-index.py builds the index from it"
+    return 1
+  fi
+  body="$(layer_body "$repo/$label")"
+  first="$(printf '%s\n' "$body" | layer_first_line)"
+  if [ "$first" != "@workspace/AGENTS.md" ]; then
+    echo "  $label: the first line of its body must be @workspace/AGENTS.md: ${first:-<empty>}"
+    bad=1
+  fi
+  layer_sections "$label" "$body" "## Ignore from the product index" "## Mapping" "## CAW index" || bad=1
+  return "$bad"
+}
+
+# The command of the SessionStart hook that builds the session index, exactly as .claude/settings.json registers it.
+# shellcheck disable=SC2016
+CAW_SESSION_HOOK='python3 -I -B "$CLAUDE_PROJECT_DIR/tests/caw-session-index.py"'
+
+# Checks that .claude/settings.json of <repo> registers the session index: a SessionStart entry whose matcher covers
+# startup, resume, clear and compact (no matcher, "" or "*" cover them all) runs the command $CAW_SESSION_HOOK.
+check_session_hook() {
+  local repo="$1" label=".claude/settings.json" msg
+  if [ ! -f "$repo/$label" ]; then
+    echo "  $label: missing: it must register the SessionStart hook $CAW_SESSION_HOOK"
+    return 1
+  fi
+  msg="$(python3 -I -B -c '
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        settings = json.load(handle)
+except (OSError, ValueError) as error:
+    print("not valid JSON (" + type(error).__name__ + ")")
+    sys.exit(1)
+entries = settings.get("hooks", {}).get("SessionStart", []) if isinstance(settings, dict) else []
+found = []
+for entry in entries if isinstance(entries, list) else []:
+    if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+        continue
+    for hook in entry["hooks"]:
+        if isinstance(hook, dict) and hook.get("type") == "command" and hook.get("command") == sys.argv[2]:
+            found.append(entry.get("matcher", ""))
+if not found:
+    print("no SessionStart hook runs " + sys.argv[2])
+    sys.exit(1)
+needed = {"startup", "resume", "clear", "compact"}
+for matcher in found:
+    if matcher in ("", "*") or (isinstance(matcher, str) and needed <= set(matcher.split("|"))):
+        sys.exit(0)
+print("the SessionStart hook of tests/caw-session-index.py must match startup|resume|clear|compact: " + str(found[0]))
+sys.exit(1)
+' "$repo/$label" "$CAW_SESSION_HOOK" 2>&1)" && return 0
+  echo "  $label: ${msg:-the check of the SessionStart hook failed}"
+  return 1
+}
+
+# Checks every maintenance layer of <repo>: the skills, the rules, the session index and its hook. Returns 1 when
+# any has a problem.
 check_caw_layers() {
   local repo="$1" bad=0
   check_skill_layers "$repo" || bad=1
   check_rule_layers "$repo" || bad=1
+  check_session_index "$repo" || bad=1
+  check_session_hook "$repo" || bad=1
   return "$bad"
 }

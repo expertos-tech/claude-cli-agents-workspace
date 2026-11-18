@@ -987,8 +987,8 @@ test_accept_terms_keeps_the_hard_refusals() {
   has "never pushes a tag"
 }
 
-# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work and caw-layers suites are
-# stubs (the gate copies the terms list it gets to GATE_TERMS_OUT).
+# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work, caw-layers and
+# caw-session-index suites are stubs (the gate copies the terms list it gets to GATE_TERMS_OUT).
 test_check_repo_terms_skips_accepted_terms() {
   local k="$BASE/check.$CURRENT" list="$BASE/terms.$CURRENT.txt"
   rm -rf "$k"
@@ -998,6 +998,15 @@ test_check_repo_terms_skips_accepted_terms() {
   cp "$HERE/lib/layers.sh" "$k/tests/lib/layers.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-work.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-layers.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-session-index.sh"
+  # The session index and its hook, as caw-layers requires them (tests/lib/layers.sh).
+  mkdir -p "$k/.claude"
+  printf '@workspace/AGENTS.md\n\n## Ignore from the product index\n\n## Mapping\n\n## CAW index\n' \
+    >"$k/.claude/session-index.md"
+  cat >"$k/.claude/settings.json" <<'JSON'
+{"hooks": {"SessionStart": [{"matcher": "startup|resume|clear|compact", "hooks": [
+  {"type": "command", "command": "python3 -I -B \"$CLAUDE_PROJECT_DIR/tests/caw-session-index.py\"", "timeout": 10}]}]}}
+JSON
   cat >"$k/workspace/scripts/check-workspace.sh" <<'STUB'
 #!/usr/bin/env bash
 cp "$AIWP_TERMS_FILE" "$GATE_TERMS_OUT"

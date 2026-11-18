@@ -60,6 +60,13 @@ no copy to update. The product file is read rather than imported: `claudeMdExclu
 `workspace/`, and a file with `paths:` does not load through an import. `tests/check.sh` fails on a rule with a product
 counterpart that is not a layer, a layer whose product rule is gone, and a layer that lacks a section.
 
+When to read each rule is the session index. The product keeps its own index in `workspace/AGENTS.md` "Reference"
+("read `rules/git.md` before a commit..."), loaded in every session of an installed workspace. Here one SessionStart
+hook, `tests/caw-session-index.py`, runs at the start of a session and after each compaction: it reads that section,
+applies `.claude/session-index.md` (the rules the maintenance leaves out, such as `quality.md`; the words that map,
+such as the gate to `/caw-merge`; the rows only this repository has) and gives the session a short list, one line per
+rule, with the task before which to read it. A row the product index gains reaches the maintenance with no change here.
+
 ## Skills
 
 The maintenance skills carry the prefix `caw-`, so they do not collide with the product's skills of the same purpose

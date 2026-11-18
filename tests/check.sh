@@ -19,7 +19,11 @@ Runs the gate of the repository, from any cwd:
      skipped: PASS says how many matching lines it skipped, never the term.
   3. caw-layers: every maintenance skill (.claude/skills/caw-<name>) and rule (.claude/rules/<name>.md) with a
      product counterpart is a layer over it, with its three sections (CLAUDE.md "Layout"; tests/lib/layers.sh);
-     caw-layers-tests: tests/test-caw-layers.sh, the scenarios of that check on throwaway trees.
+     the session index .claude/session-index.md is a layer over workspace/AGENTS.md with its three sections, and
+     .claude/settings.json registers its SessionStart hook tests/caw-session-index.py;
+     caw-layers-tests: tests/test-caw-layers.sh, the scenarios of that check on throwaway trees;
+     caw-session-index: tests/test-caw-session-index.sh, the scenarios of the SessionStart hook
+     tests/caw-session-index.py on this tree (read only) and on throwaway copies.
   4. caw-work: tests/test-caw-work.sh, the scenarios of tests/caw-work.sh (work clones under tmp/work/ and their
      git hooks), in a throwaway repository with a local remote; it never touches this repository.
 
@@ -81,7 +85,8 @@ echo "== repository"
 if check_caw_layers "$repo"; then
   echo "PASS caw-layers"
 else
-  echo "FAIL caw-layers: a skill or rule layer must point at its product file and hold its three sections (CLAUDE.md)"
+  echo "FAIL caw-layers: a layer (skill, rule, session index) must point at its product file and hold its three" \
+    "sections, and the settings must register the session index hook (CLAUDE.md, tests/lib/layers.sh)"
   failed=1
 fi
 if layers_out="$(bash "$repo/tests/test-caw-layers.sh" 2>&1)"; then
@@ -89,6 +94,14 @@ if layers_out="$(bash "$repo/tests/test-caw-layers.sh" 2>&1)"; then
 else
   printf '%s\n' "$layers_out"
   echo "FAIL caw-layers-tests: the scenarios of tests/lib/layers.sh above failed (bash tests/test-caw-layers.sh)"
+  failed=1
+fi
+if index_out="$(bash "$repo/tests/test-caw-session-index.sh" 2>&1)"; then
+  echo "PASS caw-session-index"
+else
+  printf '%s\n' "$index_out"
+  echo "FAIL caw-session-index: the scenarios of tests/caw-session-index.py above failed" \
+    "(bash tests/test-caw-session-index.sh)"
   failed=1
 fi
 if caw_out="$(bash "$repo/tests/test-caw-work.sh" 2>&1)"; then

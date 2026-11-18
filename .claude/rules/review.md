@@ -1,7 +1,8 @@
 @workspace/rules/review.md
 
-Read that file in full before the first action it governs, and follow it with the sections below over it: they win
-where they differ. Its `paths:` do not limit it here: it applies wherever this file applies.
+Read that file in full before the task the session index names for it (`.claude/session-index.md`, given at the
+session start), and follow it with the sections below over it: they win where they differ. Its `paths:` do not
+limit it here.
 
 ---
 

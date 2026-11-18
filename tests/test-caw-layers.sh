@@ -12,7 +12,8 @@ Usage: tests/test-caw-layers.sh [--only <test_name>] [--help]
 
 Runs the scenarios of tests/lib/layers.sh: valid skill and rule layers pass; a missing target, a removed section, a
 product counterpart with no pointer, a pointer naming another rule fail; a rule with no counterpart passes; a YAML
-frontmatter is skipped. Prints one FAIL line per failed assertion and "ok: <n> tests" at the end.
+frontmatter is skipped. The session index .claude/session-index.md must exist, point at @workspace/AGENTS.md and hold
+its three sections; .claude/settings.json must register the SessionStart hook tests/caw-session-index.py. Prints one FAIL line per failed assertion and "ok: <n> tests" at the end.
 
 Exit codes: 0 every test passed; 1 a test failed; 2 usage error.
 
@@ -48,11 +49,39 @@ RC=0
 CURRENT=""
 R=""
 
-# Creates a fresh empty repository tree for the current test and sets R to it.
+# Creates a fresh repository tree for the current test and sets R to it: no skill or rule, a valid session index and
+# the settings that register its hook.
 fresh() {
   R="$BASE/$CURRENT"
   rm -rf "$R"
   mkdir -p "$R/.claude/rules" "$R/.claude/skills" "$R/workspace/rules/skills"
+  session_index
+  settings_hook
+}
+
+# Writes .claude/session-index.md of R with the pointer <target> (default @workspace/AGENTS.md) and the three
+# sections, less the one named in <drop> if any.
+session_index() {
+  local target="${1:-@workspace/AGENTS.md}" drop="${2:-}" section
+  {
+    printf '%s\n\nThe session index, built by tests/caw-session-index.py.\n\n---\n\n' "$target"
+    for section in "## Ignore from the product index" "## Mapping" "## CAW index"; do
+      [ "$section" = "$drop" ] || printf '%s\n\n- a line\n\n' "$section"
+    done
+  } >"$R/.claude/session-index.md"
+}
+
+# Writes .claude/settings.json of R with a SessionStart entry of matcher <matcher> (default
+# startup|resume|clear|compact) running <command> (default the command of the session index).
+settings_hook() {
+  local matcher="${1:-startup|resume|clear|compact}" command="${2:-$CAW_SESSION_HOOK}"
+  python3 -I -B -c '
+import json, sys
+hook = {"type": "command", "command": sys.argv[2], "timeout": 10}
+settings = {"hooks": {"SessionStart": [{"matcher": sys.argv[1], "hooks": [hook]}]}, "permissions": {"allow": []}}
+with open(sys.argv[3], "w", encoding="utf-8") as handle:
+    json.dump(settings, handle, indent=2)
+' "$matcher" "$command" "$R/.claude/settings.json"
 }
 
 # Writes the product rule workspace/rules/<name>.md of R.
@@ -237,6 +266,80 @@ test_skill_with_no_counterpart_passes() {
   run
   status_is 0
   silent
+}
+
+test_session_index_valid() {
+  fresh
+  run
+  status_is 0
+  silent
+}
+
+test_session_index_missing() {
+  fresh
+  rm "$R/.claude/session-index.md"
+  run
+  status_is 1
+  has "  .claude/session-index.md: missing"
+}
+
+test_session_index_missing_each_section() {
+  local section
+  for section in "## Ignore from the product index" "## Mapping" "## CAW index"; do
+    fresh
+    session_index "" "$section"
+    run
+    status_is 1
+    has "  .claude/session-index.md: missing section \"$section\""
+  done
+}
+
+test_session_index_wrong_pointer() {
+  fresh
+  session_index "@workspace/CLAUDE.md"
+  run
+  status_is 1
+  has "  .claude/session-index.md: the first line of its body must be @workspace/AGENTS.md: @workspace/CLAUDE.md"
+}
+
+test_settings_without_session_hook() {
+  fresh
+  printf '{"permissions": {"allow": []}}\n' >"$R/.claude/settings.json"
+  run
+  status_is 1
+  has "  .claude/settings.json: no SessionStart hook runs $CAW_SESSION_HOOK"
+  fresh
+  # shellcheck disable=SC2016 # the variable is expanded by Claude Code, never here
+  settings_hook "" 'python3 "$CLAUDE_PROJECT_DIR/tests/caw-session-index.py"'
+  run
+  status_is 1
+  has "  .claude/settings.json: no SessionStart hook runs"
+}
+
+test_settings_hook_matcher_without_compact() {
+  fresh
+  settings_hook "startup|resume"
+  run
+  status_is 1
+  has "must match startup|resume|clear|compact: startup|resume"
+  fresh
+  settings_hook "*"
+  run
+  status_is 0
+  silent
+}
+
+test_settings_missing_or_invalid() {
+  fresh
+  rm "$R/.claude/settings.json"
+  run
+  status_is 1
+  has "  .claude/settings.json: missing"
+  fresh
+  printf '{ not json\n' >"$R/.claude/settings.json"
+  run
+  status_is 1
+  has "  .claude/settings.json: not valid JSON"
 }
 
 test_usage() {
