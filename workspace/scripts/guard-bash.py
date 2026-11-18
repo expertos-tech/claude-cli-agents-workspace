@@ -2509,25 +2509,12 @@ def names_order_script(word, folder):
     return False
 
 
-# What runs text as code: a line that holds one may feed it what a reader printed (a pipe, $(...), <(...)).
-CODE_RUNNERS = SHELLS | {
-    'source', '.', 'eval', 'node', 'nodejs', 'deno', 'bun', 'perl', 'ruby', 'php', 'lua', 'Rscript', 'pwsh', 'tclsh',
-    'osascript',
-}  # fmt: skip
-
-
-def runs_code(argv):
-    """True when a command runs text as code: a shell, eval, source, or an interpreter (python3, node, perl...)."""
-    name = os.path.basename(argv[0])
-    return name in CODE_RUNNERS or name.startswith(('python', 'pypy'))
-
-
-def runs_order_script(entry, root, code_on_line=False):
+def runs_order_script(entry, root, alone=False):
     """True when a command names scripts/session-title.py, the hook that records the person's /merge, in a word, a
     redirection or interpreter code (also a wildcard or braces that match it) and may run, copy, move, link or write
     it: any command but a reader (python3 it, python3 < it, cp it, ln, vim). A reader (cat, less, ls, grep, wc) is let
-    through unless it writes its output to a file or the line also runs code that may read that output (cat it |
-    python3 -, python3 -c "$(cat it)"). git commands that read are left alone."""
+    through only when it is the one command of the line (alone: no pipe, no other command) and has no redirection,
+    so nothing can run or keep what it prints. git commands that read are left alone."""
     argv = entry['argv']
     name = os.path.basename(argv[0])
     parts = git_parts(argv) if name == 'git' else None
@@ -2538,19 +2525,17 @@ def runs_order_script(entry, root, code_on_line=False):
     pieces = [piece for word in words for piece in (word, word.partition('=')[2]) if piece]
     if not any(names_order_script(piece, folder) for piece in pieces):
         return False
-    if name not in READERS:
-        return True
-    return code_on_line or any(found[0] == 'write' for found in touches([':'], entry['redirects']))
+    return name not in READERS or not alone or bool(entry['redirects'])
 
 
-def protection_verdict(entry, root, code_on_line=False):
+def protection_verdict(entry, root, alone=False):
     """Returns ('deny', reason) for a command that gets around the person's merge order (BR-13): it changes the
     session's variables, writes .history/merge-orders/ or runs the hook that writes it; ('ask', reason) for one that
     deletes, moves or empties Grafana's data (BR-9), wherever it runs and whatever the rest of the line is; else
-    None. code_on_line: the line also runs code (a shell, an interpreter), which may read what a reader prints."""
+    None. alone: the command is the only one of the line."""
     if session_change(entry):
         return 'deny', SESSION_REASON
-    if runs_order_script(entry, root, code_on_line):
+    if runs_order_script(entry, root, alone):
         return 'deny', ORDERS_REASON
     if protected_hit(entry, root, MERGE_ORDERS, ORDERS_MARK, every_word=True):
         return 'deny', ORDERS_REASON
@@ -2670,32 +2655,46 @@ def pflag_operands(words, flags, values, interspersed=True):
     return operands
 
 
-# Database tools whose host a container of the group may point elsewhere, and how they name it.
-DATABASE_HOST_TOOLS = SQL_CLIENTS | {'dropdb', 'createdb', 'mysqladmin', 'pg_dump', 'pg_dumpall', 'pg_restore'}
-HOST_OPTIONS = ('-h', '-H', '-S', '--host', '--server')
-REMOTE_DATABASE = re.compile(r'@|host\s*=|://[^/]', re.I)
-
-
-def names_database_host(words):
-    """True when a database tool among the words names a host: -h, -H, -S, --host or --server in any spelling, or a
-    URI or conninfo with a user@host, host= or an authority (postgresql://prod/app)."""
-    if not any(os.path.basename(word) in DATABASE_HOST_TOOLS for word in words):
-        return False
-    for word in words:
-        option = word.partition('=')[0]
-        if option in HOST_OPTIONS or (not word.startswith('--') and word[:2] in HOST_OPTIONS):
-            return True
-        if REMOTE_DATABASE.search(word):
-            return True
-    return False
+# Database tools, which a container of the group may point at another host (an option, a URI, a variable).
+DATABASE_TOOLS = SQL_CLIENTS | {
+    'dropdb', 'createdb', 'mysqladmin', 'mysqldump', 'mariadb-dump', 'pg_dump', 'pg_dumpall', 'pg_restore', 'mongo',
+    'mongodump', 'mongorestore', 'redis-cli', 'cqlsh', 'clickhouse-client',
+}  # fmt: skip
+# Programs that run another command, or code, in the container: the command they run cannot be read here.
+CONTAINER_RUNNERS = SHELLS | set(WRAPPERS) | {'eval', 'source', '.', 'exec'}
 
 
 def inner_reaches_out(words):
     """True when the command a container of the group runs reaches a remote system: a program of NOT_APPROVED other
-    than a SQL client, a SQL client or dropdb that names a host, or a remote word (push, publish, deploy...)."""
-    if any(os.path.basename(word) in NOT_APPROVED - SQL_CLIENTS for word in words) or names_database_host(words):
+    than a SQL client, or a remote word (push, publish, deploy...)."""
+    if any(os.path.basename(word) in NOT_APPROVED - SQL_CLIENTS for word in words):
         return True
     return any(w.partition(':')[0] in REMOTE_WORDS or w.startswith('publish') for w in plain_words(words))
+
+
+def may_name_host(words):
+    """True when the arguments of a database tool may point it at a host, read strictly: a short option group that
+    holds h, H or S (-h, -Xh, -Bh, -S), a long option that starts with --h or --s (--host, --hos=, --server, --socket),
+    or a word with ://, @ or host=."""
+    for word in words:
+        if '://' in word or '@' in word or 'host=' in word.lower():
+            return True
+        if word.startswith('--') and word[2:3].lower() in ('h', 's'):
+            return True
+        if word.startswith('-') and not word.startswith('--') and set(word[1:]) & set('hHS'):
+            return True
+    return False
+
+
+def container_command_ok(words, env_given=False):
+    """True when the command docker compose exec runs in a container of the group can be judged: one program with
+    plain words (no shell, env, wrapper or VAR=value before it), that reaches no remote system; a database tool only
+    when exec passes it no environment (env_given) and its arguments name no host (may_name_host)."""
+    if not words or ASSIGNMENT.match(words[0]) or os.path.basename(words[0]) in CONTAINER_RUNNERS:
+        return False
+    if inner_reaches_out(words):
+        return False
+    return os.path.basename(words[0]) not in DATABASE_TOOLS or not (env_given or may_name_host(words[1:]))
 
 
 class DockerGroups:
@@ -2718,7 +2717,7 @@ class DockerGroups:
             launcher = entry['remote']
             if isinstance(launcher, dict):
                 own = self.clone(launcher)
-                self.known[key] = own if own and not inner_reaches_out(entry['argv']) else None
+                self.known[key] = own if own and container_command_ok(entry['argv']) else None
             else:
                 self.known[key] = self.judge(entry)
         return self.known[key]
@@ -2764,7 +2763,13 @@ class DockerGroups:
         sub, rest = args[i], args[i + 1 :]
         if sub == 'exec':
             operands = pflag_operands(rest, *EXEC_OPTIONS, interspersed=False)
-            return bool(operands) and not inner_reaches_out(operands[1:])
+            if not operands:
+                return False
+            options = rest[: len(rest) - len(operands)]
+            env_given = any(
+                w.startswith('--env') or (w.startswith('-') and not w.startswith('--') and 'e' in w) for w in options
+            )
+            return container_command_ok(operands[1:], env_given)
         if sub in ('down', 'up', 'build'):
             known = {'down': DOWN_OPTIONS, 'up': UP_OPTIONS, 'build': BUILD_OPTIONS}[sub]
             operands = pflag_operands(rest, *known)
@@ -2894,10 +2899,9 @@ def decide(data, root, run=subprocess.run):
     asks, asked, staging, created = [], set(), [], []
     core = CoreGuard(root, cwd, run, entries)
     docker = DockerGroups(root, run)
-    code = any('argv' in entry and runs_code(entry['argv']) for entry in entries)
     for entry in entries:
         verdict = None
-        guarded = None if 'reason' in entry else protection_verdict(entry, root, code)
+        guarded = None if 'reason' in entry else protection_verdict(entry, root, len(entries) == 1)
         if 'reason' in entry:
             verdict = ('ask', entry['reason']) if GUARDED_WORD.search(command) else None
         elif os.path.basename(entry['argv'][0]) == 'git':

@@ -40,6 +40,8 @@
 #                                                                              test_docker_group, test_protected_folders
 #  D32 exec of a SQL client that names a host -> ask; build --ssh -> not allowed; reading the hook -> silent;
 #      a --mount of Grafana's data (comma-separated) -> ask ................. test_docker_group, test_protected_folders
+#  D33 exec of a database tool with -e, a shell or a host spelling -> ask; the hook's reader in a pipe -> deny
+#                                                                              test_docker_group, test_protected_folders
 #  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask  test_real_docker
 set -uo pipefail
 
@@ -214,6 +216,10 @@ STUB
   has "a clone group spelled with one dash is another work's group: it asks" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group exec db psql -h prod.example.com -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
   has "a SQL client in the container that names a host asks" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group exec -e PGHOST=prod.example.com db psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
+  has "a database tool given the environment asks" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group exec db psql -Xh prod.example.com -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
+  has "a grouped host option asks" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group build --ssh default" "$clone" "$root" "$stub"
   silent "build with an option outside the allowlist prints nothing"
   hook_docker "docker compose -p ${group}--billing-api down -v" "$clone" "$root" "$stub"
@@ -252,7 +258,9 @@ test_protected_folders() {
   hook_in "cat scripts/session-title.py | python3 -" "$root" "$root"
   has "piping the hook into python3 is refused" '"permissionDecision": "deny"'
   hook_in "grep -n TODO scripts/*" "$root" "$root"
-  silent "reading the hook prints nothing"
+  silent "reading the hook alone prints nothing"
+  hook_in "cat scripts/session-title.py | tee /tmp/x.py" "$root" "$root"
+  has "a reader of the hook in a pipe is refused" '"permissionDecision": "deny"'
   hook_in "docker run --rm --mount type=bind,source=$root/tools/observability/.data,target=/d alpine rm -rf /d" "$root" "$root"
   has "a --mount of Grafana's data asks" '"permissionDecision": "ask"'
   # shellcheck disable=SC2016  # $PWD is text of the judged command line, not expanded here

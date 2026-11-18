@@ -33,8 +33,8 @@ mode (auto mode judges destruction); this hook holds only what the workspace nev
         code or a Docker mount (-v <it>:/d, --mount source=<it>,...) that names it; links resolved, from the folder
         the command runs in); and one that may run, copy, move, link or write scripts/session-title.py, the
         UserPromptSubmit hook that records the order, named in any word or redirection (a wildcard or braces that
-        match it too): any command but a reader; a reader (cat, less, ls, grep, wc) only when it writes its output to
-        a file or the line also runs a shell or an interpreter (cat it | python3 -, python3 -c "$(cat it)").
+        match it too): any command but a reader; a reader (cat, less, ls, grep, wc) too unless it is the one command
+        of the line, with no pipe and no redirection.
   ask   deleting a database: docker volume rm/prune, docker compose down -v / rm -v, docker system prune --volumes,
         docker rm -v; DROP or TRUNCATE given to a SQL client (psql, mysql, mariadb, sqlite3, sqlcmd, mongosh,
         duckdb); dropdb, mysqladmin drop, dotnet ef database drop, prisma migrate reset or db push --force-reset,
@@ -108,11 +108,13 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
           --wait-timeout, --force-recreate, --no-recreate, --remove-orphans, --no-deps, -t, --pull, --quiet-pull),
           down (-v, --volumes, --remove-orphans, -t), build (--no-cache, --pull, -q, --progress), each with service
           names, ps, logs, stop, start, restart, config, top, images, port, pause, unpause, or exec with only -T -i
-          -t -d -e -w -u --index (grouped short options read as docker does; a SQL client or dropdb it runs in the
-          container gets no question unless it names a host: -h, -H, -S, --host, user@host, host=, a URI with a
-          host) and nothing remote in the container; docker rm, rmi, image rm, volume rm
-          or inspect, network rm of resources that all carry the label com.docker.compose.project=<group> (docker
-          inspect, 5 s; Docker that does not answer, a resource with no label or of another group: today's rules).
+          -t -d -e -w -u --index (grouped short options read as docker does) running one program with plain words
+          (no shell, env, wrapper or VAR=x before it) that reaches no remote system. A database tool there (psql,
+          dropdb, mysql, pg_dump, mongosh...) gets no question, but only with no -e/--env on the exec, no short
+          option group holding h, H or S, no long option starting --h or --s, and no word with ://, @ or host=;
+          docker rm, rmi, image rm, volume rm or inspect, network rm of resources that all carry the label
+          com.docker.compose.project=<group> (docker inspect, 5 s; Docker that does not answer, a resource with no
+          label or of another group: today's rules).
           docker compose run, create, cp, attach, watch, an option outside these lists (build --ssh, --secret,
           --builder) and docker run are left to them.
         It stays silent when it cannot tell: a word with $ (a variable, a substitution) or ~, a brace expansion, a

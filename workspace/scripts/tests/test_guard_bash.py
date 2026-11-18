@@ -1890,11 +1890,10 @@ class DockerGroupTests(TrailTestCase):
             'docker compose --dry-run -p ' + GROUP + ' --env-file src/x.env down --remove-orphans -t 5 -v',
             'docker compose -p ' + GROUP + ' exec -T db psql -U app -c "DROP TABLE users"',
             'docker compose -p ' + GROUP + ' exec -it -e A=1 -w /app app pytest /app/tests',
-            'docker compose -p ' + GROUP + ' exec -eA=1 -u root db dropdb app',
+            'docker compose -p ' + GROUP + ' exec -u root db dropdb app',
             'docker compose -p ' + GROUP + ' down -vt5',
             'docker compose -p ' + GROUP + ' exec --index=2 --user=root app ls',
             'docker compose -p ' + GROUP + ' stop app',
-            'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
             'docker compose -p ' + GROUP + ' restart', 'docker compose -p ' + GROUP + ' port app 80',
             'docker compose -p ' + GROUP + ' up -d --build --wait --wait-timeout 60 --pull always --no-deps app',
             'docker compose -p ' + GROUP + ' up --force-recreate --remove-orphans -t 5 --quiet-pull',
@@ -1933,6 +1932,20 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' exec db psql postgresql://prod.example.com/app -c "DROP TABLE x"',
             'docker compose -p ' + GROUP + ' exec db sqlcmd -S prod.example.com -Q "DROP DATABASE x"',
             'docker compose -p ' + GROUP + ' exec db sh -c "psql -h prod.example.com -c \'DROP DATABASE x\'"',
+            'docker compose -p ' + GROUP + ' exec -e PGHOST=prod.example.com db psql -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec --env PGHOST=prod.example.com db dropdb app',
+            'docker compose -p ' + GROUP + ' exec -e DATABASE_URL=postgres://u@prod.example.com/app db sh -c '
+            '\'psql "$DATABASE_URL" -c "DROP DATABASE x"\'',
+            'docker compose -p ' + GROUP + ' exec db sh -c "PGHOST=prod.example.com psql -c \'DROP DATABASE x\'"',
+            'docker compose -p ' + GROUP + ' exec db psql -Xh prod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db mysql -Bh prod.example.com -e "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db psql --hos=prod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec -eA=1 -u root db dropdb app',
+            'docker compose -p ' + GROUP + ' exec -ite A=1 db dropdb app',
+            'docker compose -p ' + GROUP + ' exec db env PGHOST=prod.example.com dropdb app',
+            'docker compose -p ' + GROUP + ' exec db PGHOST=prod.example.com dropdb app',
+            'docker compose -p ' + GROUP + ' exec db timeout 5 dropdb app',
+            'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
         ):  # fmt: skip
             self.assertEqual(self.decided(command), 'ask', command)
         self.assertEqual(self.decided('docker compose -p ' + GROUP + ' down -v', self.root), 'ask')
@@ -1992,8 +2005,12 @@ class DockerGroupTests(TrailTestCase):
         self.assertEqual(guard.option_value(['-pX'], 0), ('-p', 'X', 1))
         self.assertEqual(guard.option_value(['--file'], 0), ('--file', '', 2))
         self.assertTrue(guard.inner_reaches_out(['app', 'ssh', 'host']))
-        self.assertFalse(guard.names_database_host(['app', 'curl', '-h']))
-        self.assertTrue(guard.names_database_host(['db', 'mysql', '--host', 'x']))
+        self.assertFalse(guard.may_name_host(['-U', 'app', '-d', 'app', '-c', 'DROP TABLE x']))
+        self.assertTrue(guard.may_name_host(['--socket=/tmp/x']))
+        self.assertFalse(guard.container_command_ok([]))
+        self.assertFalse(guard.container_command_ok(['ssh', 'host']))
+        self.assertTrue(guard.container_command_ok(['psql', '-c', 'DROP TABLE x']))
+        self.assertFalse(guard.container_command_ok(['psql', '-c', 'DROP TABLE x'], env_given=True))
         self.assertFalse(guard.inner_reaches_out(['db', 'psql', '-c', 'select 1']))
         groups = guard.DockerGroups(self.root, self.run)
         self.assertFalse(groups.override('$X.yaml', self.clone, self.clone))
@@ -2115,7 +2132,11 @@ class ProtectedFolderTests(TrailTestCase):
             'python3 -c "$(cat scripts/session-title.py)"', 'python3 <(cat scripts/session-title.py)',
             'head -c 9999 scripts/session-title.py | bash', 'grep -h . scripts/s* | python3 -',
             'bash -c "cat scripts/session-title.py | python3 -"', 'mv scripts/session-title.py /tmp/x',
-            'echo > scripts/session-title.py',
+            'echo > scripts/session-title.py', 'head -20 scripts/session-title.py > /dev/null',
+            'cat scripts/session-title.py | grep merge', 'cat scripts/session-title.py | tee /tmp/x.py',
+            'cat scripts/session-title.py | dd of=/tmp/x.py', 'cat scripts/session-title.py | cp /dev/stdin /tmp/x.py',
+            "cat scripts/session-title.py | sed -n 'w /tmp/x.py'", "cat scripts/session-title.py | awk 1 > /tmp/x.py",
+            'cat scripts/session-title.py | uv run python -', 'ls scripts/*.py; echo done',
         ):  # fmt: skip
             result = self.result(command, self.root)
             self.assertEqual(result and result['permissionDecision'], 'deny', command)
@@ -2126,8 +2147,7 @@ class ProtectedFolderTests(TrailTestCase):
             'cat .history/merge-orders/abc', 'ls .history/merge-orders', 'grep -r order .history/merge-orders',
             'git log -- scripts/session-title.py', 'find .history -name x', 'cat scripts/other.py',
             'ls -la scripts/*.py', 'grep -n TODO scripts/*', 'wc -l scripts/*.py', 'less scripts/session-title.py',
-            'cat scripts/session-title.py', 'head -20 scripts/session-title.py > /dev/null',
-            'cat scripts/session-title.py | grep merge',
+            'cat scripts/session-title.py', 'head -20 scripts/session-title.py',
             'python3 scripts/prompt-log.py sync',
         ):  # fmt: skip
             self.assertNotEqual(self.decided(command, self.root), 'deny', command)
