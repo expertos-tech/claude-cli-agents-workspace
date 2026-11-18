@@ -80,6 +80,7 @@ Small adjustments, effort low unless noted.
 | — | `release-tag-after-pull-request.md` | The design of the tag after a pull request into a protected `main` |
 | — | `repo-terms-skip-stops-merge.md` | Today no terms list exists here |
 | — | `workflow-agent-session-name.md` | The parent session name in the labels of Workflow agents |
+| — | `colima-console-test-on-linux.md` | Three decisions; a real Colima next to docker-ce on Linux to test the Colima console |
 
 ## QA
 
