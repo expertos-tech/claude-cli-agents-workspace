@@ -69,10 +69,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
 - `docs/features.md` lists `/run-tools` and the tools' compose group.
 - The `rules-config` plan records that it is built, with what the build decided beyond it.
+- Maintenance work ends with a closing board (`.claude/rules/process.md` step 6), like the product's: what was done,
+  verified, left and pending, the request, and the next command.
 
 ### Removed
 
 - `/release`: replaced by `/caw-merge --main`.
+
+### Fixed
+
+- `.claude/rules/process.md` step 4 names the suite `/caw-merge` runs into `developer`
+  (`--base origin/developer --i18n-pending`), not the strict `--all`, which fails on translations left for the release.
 
 ## [0.1.0] - 2026-11-16
 
