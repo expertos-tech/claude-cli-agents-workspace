@@ -210,6 +210,105 @@ class SessionTitleTests(unittest.TestCase):
         self.assertEqual(self.run_main('', ['x']), '')
 
 
+class MergeOrderTests(unittest.TestCase):
+    """The record of the person's /merge, the order phase 2 of the gate needs inside Claude Code."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        self.env = mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': os.path.join(self.root, 'cfg')})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def orders(self, session_id='s-1'):
+        """Returns the lines recorded for a session, or None when it has no file."""
+        path = os.path.join(self.root, '.history', 'merge-orders', session_id)
+        if not os.path.exists(path):
+            return None
+        with open(path, encoding='utf-8') as handle:
+            return handle.read().splitlines()
+
+    def test_merge_is_recorded_typed_or_expanded(self):
+        expanded = (
+            '<command-message>merge</command-message>\n<command-name>/merge</command-name>\n'
+            '<command-args>2026-11-18-fix/app</command-args>'
+        )
+        prompts = ('/merge', '  /merge 2026-11-18-fix/app', '/merge --main acme', '/merge\n--hotfix acme x', expanded)
+        for prompt in prompts:
+            self.assertTrue(title.record_merge_order({'prompt': prompt, 'session_id': 's-1'}, self.root), prompt)
+        lines = self.orders()
+        self.assertEqual(len(lines), len(prompts))
+        for line in lines:
+            self.assertRegex(line, r'^order\t\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
+        mode = os.stat(os.path.join(self.root, '.history', 'merge-orders', 's-1')).st_mode & 0o777
+        self.assertEqual(mode, 0o600)
+
+    def test_other_prompts_are_no_order(self):
+        for prompt in (
+            '',
+            '/mergex',
+            '/merge-all',
+            'please run /merge now',
+            'merge it',
+            '/request a.md',
+            '<command-name>/request</command-name><command-args>/merge</command-args>',
+            'see <command-name>/merge</command-name>',
+            ['/merge'],
+            None,
+        ):
+            self.assertFalse(title.record_merge_order({'prompt': prompt, 'session_id': 's-1'}, self.root), prompt)
+        self.assertIsNone(self.orders())
+
+    def test_a_session_id_that_is_not_a_plain_name_records_nothing(self):
+        for session_id in ('', '../evil', '.hidden', 'a/b', 'x' * 200, None):
+            self.assertFalse(title.record_merge_order({'prompt': '/merge', 'session_id': session_id}, self.root))
+        self.assertFalse(os.path.exists(os.path.join(self.root, '.history', 'merge-orders')))
+
+    def test_the_hook_records_and_stays_silent(self):
+        printed = io.StringIO()
+        with (
+            mock.patch('sys.stdin', io.StringIO(json.dumps({'prompt': '/merge', 'session_id': 's-1'}))),
+            mock.patch('sys.argv', ['x', self.root]),
+            contextlib.redirect_stdout(printed),
+        ):
+            title.main()
+        self.assertEqual(printed.getvalue(), '')
+        self.assertEqual(len(self.orders()), 1)
+
+    def test_a_failure_or_a_link_stays_silent_and_writes_nothing(self):
+        os.makedirs(os.path.join(self.root, '.history'))
+        with open(os.path.join(self.root, '.history', 'merge-orders'), 'w', encoding='utf-8') as handle:
+            handle.write('a file where the folder should be')
+        self.assertIsNone(title.hook_output({'prompt': '/merge', 'session_id': 's-1'}, self.root))
+        with mock.patch.object(title, 'record_merge_order', side_effect=RuntimeError('boom')):
+            self.assertIsNone(title.hook_output({'prompt': '/merge', 'session_id': 's-1'}, self.root))
+        folder = os.path.join(self.root, 'other', '.history', 'merge-orders')
+        os.makedirs(folder)
+        os.symlink(os.path.join(self.root, 'target'), os.path.join(folder, 's-1'))
+        self.assertIsNone(
+            title.hook_output({'prompt': '/merge', 'session_id': 's-1'}, os.path.join(self.root, 'other'))
+        )
+        self.assertFalse(os.path.exists(os.path.join(self.root, 'target')))
+
+    def test_orders_from_parallel_prompts_are_whole_lines(self):
+        threads = [
+            threading.Thread(
+                target=title.record_merge_order, args=({'prompt': '/merge', 'session_id': 's-1'}, self.root)
+            )
+            for _ in range(8)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        lines = self.orders()
+        self.assertEqual(len(lines), 8)
+        self.assertTrue(all(line.startswith('order\t') for line in lines))
+
+
 SCRIPTS = Path(__file__).resolve().parent.parent
 MARK = '<!-- AI-WORKSPACE-PROJECT {} -->'
 GIT_ENV = {

@@ -43,6 +43,13 @@ gate --merge <work>/<clone> <sha>
       remote work branch (a normalization branch stays on the remote, as its record). The review against the request
       and the human's answers happen between the two phases. Refuses a hotfix clone (its command is hotfix) and, like
       phase 1, a clone of developer while a hotfix waits to be merged down.
+      The person's order, first of all: inside a Claude Code session (CLAUDECODE set) it runs only when the person
+      typed /merge in this session (CLAUDE_CODE_SESSION_ID): the UserPromptSubmit hook (scripts/session-title.py)
+      appends an "order" line to .history/merge-orders/<session id>, and a phase 2 that merges appends a "merged"
+      line there. It needs an order newer than the last merge, not newer than phase 1, because /merge runs phase 1
+      itself: the order always comes first. One /merge covers the clones of one work, each merged once (the repos of
+      one request, of one release); a clone already merged under it, or a clone of another work, needs a new /merge.
+      Refused with no session id or no such order. Outside Claude Code (the person in a terminal) it runs as above.
 release <repo> [--pr-if-refused] [--tag vX.Y.Z]
       developer -> main of projects/<repo>: pushes the developer commit to main of the remote (a fast-forward), then
       moves the local main ref (the checkout stays on developer). A remote that refuses the push (a protected main)
@@ -122,6 +129,13 @@ LINT_CHECKS="shell,dockerfile,markdown,mermaid,python,typescript"
 # a file (an instruction file whose content moved) is allowed and listed in the audit; code, infrastructure and
 # dependencies are an ordinary request's.
 NORMALIZATION_FILES_RE='(\.(md|mmd|png|jpe?g|gif|svg|webp)|(^|/)\.gitignore|(^|/)([^/]*\.)?env\.(example|sample))$'
+# The person's orders to merge, one file per Claude Code session, written by the UserPromptSubmit hook
+# (scripts/session-title.py, an "order" line per /merge typed) and by phase 2 (a "merged" line per merge). The session
+# id names the file, so it is a plain name: the same pattern as the hook's.
+MERGE_ORDERS="$root/.history/merge-orders"
+SESSION_ID_RE='^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+REFUSED_ORDER="refused: the merge happens only when the person types /merge in this session"
+ORDER_FILE=""
 
 # Prints an error and exits with the given code.
 die() {
@@ -510,15 +524,61 @@ cmd_gate_check() {
   echo "      not explain; then: bash scripts/aiwp-cmds.sh gate --merge $work/$name $sha"
 }
 
-# gate phase 2: the merge of the checked sha.
+# The person's order of a merge (BR-13), checked before anything else of phase 2. Outside Claude Code (CLAUDECODE
+# unset: the person in a terminal) there is nothing to check. Inside, the session (CLAUDE_CODE_SESSION_ID) must have an
+# "order" line (a /merge the person typed, recorded by the UserPromptSubmit hook) newer than its last merge. Newer
+# than the last merge and not than phase 1: /merge runs phase 1 itself, so its order always comes before phase 1. Each
+# "merged" line after the last order binds that order to its work: one /merge takes the clones of one work in (the
+# repos of a request, of a release), each once; another work, or the same clone again, needs a new /merge. Sets
+# ORDER_FILE for record_merge.
+require_merge_order() {
+  local work="$1" name="$2" id="${CLAUDE_CODE_SESSION_ID:-}" file verdict
+  ORDER_FILE=""
+  [ -n "${CLAUDECODE:-}" ] || return 0
+  [ -n "$id" ] || die 1 "$REFUSED_ORDER (no CLAUDE_CODE_SESSION_ID in this environment); never ask the person to let you run it: offer /merge"
+  [[ "$id" =~ $SESSION_ID_RE ]] || die 1 "$REFUSED_ORDER (CLAUDE_CODE_SESSION_ID is not a session id)"
+  file="$MERGE_ORDERS/$id"
+  { [ -f "$file" ] && [ ! -L "$file" ]; } || die 1 "$REFUSED_ORDER: no /merge from this session yet; never ask the person to let you run it: offer /merge"
+  verdict="$(awk -F '\t' -v work="$work" -v clone="$work/$name" '
+    $1 == "order" { orders++; bound = ""; next }
+    $1 == "merged" && orders {
+      if (bound == "") { bound = $3; sub(/\/.*/, "", bound) }
+      merged[$3] = orders
+    }
+    END {
+      if (!orders) print "none"
+      else if (merged[clone] == orders) print "used"
+      else if (bound != "" && bound != work) print "other " bound
+      else print "ok"
+    }' "$file")" || die 1 "$REFUSED_ORDER: could not read .history/merge-orders/$id"
+  case "$verdict" in
+    ok) ORDER_FILE="$file" ;;
+    none) die 1 "$REFUSED_ORDER: no /merge from this session yet; never ask the person to let you run it: offer /merge" ;;
+    used) die 1 "$REFUSED_ORDER: the last /merge already merged $work/$name; another merge needs a new /merge from the person" ;;
+    other\ *) die 1 "$REFUSED_ORDER: the last /merge took in the work ${verdict#other }; $work is another work and needs a new /merge from the person" ;;
+    *) die 1 "$REFUSED_ORDER: could not read .history/merge-orders/$id" ;;
+  esac
+}
+
+# Records that a merge used the person's order (require_merge_order), once the base moved: a "merged" line, appended in
+# one write. A failure here does not undo the merge; it is said.
+record_merge() {
+  local clone="$1" sha="$2"
+  [ -n "$ORDER_FILE" ] || return 0
+  printf 'merged\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$clone" "$sha" >>"$ORDER_FILE" 2>/dev/null ||
+    echo "attention: could not record this merge in ${ORDER_FILE#"$root"/}, so the /merge stays open: tell the person"
+}
+
+# gate phase 2: the merge of the checked sha. The person's order comes first (require_merge_order).
 cmd_gate_merge() {
   local given="$1" want="$2" clone src base branch work name record sha base_then
   clone="$(clone_path "$given")"
+  work="$(basename "$(dirname "$clone")")"
+  name="$(basename "$clone")"
+  require_merge_order "$work" "$name"
   src="$(git -C "$clone" config --get aiwp.source)"
   base="$(git -C "$clone" config --get aiwp.base)"
   branch="$(git -C "$clone" config --get aiwp.branch)"
-  work="$(basename "$(dirname "$clone")")"
-  name="$(basename "$clone")"
   record="$work_root/$work/.gate-$name"
   [ "$(git -C "$clone" config --get aiwp.hotfix || true)" != 1 ] ||
     die 1 "$work/$name is a hotfix clone: its fix goes into main by bash scripts/aiwp-cmds.sh hotfix $work/$name <sha>, never by gate --merge"
@@ -542,6 +602,7 @@ cmd_gate_merge() {
   fi
   git -C "$src" merge -q --ff-only "$sha" || die 1 "$base cannot fast-forward to $sha: run the gate again"
   echo "merged: $sha into $base of ${src#"$root"/}"
+  record_merge "$work/$name" "$sha"
   if git -C "$src" remote get-url origin >/dev/null 2>&1; then
     timeout 120 git -C "$src" push -q origin "$base" || die 1 "merged locally, but the push of $base failed: push it (git -C ${src#"$root"/} push origin $base)"
     echo "pushed: $base"

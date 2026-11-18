@@ -14,6 +14,8 @@ trap 'rm -rf "$BASE"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+# The suite may run from a Claude Code session: phase 2 runs as in a terminal unless a test sets these itself.
+unset CLAUDECODE CLAUDE_CODE_SESSION_ID
 FAILED=0
 COUNT=0
 OUT=""
@@ -1311,7 +1313,7 @@ test_hotfix_refused_by_a_protected_main_opens_a_pull_request() {
   rc_is 0
   has "pull request: https://example.com/acme/app/pull/2"
   has "no tag yet: the tag waits for the merge of the pull request (a known limit: no command tags it yet"
-  hasnt "hotfix-tag"
+  hasnt_out "hotfix-tag"
   grep -q "gh pr create --base main --head fix/login-null" "$BASE/gh.log"; check "gh opened fix -> main" $?
   grep -q "@ $R/projects/app" "$BASE/gh.log"; check "from the project folder" $?
   eq "local main still unchanged" "$main0" "$(local_sha main)"
@@ -1540,6 +1542,102 @@ test_hotfix_without_a_remote_stays_local() {
   rc_is 0
   has "no remote: developer merged locally only"
   git -C "$R/projects/app" merge-base --is-ancestor "$sha" developer; check "developer holds the fix" $?
+}
+
+# --- The person's order: inside Claude Code, phase 2 needs a /merge typed in the session ---------------------------
+
+# The UserPromptSubmit hook of the product, run as Claude Code runs it, for a prompt of a session.
+typed() { # session id, prompt
+  printf '{"session_id": "%s", "prompt": "%s"}' "$1" "$2" | python3 -I -B "$SCRIPTS/session-title.py" "$R" >/dev/null
+}
+in_session() { # session id (empty: unset), gate arguments...
+  local id="$1"
+  shift
+  if [ -n "$id" ]; then
+    OUT="$(cd "$R" && CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$id" bash scripts/aiwp-gate.sh "$@" 2>&1)"
+  else
+    OUT="$(cd "$R" && env -u CLAUDE_CODE_SESSION_ID CLAUDECODE=1 bash scripts/aiwp-gate.sh "$@" 2>&1)"
+  fi
+  RC=$?
+}
+checked() { # work, clone, file: a commit in the clone and phase 1 on it
+  printf 'x\n' >"$R/tmp/work/$1/$2/$3"
+  git -C "$R/tmp/work/$1/$2" add "$3"
+  git -C "$R/tmp/work/$1/$2" commit -q -m "change $3" >/dev/null 2>&1
+  gate gate "$1/$2" --test "test -f $3"
+  rc_is 0
+}
+
+test_gate_merge_needs_the_persons_order_inside_claude_code() {
+  fixture
+  local refused="refused: the merge happens only when the person types /merge in this session" sha dev0 orders w2 w3 w4
+  orders="$R/.history/merge-orders/sess-1"
+  checked "$W" app one.txt
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  dev0="$(remote_sha developer)"
+  in_session "" gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused (no CLAUDE_CODE_SESSION_ID"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused: no /merge from this session yet"
+  in_session ../sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused (CLAUDE_CODE_SESSION_ID is not a session id)"
+  typed sess-1 "please /merge it"
+  typed sess-1 "/mergex"
+  typed sess-2 "/merge"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused: no /merge from this session yet"
+  eq "developer unchanged while refused" "$dev0" "$(remote_sha developer)"
+  [ -f "$R/tmp/work/$W/.gate-app" ]; check "the phase 1 record stays while refused" $?
+
+  typed sess-1 "/merge $W/app"
+  grep -qE '^order	[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' "$orders"; check "the hook recorded the order" $?
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  eq "remote developer" "$sha" "$(remote_sha developer)"
+  eq "the merge consumed the order" "merged	$W/app	$sha" "$(tail -n 1 "$orders" | cut -f 1,3,4)"
+
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused: the last /merge already merged $W/app"
+  w2="2026-11-18-other-change"
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$w2" app --branch feat/other-change >/dev/null 2>&1)
+  checked "$w2" app two.txt
+  sha="$(git -C "$R/tmp/work/$w2/app" rev-parse HEAD)"
+  in_session sess-1 gate --merge "$w2/app" "$sha"
+  rc_is 1
+  has "$refused: the last /merge took in the work $W; $w2 is another work"
+  typed sess-1 "<command-message>merge</command-message>\\n<command-name>/merge</command-name>\\n<command-args></command-args>"
+  in_session sess-1 gate --merge "$w2/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+
+  # One /merge takes in every clone of one work (the repos of one request, of one release), each once.
+  nested_project web
+  w3="2026-11-18-two-repos"
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$w3" app web --branch feat/two-repos >/dev/null 2>&1)
+  checked "$w3" app three.txt
+  checked "$w3" web three.txt
+  typed sess-1 "/merge --main app"
+  in_session sess-1 gate --merge "$w3/app" "$(git -C "$R/tmp/work/$w3/app" rev-parse HEAD)"
+  rc_is 0
+  in_session sess-1 gate --merge "$w3/web" "$(git -C "$R/tmp/work/$w3/web" rev-parse HEAD)"
+  rc_is 0
+  has "merged: $(git -C "$R/tmp/work/$w3/web" rev-parse HEAD) into developer of projects/web"
+
+  # The person in a terminal (no CLAUDECODE): phase 2 runs as before, with no order and none recorded.
+  w4="2026-11-18-from-a-terminal"
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$w4" app --branch feat/from-a-terminal >/dev/null 2>&1)
+  checked "$w4" app four.txt
+  sha="$(git -C "$R/tmp/work/$w4/app" rev-parse HEAD)"
+  gate gate --merge "$w4/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  eq "nothing recorded outside Claude Code" 0 "$(grep -c "	$sha\$" "$orders")"
 }
 
 test_usage() {
