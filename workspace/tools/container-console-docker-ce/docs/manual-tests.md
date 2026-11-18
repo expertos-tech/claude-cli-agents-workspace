@@ -38,7 +38,7 @@ The requirements of the screen and of the installation:
 | Daemon state and data, read-only | [Read-only environment](#read-only-environment) |
 | The console does not control the daemon | [Daemon control outside the API](#daemon-control-outside-the-api) |
 | Containers, live logs and terminal | [Containers](#containers) |
-| Compose groups and the job dock open and close with motion | [Compose groups](#compose-groups) |
+| Compose groups open and close with motion; the chevron of the jobs panel rotates | [Compose groups](#compose-groups) |
 | Images, volumes, networks and Compose | [Images, volumes, networks and Compose](#images-volumes-networks-and-compose) |
 | Kubernetes, logs and terminal in the pod | [Kubernetes](#kubernetes) |
 | Invalid YAML changes nothing | [Invalid YAML](#invalid-yaml) |
