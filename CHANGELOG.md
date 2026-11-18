@@ -29,6 +29,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   their configuration from `custom/`.
 - The container consoles animate opening and closing a Compose group, and the chevron of the jobs panel rotates; the
   menu switch is now "Animations".
+- `make check` of the container consoles fails on a high `npm audit` finding instead of ignoring it.
 - Configurable rules: the custom layer turns optional core rules, skills and agents off, replaces a core rule, and
   keeps its own in `custom/my-rules/` (was `custom/rules/`); the mandatory core in `rules/manifest.json`; `/rules`.
 

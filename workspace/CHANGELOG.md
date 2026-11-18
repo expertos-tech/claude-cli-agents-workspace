@@ -40,6 +40,7 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 ### Fixed
 
 - The container consoles (`tools/container-console-docker-ce`, `tools/container-console-colima`): a Compose project group opened and closed in a single frame, with its chevron swapped for another, so a click looked like nothing happened. Its chevron now rotates (right when closed, down when open) and its rows grow and shrink in height in about 200 ms; a closed group's rows stay out of the tab order and the accessibility tree. Only a click animates: the first render, the filter and the rows the live view adds or removes change at once. The chevron of the jobs panel rotates too. The menu switch is now "Animations" and turns off this motion as well as that of the data, like the system's reduced motion. Rebuild an installed console (`make install`) to get it.
+- The container consoles: `make check` passed while `npm audit --audit-level=high` reported a high vulnerability, because only the type check run after it decided the result. It now fails on such a finding.
 
 ### After updating
 
