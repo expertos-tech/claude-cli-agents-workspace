@@ -6,7 +6,7 @@
 
 ## What
 
-`workspace/docs/decisions/0001-base-design.md` (lines 11 and 16) still lists `/prompt` in the mandatory core and the backlog in the custom layer; pending requests keep old paths: `final-review.md` (`maintainers/backlog/`), `import-from-fork.md` (`rules/skills/prompt/SKILL.md`), `rules.md` (`/prompt`), `review-effort-wording.md` (`caw-draft-prompt`), `prompt-log-results.md` (`custom/prompts/log/sources.json`). AC-5 of `request-lifecycle.md`.
+`workspace/docs/decisions/0001-base-design.md` (lines 11 and 16) still lists `/prompt` in the mandatory core and the backlog in the custom layer; pending requests keep old paths: `final-review.md` (`maintainers/backlog/`), `import-from-fork.md` (`rules/skills/prompt/SKILL.md`), `rules.md` (`/prompt`), `prompt-log-results.md` (`custom/prompts/log/sources.json`). AC-5 of `request-lifecycle.md`.
 
 ## Where
 

@@ -25,8 +25,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 ### Recommended order
 
 0. First, before round 2: `autonomous-work` (work in the branch with no prompt, a Docker copy per task, the merge
-   only by the person); it delivers `work-branch-push-before-scan`, `review-docs-only-scope`, `review-effort-wording`
-   and `work-status-docker-stacks`, and removes `os-sandbox-trial`.
+   only by the person).
 1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
    (except `measure-quality-indicators`, which waits for `import-from-fork`).
 2. Round 2: `normalize-rules` first (the owner needs it to migrate the final project), then `fork-my-rules`,
@@ -57,15 +56,12 @@ Small adjustments, effort low unless noted.
 | --- | --- |
 | `release-developer-moved.md` | `/caw-merge --main` when `developer` moves during the release |
 | `release-main-sha-check.md` | The push of `main` and the tag tied to the sha the suite judged |
-| `work-branch-push-before-scan.md` | Work and release branches pushed before the company-terms scan |
 | `execution-block-after-fixes.md` | The Execution block written before the results it records |
 | `clone-path-findings-loop.md` | Requests made of findings loop the clone path of `/caw-merge` |
 | `caw-layers-missing-target.md` | The `caw-layers` check passes a layer whose product skill is missing |
 | `merge-project-name.md` | `<project>` for a plain folder of repos with no root repo |
 | `old-names-leftovers.md` | Old names in a decision record and in pending requests |
 | `process-merge-check-command.md` | `process.md` names the old suite command for a merge |
-| `review-effort-wording.md` | Texts still say every review is effort high |
-| `review-docs-only-scope.md` | `CLAUDE.md`, `AGENTS.md` and templates count as documentation and skip the review |
 | `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
 
 ### Ideas
@@ -74,12 +70,10 @@ Small adjustments, effort low unless noted.
 | --- | --- | --- |
 | 1 | `prompt-log-results.md` | Two decisions |
 | 1 | `gate-audit-gaps.md` | Three decisions |
-| 1 | `work-status-docker-stacks.md` | Two decisions |
 | 1 | `aiwp-remove.md` | Whether to build it |
 | 2 | `onboard.md` | Four decisions; needs `rules`; design: `plans/distribution.md` |
 | 2 | `measure-quality-indicators.md` | Three decisions; after `import-from-fork` (both change `measure.py`) |
 | 3 | `rules-size-budget.md` | Two decisions; folded into `final-review` or right before it |
-| 4 | `os-sandbox-trial.md` | Three decisions; after round 3 |
 | — | `qa-validation-on-developer.md` | The owner completes the design of `--qa` |
 | — | `release-tag-after-pull-request.md` | The design of the tag after a pull request into a protected `main` |
 | — | `repo-terms-skip-stops-merge.md` | Today no terms list exists here |
