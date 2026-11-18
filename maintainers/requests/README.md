@@ -63,7 +63,6 @@ Small adjustments, effort low unless noted.
 | `caw-layers-missing-target.md` | The `caw-layers` check passes a layer whose product skill is missing |
 | `merge-project-name.md` | `<project>` for a plain folder of repos with no root repo |
 | `old-names-leftovers.md` | Old names in a decision record and in pending requests |
-| `process-merge-check-command.md` | `process.md` names the old suite command for a merge |
 | `review-effort-wording.md` | Texts still say every review is effort high |
 | `review-docs-only-scope.md` | `CLAUDE.md`, `AGENTS.md` and templates count as documentation and skip the review |
 | `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
@@ -102,6 +101,8 @@ Small adjustments, effort low unless noted.
 | `qa/accordion-motion.md` | this merge | AC-2, AC-5, AC-7, AC-8 proven; AC-1 measured; AC-3, AC-4 in part; AC-6 and the owner's visual run pending |
 | `qa/rules.md` | this merge | AC-2 to AC-4, AC-6, AC-8 proven; AC-1, AC-1a, AC-5, AC-7 at script level, their session part pending |
 | `qa/hotfix-from-main.md` | this merge | AC-1, AC-6, AC-8 proven; AC-4, AC-7 at script level; AC-2, AC-3, AC-5, AC-9 and the session run of AC-10 pending |
+| `qa/process-merge-check-command.md` | this merge | Met |
+| `qa/2026-11-18-maintenance-closing-board.md` | this merge | Met |
 
 ## Done
 
