@@ -33,7 +33,7 @@
 #  D26 Docker that does not answer -> today's question, never a silent pass ... test_docker_group
 #  D27 deleting, moving or emptying Grafana's data -> ask, in an approved clone line too  test_protected_folders
 #  D28 changing CLAUDECODE/CLAUDE_CODE_SESSION_ID, writing .history/merge-orders/, running
-#      scripts/session-title.py -> deny; aiwp-cmds.sh deploy -> ask ......... test_protected_folders
+#      scripts/session-title.py -> deny; aiwp-cmds.sh deploy -> a WARNING, no decision  test_protected_folders
 #  D29 find . -delete in a clone (its .git) and a .env -> silent; a leading cd travels with the question  test_clone_trail
 #  D31 own group: docker compose run/create, an unknown exec option, a clone group spelled with one dash -> not allowed;
 #      a session-title.py spelled with a wildcard or read by cat -> deny; a Docker mount of Grafana's data -> ask
@@ -43,11 +43,15 @@
 #  D33 exec in a container of the own group whose networks are all internal and of the group -> allow, whatever it
 #      runs (psql -h <host>, sh -c); a container also on a non-internal network (<group>_edge) -> ask; the hook's
 #      reader in a pipe -> deny; a container that mounts docker.sock (or privileged...) or a network whose gateway is
-#      not isolated -> ask; compose up of the own group -> left to the permission mode
+#      not isolated -> ask; a container with no com.aiwp.copy.safe=true label (up warned about its service) -> ask;
+#      compose up of the own group -> left to the permission mode
 #      .............................................. test_docker_group, test_protected_folders
 #  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask; with
 #      alpine:3.20 present, exec into a container on an internal network -> allow, once also on an edge one -> ask
 #                                                                              test_real_docker
+#  D34 aiwp-cmds.sh deploy, checkpoint, developer --create, gate --untested -> a WARNING (systemMessage) with no
+#      permission decision, no "Run it alone" beside other commands; release, close --discard, another group's
+#      volume rm and Grafana's data still ask .................................... test_aiwp_warnings
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,6 +79,8 @@ check() {
 has() { case "$OUT" in *"$2"*) check "$1" 0 ;; *) check "$1" 1 ;; esac; }
 # Asserts the last exit code.
 rc_is() { if [ "$RC" -eq "$1" ]; then check "exit code $1" 0; else check "exit code $1" 1; fi; }
+# Asserts that the last output does not contain $2.
+lacks() { case "$OUT" in *"$2"*) check "$1" 1 ;; *) check "$1" 0 ;; esac; }
 # Asserts that the last output is empty.
 silent() { if [ -z "$OUT" ]; then check "$1" 0; else check "$1" 1; fi; }
 
@@ -194,21 +200,25 @@ if [ "$1" = ps ]; then
     *service=web*) echo c-web ;;
     *service=sock*) echo c-sock ;;
     *service=gw*) echo c-gw ;;
+    *service=warned*) echo c-warned ;;
   esac
   exit 0
 fi
 shift 4
-# What docker container inspect prints of a container that keeps to itself, after its networks.
+# What docker container inspect prints of a container that keeps to itself, after its networks; safe: the label up
+# writes on a service it judged safe.
+safe='"labels":{"com.aiwp.copy.safe":"true"},'
 plain='"privileged":false,"capadd":null,"pid":"","ipc":"private","uts":"","cgroupns":"private","mounts":[]}'
 for name in "$@"; do
   case "$name" in
     agent_1118-add-export_db) echo '{"com.docker.compose.project":"agent_1118-add-export"}' ;;
     other_db) echo '{"com.docker.compose.project":"agent_1118-other"}' ;;
-    c-gw) echo "{\"networks\":{\"agent_1118-add-export_gw\":{}},$plain" ;;
-    c-db) echo "{\"networks\":{\"agent_1118-add-export_internal\":{}},$plain" ;;
-    c-sock) echo "{\"networks\":{\"agent_1118-add-export_internal\":{}},${plain%\"mounts\":[]\}}"\
+    c-gw) echo "{$safe\"networks\":{\"agent_1118-add-export_gw\":{}},$plain" ;;
+    c-db) echo "{$safe\"networks\":{\"agent_1118-add-export_internal\":{}},$plain" ;;
+    c-warned) echo "{\"labels\":{\"com.aiwp.copy.safe\":\"false\"},\"networks\":{\"agent_1118-add-export_internal\":{}},$plain" ;;
+    c-sock) echo "{$safe\"networks\":{\"agent_1118-add-export_internal\":{}},${plain%\"mounts\":[]\}}"\
 '"mounts":[{"Type":"bind","Source":"/var/run/docker.sock"}]}' ;;
-    c-web) echo "{\"networks\":{\"agent_1118-add-export_internal\":{},\"agent_1118-add-export_edge\":{}},$plain" ;;
+    c-web) echo "{$safe\"networks\":{\"agent_1118-add-export_internal\":{},\"agent_1118-add-export_edge\":{}},$plain" ;;
     agent_1118-add-export_internal)
       echo '{"internal":true,"labels":{"com.docker.compose.project":"agent_1118-add-export"},"options":'\
 '{"com.docker.network.bridge.gateway_mode_ipv4":"isolated","com.docker.network.bridge.gateway_mode_ipv6":"isolated"}}' ;;
@@ -253,6 +263,8 @@ STUB
   has "a container that mounts the Docker socket keeps the question" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group exec gw psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
   has "an internal network that does not isolate the gateway keeps the question" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group exec warned psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
+  has "a container up warned about (labeled safe=false) keeps the question" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group up -d" "$clone" "$root" "$stub"
   silent "up of the own group is left to the permission mode (only aiwp-cmds.sh up starts the copy)"
   hook_docker "docker compose -p $group exec db psql -c 'DROP DATABASE x'" "$clone" "$root" "$BASE/no-such-docker"
@@ -306,8 +318,9 @@ test_protected_folders() {
   hook_in "cat .history/merge-orders/abc" "$root" "$root"
   silent "reading a merge order prints nothing"
   hook_in "bash scripts/aiwp-cmds.sh deploy billing-api developer" "$root" "$root"
-  has "deploy asks" '"permissionDecision": "ask"'
-  has "the reason says it updates the final stack" "updates the final stack"
+  lacks "deploy makes no permission decision" "permissionDecision"
+  has "deploy warns" '"systemMessage": "WARNING: aiwp-cmds.sh deploy'
+  has "the warning says it updates the final stack" "updates the final stack"
 }
 
 test_real_docker() {
@@ -339,9 +352,14 @@ test_real_docker() {
     "${group}_internal" >/dev/null
   docker network create --label "com.docker.compose.project=$group" "${group}_edge" >/dev/null
   docker run -d --pull never --name "$box" --network "${group}_internal" --label "com.docker.compose.project=$group" \
-    --label com.docker.compose.service=db alpine:3.20 sleep 120 >/dev/null
+    --label com.docker.compose.service=db --label com.aiwp.copy.safe=true alpine:3.20 sleep 120 >/dev/null
+  docker run -d --pull never --name "$box-w" --network "${group}_internal" --label "com.docker.compose.project=$group" \
+    --label com.docker.compose.service=warned alpine:3.20 sleep 120 >/dev/null
   hook_in "docker compose -p $group exec db psql -h prod.example.com -c 'DROP DATABASE x'" "$clone" "$root"
   has "exec into a real container on an internal network is allowed" '"permissionDecision": "allow"'
+  hook_in "docker compose -p $group exec warned psql -c 'DROP DATABASE x'" "$clone" "$root"
+  has "the same container with no safe label asks" '"permissionDecision": "ask"'
+  docker rm -f "$box-w" >/dev/null
   docker network connect "${group}_edge" "$box"
   hook_in "docker compose -p $group exec db psql -c 'DROP DATABASE x'" "$clone" "$root"
   has "once it is also on a non-internal network, exec asks" '"permissionDecision": "ask"'
@@ -441,14 +459,47 @@ test_terraform_and_database() {
   has "the reason names the command" "docker volume rm"
   hook "bash scripts/aiwp-cmds.sh release"
   has "a release asks" "aiwp-cmds.sh release"
-  hook "bash scripts/aiwp-cmds.sh checkpoint billing-api"
-  has "the checkpoint tags ask" "aiwp-cmds.sh checkpoint"
   hook "bash scripts/aiwp-cmds.sh hotfix 2026-11-17-hotfix-login/billing-api abc123"
   has "the fix into main asks" "aiwp-cmds.sh hotfix moves production"
   hook "bash scripts/aiwp-cmds.sh hotfix-tag billing-api v1.2.1"
   has "the hotfix tag asks" "aiwp-cmds.sh hotfix-tag"
   hook "bash scripts/aiwp-cmds.sh hotfix-down billing-api"
   has "the merge into developer asks" "aiwp-cmds.sh hotfix-down"
+}
+
+test_aiwp_warnings() {
+  local command root
+  root="$(new_root warnings)"
+  mkdir -p "$root/tools/observability/.data"
+  for command in "deploy billing-api developer" "checkpoint billing-api" "developer billing-api --create" \
+    "gate 2026-11-16-normalize-billing-api/billing-api --untested"; do
+    hook "bash scripts/aiwp-cmds.sh $command"
+    rc_is 0
+    lacks "$command makes no permission decision" "permissionDecision"
+    has "$command warns" '{"systemMessage": "WARNING: aiwp-cmds.sh '
+    has "$command uses the format of rules/security.md" ' \u2014 '
+  done
+  hook "bash scripts/aiwp-cmds.sh developer billing-api --create"
+  has "the warning names developer --create" "WARNING: aiwp-cmds.sh developer --create"
+  hook "bash scripts/aiwp-cmds.sh gate w/billing-api --untested"
+  has "the warning names gate --untested" "WARNING: aiwp-cmds.sh gate --untested"
+  hook "npm test && bash scripts/aiwp-cmds.sh checkpoint billing-api"
+  lacks "a warned command beside others is no Run it alone" "Run it alone"
+  has "it still warns" "WARNING: aiwp-cmds.sh checkpoint"
+  hook "bash scripts/aiwp-cmds.sh deploy --help"
+  silent "--help of a warned command prints nothing"
+  hook "bash scripts/aiwp-cmds.sh close 2026-11-18-x --discard"
+  has "close --discard still asks" '"permissionDecision": "ask"'
+  hook "bash scripts/aiwp-cmds.sh release billing-api"
+  has "a release still asks" '"permissionDecision": "ask"'
+  hook "docker volume rm pgdata"
+  has "a volume outside the task's group still asks" '"permissionDecision": "ask"'
+  hook_in "rm -rf tools/observability/.data" "$root" "$root"
+  has "Grafana's data still asks" '"permissionDecision": "ask"'
+  has "the question names Grafana's data" "the data of Grafana"
+  hook_in "bash scripts/aiwp-cmds.sh deploy billing-api developer && rm -rf tools/observability/.data" "$root" "$root"
+  has "a warned command beside Grafana's data: the question runs alone" '"permissionDecision": "deny"'
+  has "with Run it alone" "Run it alone"
 }
 
 test_python_missing_asks() {
@@ -756,6 +807,7 @@ test_silent
 test_git_write_denied
 test_nested_repos_denied
 test_terraform_and_database
+test_aiwp_warnings
 test_python_missing_asks
 test_malformed_asks
 test_isolated_python

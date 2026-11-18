@@ -44,11 +44,14 @@ mode (auto mode judges destruction); this hook holds only what the workspace nev
         that holds it, whatever the rest of the line is and wherever it runs, an approved clone included: rm, rmdir,
         mv, shred, truncate, find -delete or -exec rm, rsync --delete, cp, dd, sed -i or a redirection into it, xargs
         fed by a find, interpreter code, a Docker mount (-v <it>:/d, --mount source=<it>,...) or ssh that names it.
-  ask   scripts/aiwp-cmds.sh release, deploy (updates the final stack of a project from a branch), hotfix (pushes a
-        fix to main), hotfix-tag (pushes a release tag), hotfix-down
-        (merges main into developer and pushes it), checkpoint (pushes the checkpoint tags), developer --create (creates
-        developer on the remote), gate --untested (a normalization without its tests), apply --apply and close --discard
-        (run, by a shell, or by source).
+  ask   scripts/aiwp-cmds.sh release, hotfix (pushes a fix to main), hotfix-tag (pushes a release tag), hotfix-down
+        (merges main into developer and pushes it), apply --apply and close --discard (run, by a shell, or by source).
+  warn  scripts/aiwp-cmds.sh deploy (updates the final stack of a project from a branch), checkpoint (pushes the
+        checkpoint tags), developer --create (creates developer on the remote) and gate --untested (a normalization
+        without its tests), run, by a shell or by source: no hard rule, so no question. It prints
+        {"systemMessage":"WARNING: <what was seen> — <why it may be a problem> — <what the human can do>"} with no
+        permission decision: Claude Code's own permission mode decides, and no "Run it alone" applies. A deny or an
+        ask of the same line keeps its decision; a warned line is never allowed by the clone rule below.
   ask   git configuration on the line that can run a command (-c core.fsmonitor, core.sshCommand, a pager, an alias,
         a hooks folder, diff.external, remote.*.fetch, --config-env, --upload-pack, GIT_CONFIG_*, GIT_SSH_COMMAND...).
 In an installed workspace (the nearest folder above a path with .aiwp/manifest.json, any workspace, not only this
@@ -113,7 +116,9 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
           Then anything runs there with no question (a shell, an interpreter, a database tool and its DROP): it
           cannot reach another machine. A service that publishes ports is also on the non-internal <group>_edge
           network, so exec there, Docker that does not answer, no container, host or none networking keep today's
-          rules; so does a container that is not, by allowlist: not privileged, no added capabilities, its own pid,
+          rules; so does a container that is not, by allowlist: labeled com.aiwp.copy.safe=true (aiwp-cmds.sh up
+          writes it on each service it judged safe, "false" on each it printed a WARNING for; no label, or any
+          other value, keeps today's rules), not privileged, no added capabilities, its own pid,
           ipc, uts and cgroup namespaces (or those of a container of the group), no devices, no security option but
           no-new-privileges, and every mount a volume of the group or a bind of a folder inside the clone (not the
           clone itself, not its .git);
