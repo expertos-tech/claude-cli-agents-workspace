@@ -24,7 +24,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
-1. Round 1: `rules` (`run-tools` is in qa); the ideas of round 1 once the owner answers their decisions
+1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
    (except `measure-quality-indicators`, which waits for `import-from-fork`).
 2. Round 2: `normalize-rules` first (the owner needs it to migrate the final project), then `fork-my-rules`,
    `tools-hub`, `onboard`.
@@ -39,7 +39,6 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 | Round | Request | Notes |
 | --- | --- | --- |
-| 1 | `rules.md` | Design: `plans/rules-config.md` |
 | 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
 | 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
@@ -96,6 +95,7 @@ Small adjustments, effort low unless noted.
 | `qa/review-final-brief-unreleased.md` | this merge | Met |
 | `qa/run-tools.md` | this merge | AC-2, AC-3, AC-5, AC-6 proven; AC-1 by a real run; AC-4 and RN-8 in a session pending |
 | `qa/accordion-motion.md` | this merge | AC-2, AC-5, AC-7, AC-8 proven; AC-1 measured; AC-3, AC-4 in part; AC-6 and the owner's visual run pending |
+| `qa/rules.md` | this merge | AC-1 to AC-4, AC-6, AC-8 proven; AC-1a, AC-5, AC-7 at script level, their session part pending |
 | `qa/hotfix-from-main.md` | this merge | AC-1, AC-6, AC-8 proven; AC-4, AC-7 at script level; AC-2, AC-3, AC-5, AC-9 and the session run of AC-10 pending |
 
 ## Done

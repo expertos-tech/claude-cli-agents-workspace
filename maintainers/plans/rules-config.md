@@ -1,6 +1,6 @@
 # Configurable rules in the custom layer
 
-Status: built on the branch `feat/rules-config` (request `maintainers/requests/rules.md`), waiting for `/caw-merge`. Built with: `/request` in place of `/prompt` (renamed), `reviewer` and `verifier` added to the mandatory core, and own skills and agents limited to a closed list of front matter keys (decision record 0003).
+Status: built, on `developer` (2026-11-18). Request: `maintainers/requests/qa/rules.md`. Built with: `/request` in place of `/prompt` (renamed), `reviewer` and `verifier` added to the mandatory core, and own skills and agents limited to a closed list of front matter keys (decision record 0003).
 
 ## 1. Goal
 
