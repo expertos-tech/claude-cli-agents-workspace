@@ -121,6 +121,17 @@ def verdict(command, cwd=PROJECT):
     return result['permissionDecision'] if result else None
 
 
+# How a refusal of a line that would ask, and holds other commands too, starts (BR-6).
+ALONE = 'Run it alone:'
+
+
+def question(test, result, others, message=None):
+    """Asserts the decision of a line guard-bash asks about: 'ask' when the line is only the asked command, the refusal
+    that starts with ALONE when it holds other top-level commands too (others True)."""
+    test.assertEqual(result and result['permissionDecision'], 'deny' if others else 'ask', message)
+    test.assertEqual(result['permissionDecisionReason'].startswith(ALONE), others, message)
+
+
 def argvs(text, cwd='/w'):
     """Returns the simple commands the lexer reads in a text, as lists of words."""
     return [entry['argv'] for entry in guard.Lexer(text, cwd).run().commands]
@@ -235,7 +246,7 @@ class GitTests(unittest.TestCase):
             'for r in a b; do git -C projects/$r add a.txt; done',
         ):  # fmt: skip
             result = decision(command, cwd=CLONE)
-            self.assertEqual(result and result['permissionDecision'], 'ask', command)
+            question(self, result, command.startswith(('cd ', 'popd')), command)
             self.assertIn('I do not know which repository', result['permissionDecisionReason'])
         for command in ('cd "$d" && git status', 'git -C "$X" log', 'cd "$d" && git push --help'):
             self.assertIsNone(verdict(command, CLONE), command)
@@ -369,7 +380,7 @@ class WorkspaceCommandTests(unittest.TestCase):
             ('bash -c "bash scripts/aiwp-cmds.sh hotfix-down app"', 'hotfix-down'),
         ):  # fmt: skip
             result = decision(command)
-            self.assertEqual(result and result['permissionDecision'], 'ask', command)
+            question(self, result, command.startswith('cd '), command)
             self.assertIn('aiwp-cmds.sh ' + text, result['permissionDecisionReason'])
 
     def test_the_hotfix_commands_say_what_they_move(self):
@@ -636,7 +647,7 @@ class SpellingTests(unittest.TestCase):
             'aws-vault exec p -- docker volume rm v', 'op run -- docker volume rm v', 'uv run docker volume rm v',
             'mytool --flag -- sudo rm -rf x.db', 'echo "rm -rf x.db" > c.sh && sh c.sh',
             "printf 'docker volume rm v\\n' | ssh host", "bash -c -- 'docker volume rm v'",
-            'ssh -o StrictHostKeyChecking=no host -- rm -rf /srv/.data', 'a[1<<2]=x\ndocker volume rm v',
+            'ssh -o StrictHostKeyChecking=no host -- rm -rf /srv/.data',
             'parallel rm -rf ::: a.db b.db', 'mongosh --eval "db.dropDatabase()"', "sudo -iu app <<'EOF'\nrm x.db\nEOF",
             "ssh host -T <<'EOF'\nrm -rf /srv/.data\nEOF",
             "cat > /tmp/fix.sh <<'EOF'\nrm -rf .data\nEOF\ncd /tmp && bash fix.sh",
@@ -648,6 +659,7 @@ class SpellingTests(unittest.TestCase):
             "bash /dev/stdin <<'EOF'\ndocker volume rm v\nEOF",
         ):  # fmt: skip
             self.assertEqual(verdict(command), 'ask', command)
+        question(self, decision('a[1<<2]=x\ndocker volume rm v'), True)
         for command in (
             'ssh host terraform destroy', 'docker exec c terraform apply', 'kubectl exec pod -- terraform apply',
             'docker compose --env-file .env.ci exec web terraform destroy', 'op run -- terraform apply',
@@ -689,13 +701,15 @@ class SpellingTests(unittest.TestCase):
         ):  # fmt: skip
             self.assertIsNone(verdict(command), command)
             result = decision(command + '; git status')
-            self.assertEqual(result and result['permissionDecision'], 'ask', command)
+            # A line that runs a file it wrote keeps the question: alone, in a later call, the file is not seen.
+            runs_written = any(text in command for text in ('-o /tmp/i.sh', '--output-document=i.sh', '> i.sh'))
+            question(self, result, not runs_written, command)
             self.assertIn(reason, result['permissionDecisionReason'], command)
 
     def test_more_nested_texts_than_the_limit_asks(self):
         many = '; '.join('bash -c "git status"' for _ in range(guard.MAX_TEXTS + 5))
         result = decision(many)
-        self.assertEqual(result['permissionDecision'], 'ask')
+        question(self, result, True)
         self.assertIn('too many nested', result['permissionDecisionReason'])
         self.assertIsNone(verdict('; '.join('bash -c "ls"' for _ in range(guard.MAX_TEXTS + 5))))
         self.assertIsNone(verdict('; '.join('bash -c "git status"' for _ in range(20))))
@@ -991,7 +1005,7 @@ class CommitTests(unittest.TestCase):
         ):  # fmt: skip
             run = self.repo(staged=('a.txt',), changed=('a.txt',), untracked=('b.txt',))
             result = self.commit(run, command)
-            self.assertEqual(result['permissionDecision'], 'ask', command)
+            question(self, result, ' && ' in command, command)
             self.assertIn('of a.txt differs from disk', result['permissionDecisionReason'])
             expected = ['custom/a.txt', 'custom/b.txt'] if 'add' in command else ['custom/a.txt']
             self.assertEqual(run.listed, expected, command)
@@ -1011,14 +1025,14 @@ class CommitTests(unittest.TestCase):
             'git add --pathspec-from-file=list && git commit -m x',
         ):  # fmt: skip
             result = self.commit(self.repo(), command)
-            self.assertEqual(result['permissionDecision'], 'ask', command)
+            question(self, result, True, command)
             self.assertIn('changes the stage before the commit', result['permissionDecisionReason'])
         for command in (
             'cd "$d" && git add a.txt && git -C ' + self.top + ' commit -m x',
             'for r in a b; do git -C projects/$r add a.txt; done; git commit -m x',
         ):
             result = self.commit(self.repo(), command)
-            self.assertEqual(result['permissionDecision'], 'ask', command)
+            question(self, result, True, command)
             self.assertIn('I do not know which repository', result['permissionDecisionReason'])
 
     def test_staging_with_no_known_folder_cannot_be_listed(self):
@@ -1054,7 +1068,7 @@ class CommitTests(unittest.TestCase):
         ):
             self.assertTrue(self.denied(self.repo(staged=('a.txt', '.env')), command), command)
         result = self.commit(self.repo(staged=('a.txt', '.env')), 'cd "$d" && git reset .env; git -C . commit -m x')
-        self.assertEqual(result['permissionDecision'], 'ask')
+        question(self, result, True)
 
     def test_tracked_secret_file_the_commit_deletes_is_accepted(self):
         self.write('b.txt', 'plain')
@@ -1176,7 +1190,7 @@ class CommitTests(unittest.TestCase):
         for command in ('cd "$d" && git commit -m x', 'cd - && git commit -m x'):
             run = self.repo()
             result = self.commit(run, command)
-            self.assertEqual(result['permissionDecision'], 'ask', command)
+            question(self, result, True, command)
             self.assertIn('I do not know which repository', result['permissionDecisionReason'])
             self.assertEqual(run.validate_calls, [])
         self.assertIsNone(self.commit(self.repo(), 'cd "$d" && git -C ' + self.top + ' commit -m x'))
@@ -1334,7 +1348,7 @@ class ReviewFindingsTests(unittest.TestCase):
             self.assertEqual(verdict(command, ROOT), 'deny', command)
         self.assertIsNone(verdict('bash scripts/aiwp-cmds.sh run tmp/work/c -- git commit -m x', ROOT))
         self.assertIsNone(verdict('bash scripts/aiwp-cmds.sh run tmp/work/c -- git push origin HEAD', ROOT))
-        self.assertEqual(verdict('cd "$X" && bash scripts/aiwp-cmds.sh run w/c -- git push', ROOT), 'ask')
+        question(self, decision('cd "$X" && bash scripts/aiwp-cmds.sh run w/c -- git push', cwd=ROOT), True)
         self.assertIsNone(guard.aiwp_run(['bash', 'scripts/aiwp-cmds.sh', 'status'], ROOT))
         self.assertIsNone(guard.aiwp_run(['ls', '-la'], ROOT))
         self.assertIsNone(guard.aiwp_run(['bash', 'x.sh', 'run', 'w/c', '--', 'ls'], ROOT))
@@ -1485,7 +1499,7 @@ class InstalledWorkspaceTests(unittest.TestCase):
             ('for f in *.sh; do chmod +x "$f"; done', 'projects/x'),
         ):  # fmt: skip
             result = self.result(command, os.path.join(self.ws, cwd))
-            self.assertEqual(result and result['permissionDecision'], 'ask', command)
+            question(self, result, command.startswith('cd '), command)
             self.assertIn('may reach the read-only core', result['permissionDecisionReason'], command)
         self.assertIn('other hard links', self.result('chmod 666 tmp/work/y/hard.md')['permissionDecisionReason'])
 
@@ -1648,6 +1662,169 @@ class InputTests(unittest.TestCase):
         for payload, name in ((b'not json', 'JSONDecodeError'), (b'{}', 'KeyError'), (b'\xff', 'UnicodeDecodeError')):
             code, out, err = self.run_main(payload)
             self.assertEqual((code, out, err.strip()), (2, '', name))
+
+
+# A work of tmp/work/ and its two clones, as aiwp-cmds.sh open makes them (BR-1).
+WORK = '2026-11-18-add-export'
+
+
+class CloneApprovalTests(unittest.TestCase):
+    """A line that stays in one clone of tmp/work/ and reaches no remote system is allowed with no question (BR-1,
+    AC-1); a path that leaves the clone, a remote, two clones or what the hook cannot tell stays silent (AC-2); every
+    deny and ask of today keeps its precedence."""
+
+    def setUp(self):
+        self.root = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.clone = os.path.join(self.root, 'tmp', 'work', WORK, 'billing-api')
+        self.other = os.path.join(self.root, 'tmp', 'work', WORK, 'billing-web')
+        self.outside = os.path.join(self.root, 'outside')
+        for folder in (
+            self.clone + '/src', self.clone + '/.git/hooks', self.other, self.outside, self.root + '/projects/x',
+            self.root + '/tmp/work/scratch/c',
+        ):  # fmt: skip
+            Path(folder).mkdir(parents=True)
+        for name in ('src/app.py', 'src/b.py', 'f'):
+            Path(self.clone, name).write_text('x', encoding='utf-8')
+        os.symlink(self.outside, os.path.join(self.clone, 'link'))
+        self.run = FakeRun({self.root: {}, self.root + '/projects/x': {}, self.clone: {}, self.other: {}})
+
+    def result(self, command, cwd=None):
+        """Returns the decision object of a command run in the clone (or cwd), or None when the hook stays silent."""
+        return decision(command, self.root, cwd or self.clone, self.run)
+
+    def test_a_line_that_stays_in_the_clone_is_allowed(self):
+        for command in (
+            "sed -i 's/a/b/' src/app.py", 'echo x > notes.txt', "cat <<'EOF' > src/new.py\nprint(1)\nEOF",
+            'npm test', 'npm install', 'pip install -r requirements.txt', 'uv sync', 'go mod download',
+            'mvn -q package', 'dotnet restore', 'git add -A && git commit -m x', 'git status 2>&1 | tail -3',
+            'make test > /dev/null 2>&1', 'rm -rf build', 'ls src/*.py', 'cd src && pytest ../tests',
+            'python3 -m pytest -q --junitxml=reports/out.xml', 'npx playwright test --base-url=http://localhost:3000',
+            'git log --oneline -5', 'mkdir -p src/a && touch src/a/b.py', 'cp src/app.py src/c.py', 'rm -f ./*.pyc',
+            'git commit -m "fix: read a/b paths, see docs"', 'npm test &', 'python3 -c "print(1)"',
+            'perl -pi -e "s/a/b/" f', 'for n in 1 2; do npm test; done',
+        ):  # fmt: skip
+            result = self.result(command)
+            self.assertEqual(result and result['permissionDecision'], 'allow', command)
+            self.assertIn('tmp/work/' + WORK + '/billing-api', result['permissionDecisionReason'], command)
+
+    def test_a_line_that_leads_into_the_clone_from_the_root_is_allowed(self):
+        for command in (
+            'cd tmp/work/' + WORK + '/billing-api && make test',
+            'bash scripts/aiwp-cmds.sh run ' + WORK + '/billing-api -- pytest',
+            'scripts/aiwp-cmds.sh run tmp/work/' + WORK + '/billing-api -- npm test > /dev/null',
+        ):  # fmt: skip
+            result = self.result(command, self.root)
+            self.assertEqual(result and result['permissionDecision'], 'allow', command)
+
+    def test_a_path_that_leaves_the_clone_is_left_to_the_permission_mode(self):
+        for command in (
+            'rm -rf ../../projects/x', 'rm -rf ../../../projects/x', 'cp f /etc/x', 'echo x > /tmp/x',
+            'cat $HOME/.ssh/id_rsa', 'rm -rf ~/x', 'cp f ../billing-web/f', 'cat link/secret', 'echo x > link/y',
+            'ls link/*', 'ls ../*', 'ls .*', 'cat {a,../../x}', 'make DESTDIR=/opt install', 'dd if=f of=/etc/x',
+            'gcc -o/etc/x a.c', 'git clone file:///etc/r y', 'tar xf a.tar -C ..', 'cd .. && ls', 'cd && ls',
+            'cd "$X" && make', 'npm test; cd ../billing-web && npm test', 'rm -rf .', 'rm -rf .git/hooks',
+            'rm .git/hooks/pre-push', 'ln -s /etc x', 'ln -s ../../.. up', 'cat "$(ls)"', "bash -c \"ls 'x\"",
+            'echo a | xargs rm', 'sudo make install', 'env -C /etc ls', 'npm install -g x', 'pip install --user x',
+            'go install x@latest', 'cat < /etc/passwd', 'make 2> ../log.txt', '> /etc/x', 'npm test; > /etc/x',
+            '(ls) > /etc/x', 'exec 3>/etc/x', 'X=1 > /etc/x', '{ ls; } > /etc/x', 'npm config set registry x',
+            'python3 -c "import os; os.remove(\'/etc/x\')"', 'node -e "require(\'fs\').rmSync(\'../../x\')"',
+            'git commit -m "see ../../notes"', 'ssh-keygen -t ed25519', 'cat "a\x00b"',
+        ):  # fmt: skip
+            self.assertIsNone(self.result(command), command)
+
+    def test_a_remote_system_is_left_to_the_permission_mode(self):
+        for command in (
+            'git push', 'git push origin HEAD', 'ssh host ls', 'scp f host:/x', 'rsync -a src host:/x',
+            'curl -s https://example.com', 'wget https://example.com', 'npm publish', 'pnpm publish', 'yarn publish',
+            'twine upload dist/x.whl', 'cargo publish', 'gem push x.gem', 'dotnet nuget push x.nupkg', 'mvn deploy',
+            'gradle publish', 'aws s3 ls', 'az account show', 'gcloud info', 'kubectl get pods', 'helm list',
+            'terraform plan', 'pulumi preview', 'gh pr list', 'glab mr list', 'git remote add o x',
+            'git remote set-url origin x', 'git config core.hooksPath x', 'uv run aws s3 ls',
+            'npm exec -- aws s3 ls', 'bash scripts/heavy-run.sh -- npm test', 'docker ps', 'docker compose up -d',
+            'podman ps', 'psql -c "select 1"', 'sqlite3 a.db .tables', 'bash ../../../scripts/aiwp-cmds.sh status',
+            'bash ../../../scripts/aiwp-gate.sh check',
+        ):  # fmt: skip
+            self.assertIsNone(self.result(command), command)
+
+    def test_outside_a_clone_nothing_is_allowed(self):
+        for command, cwd in (
+            ('npm test', self.root), ('ls', os.path.join(self.root, 'tmp', 'work', WORK)),
+            ('npm test', os.path.join(self.root, 'tmp', 'work', 'scratch', 'c')),
+            ('npm test', os.path.join(self.root, 'projects', 'x')),
+            ('bash /elsewhere/scripts/aiwp-cmds.sh run ' + WORK + '/billing-api -- pytest', self.root),
+            ('bash scripts/aiwp-cmds.sh run scratch/c -- pytest', self.root),
+            ('bash scripts/aiwp-cmds.sh run ' + WORK + '/billing-api -- pytest > log.txt', self.root),
+        ):  # fmt: skip
+            self.assertIsNone(self.result(command, cwd), (command, cwd))
+
+    def test_refusals_and_questions_keep_their_precedence_in_the_clone(self):
+        for command in (
+            'git push --no-verify', 'npm test && git push --no-verify', 'git -C ../../../projects/x commit -m x',
+            'terraform apply', 'cd ../../../projects/x && git reset --hard',
+        ):  # fmt: skip
+            result = self.result(command)
+            self.assertEqual(result and result['permissionDecision'], 'deny', command)
+            self.assertFalse(result['permissionDecisionReason'].startswith(ALONE), command)
+        for command in (
+            'dropdb billing',
+            'rm app.db',
+            'bash ../../../scripts/aiwp-cmds.sh close ' + WORK + ' --discard',
+        ):
+            self.assertEqual(self.result(command)['permissionDecision'], 'ask', command)
+
+    def test_a_question_with_other_commands_is_refused_with_run_it_alone(self):
+        for command in (
+            'git add -A && git commit -m x && dropdb billing',
+            'git add -A && git commit -m x && bash ../../../scripts/aiwp-cmds.sh close 2026-11-18-x --discard',
+            'npm test & dropdb billing', 'npm test; dropdb billing', 'npm test\ndropdb billing',
+            'npm test || dropdb billing', 'echo start; for d in a b; do dropdb $d; done',
+        ):  # fmt: skip
+            result = self.result(command)
+            question(self, result, True, command)
+            self.assertIn('Run the other commands of this line first', result['permissionDecisionReason'], command)
+        alone = self.result('npm test && dropdb billing')['permissionDecisionReason']
+        self.assertIn('dropdb deletes a database', alone)
+        alone = self.result('ls && aiwp-cmds.sh close w --discard')['permissionDecisionReason']
+        self.assertIn('close --discard', alone)
+
+    def test_the_asked_command_alone_still_gets_the_question(self):
+        for command in (
+            'dropdb billing', 'dropdb billing;', 'dropdb billing\n', 'dropdb billing &',
+            'bash ../../../scripts/aiwp-cmds.sh close 2026-11-18-x --discard', "echo 'DROP TABLE x' | psql",
+            'bash -c "npm test && dropdb billing"', 'echo $(npm test) && dropdb billing',
+            '(cd src && dropdb billing)', 'for d in a b; do dropdb $d; done', 'if true; then dropdb x; fi',
+            '{ dropdb a; dropdb b; }', 'dropdb a && dropdb b',
+            "cat > f.sql <<'EOF'\nDROP TABLE t;\nEOF\npsql -f f.sql",
+        ):  # fmt: skip
+            result = self.result(command)
+            if command == 'echo $(npm test) && dropdb billing':
+                question(self, result, True, command)
+                continue
+            question(self, result, False, command)
+        self.assertEqual(self.result('git push "')['permissionDecisionReason'], guard.UNREADABLE + '. Confirm.')
+
+    def test_top_level_groups(self):
+        entries = guard.Lexer('a | b && c; (d; e) & f\ng $(h; i)', '/w').run().commands
+        self.assertEqual(
+            [(e['argv'][0], e['group']) for e in entries],
+            [('a', 0), ('b', 0), ('c', 1), ('d', 2), ('e', 2), ('f', 3), ('h', 4), ('i', 4), ('g', 4)],
+        )
+        entries = guard.Lexer('for x in a; do b; done; case y in z) c;; esac\nwhile d; do e; done', '/w').run()
+        self.assertEqual(sorted({e['group'] for e in entries.commands}), [0, 1, 2])
+
+    def test_helpers(self):
+        self.assertIsNone(guard.clone_of(self.root, None))
+        self.assertIsNone(guard.clone_of(self.root, '/w/$X'))
+        self.assertEqual(guard.clone_of(self.root, self.clone + '/src'), self.clone)
+        self.assertIsNone(guard.clone_of(self.root, self.root + '/tmp/work/' + WORK))
+        self.assertTrue(guard.word_stays('https://example.com/x', self.clone, self.clone))
+        self.assertFalse(guard.word_stays('a:/etc/x', self.clone, self.clone))
+        self.assertFalse(guard.redirects_stay([('>', 'x')], None, None))
+        self.assertTrue(guard.redirects_stay([('>&', '2'), ('2>', '/dev/null'), ('>&', '-')], None, None))
+        many = [os.path.join(self.clone, 'src', str(k)) for k in range(guard.MAX_MATCHES + 1)]
+        with mock.patch.object(guard.glob, 'iglob', return_value=iter(many)):
+            self.assertFalse(guard.word_stays('src/*', self.clone, self.clone))
 
 
 if __name__ == '__main__':

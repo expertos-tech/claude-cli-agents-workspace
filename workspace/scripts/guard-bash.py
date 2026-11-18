@@ -6,11 +6,18 @@ in the spellings scripts/guard-bash.sh --help lists (git -C <dir>, wrappers, she
 substitution, ssh, heredocs), and it refuses a commit that carries a local secret file or a secret gitleaks finds.
 In an installed workspace it refuses chmod, chown, chgrp, git init and git clone that reach the read-only core, and
 denies aiwp update, rollback, repair, forget and the opening (aiwp, aiwp -- ...) inside a session. What it cannot
-read, it asks about.
+read, it asks about. A line it would ask about that holds other top-level commands too is denied instead ("Run it
+alone:"), so the question shows only the command it asks about.
+It allows, with no question, a line it can tell stays in one clone of tmp/work/<yyyy-mm-dd>-<slug>/<clone>/: every
+command runs there, every path it names (arguments and redirections, links resolved) stays there out of its .git, and
+none reaches a remote system (a push, a publish, a deploy, ssh, curl, a cloud or cluster CLI). Docker, SQL clients and
+the workspace scripts are never allowed by it. Every deny and ask comes first; what it cannot tell stays silent.
 A speed bump with the human's confirmation behind it, not a sandbox: text a shell builds at run time is not seen.
 Usage: python3 -I -B guard-bash.py <workspace-root>
 """
 
+import glob
+import itertools
 import json
 import os
 import re
@@ -22,6 +29,9 @@ import tempfile
 
 ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
 VARIABLE = re.compile(r'\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))')
+# Shell words that open and close a compound command, whose inner commands make one top-level command.
+OPENERS = {'if', 'for', 'while', 'until', 'case', 'select', '{'}
+COMPOUND_CLOSERS = {'fi', 'done', 'esac', '}'}
 # Shell words that only introduce the command that follows them.
 KEYWORDS = {'if', 'then', 'elif', 'else', 'do', 'while', 'until', '!', '{', '}', 'function', 'coproc'}
 # Wrappers that run the command that follows them; the value is the number of their own leading words to drop.
@@ -120,20 +130,25 @@ class Lexer:
     """Reads a shell command line into its simple commands, the way a shell would group them: quotes, escapes, line
     continuations, comments, redirections, heredocs, $(...), backticks, <(...), subshells and arithmetic. Every simple
     command, at any nesting, lands in self.commands with its words (redirections apart), the folder it would run in,
-    what reaches its stdin as text (heredoc bodies, here-strings) and the command that pipes into it. A cd, pushd or
-    popd changes the folder of what follows it, inside its own subshell only. Raises ValueError on text it cannot
-    read (an open quote, an open parenthesis)."""
+    what reaches its stdin as text (heredoc bodies, here-strings), the command that pipes into it, and its group: the
+    index of the top-level command it belongs to (top-level commands are joined by ;, &&, ||, & or a newline; a
+    pipeline, a subshell, a substitution and a compound command, if...fi, for/while/until...done, case...esac and
+    { ... }, stay in one). A cd, pushd or popd changes the folder of what follows it,
+    inside its own subshell only. Raises ValueError on text it cannot read (an open quote, an open parenthesis)."""
 
     def __init__(self, text, cwd, commands=None):
         self.text, self.size = text, len(text)
         self.cwd, self.oldpwd, self.dirs, self.exports, self.vars = cwd, None, [], {}, {}
         self.commands = [] if commands is None else commands
-        self.pending, self.depth = [], 0
+        # Redirections with no command to carry them ((a) > f, > f, exec 3> f): their targets, which no entry holds.
+        self.loose = []
+        self.pending, self.depth, self.group, self.compound = [], 0, [0], 0
 
     def child(self, text):
         """Returns a lexer for a nested text (backticks, a heredoc body) that feeds the same command list."""
         other = Lexer(text, self.cwd, self.commands)
         other.exports, other.vars, other.depth = dict(self.exports), dict(self.vars), self.depth
+        other.group, other.loose = self.group, self.loose
         return other
 
     def run(self):
@@ -177,8 +192,15 @@ class Lexer:
             nonlocal words, piped, source, inputs, redirects, awaiting
             push()
             entry = self.emit(words, piped, source, inputs, redirects) if words else None
+            if not words:
+                self.loose.extend(target for _, target in redirects)
             words, inputs, redirects, awaiting = [], [], [], None
             piped, source = next_piped, entry if next_piped else None
+
+        def separate():
+            """Ends a top-level command: what follows belongs to the next group, unless a compound command is open."""
+            if self.depth == 1 and self.compound <= 0:
+                self.group[0] += 1
 
         while i < size:
             char = text[i]
@@ -215,8 +237,10 @@ class Lexer:
                 i += 1
                 if self.pending:
                     i = self.read_heredocs(i)
+                separate()
             elif pair in ('&&', '||', ';;'):
                 finish()
+                separate()
                 i += 2
             elif char == '&' and text[i + 1 : i + 2] == '>':
                 end = i + (3 if text[i + 2 : i + 3] == '>' else 2)
@@ -224,6 +248,7 @@ class Lexer:
                 i = end
             elif char in ';&':
                 finish()
+                separate()
                 i += 1
             elif char == '|':
                 finish(next_piped=True)
@@ -446,9 +471,12 @@ class Lexer:
         assignment. Returns the record. source: the record of the command that pipes into this one, when known."""
         entry = {
             'argv': words, 'cwd': self.cwd, 'piped': piped, 'source': source, 'inputs': inputs,
-            'redirects': redirects, 'exports': dict(self.exports), 'vars': dict(self.vars),
+            'redirects': redirects, 'exports': dict(self.exports), 'vars': dict(self.vars), 'group': self.group[0],
         }  # fmt: skip
         self.commands.append(entry)
+        if self.depth == 1:
+            for word in itertools.takewhile(lambda w: w in KEYWORDS | OPENERS | COMPOUND_CLOSERS, words):
+                self.compound += (word in OPENERS) - (word in COMPOUND_CLOSERS)
         argv, info = strip_wrappers(words)
         if not argv:
             if not info['wrappers']:
@@ -1637,21 +1665,31 @@ def aiwp_run(argv, folder):
     return command, clone
 
 
-def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=False, shared=None):
+def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=False, shared=None, group=None):
     """Yields one entry per simple command of a command line, nested command lines included: a dict with argv, env,
-    wrappers, folder, redirects and remote, or {'reason': text} for something that asks on its own. wrappers and
-    stdin: what wraps and what feeds the command line this text was found in. remote: it runs in another machine,
-    container or user. shared: what the whole walk shares (the files the line wrote, the nested texts left to read)."""
+    wrappers, folder, redirects, remote and group, or {'reason': text, 'group': group} for something that asks on its
+    own. wrappers and stdin: what wraps and what feeds the command line this text was found in. remote: it runs in
+    another machine, container or user. shared: what the whole walk shares (the files the line wrote, the nested texts
+    left to read; 'unread' once a nested text could not be read, 'fed' once a command runs or reads a file the line
+    wrote, 'loose' once a redirection carries no command). group: the top-level command of the line this
+    text was found in; None for the line itself, whose groups the lexer counts."""
     lexer = Lexer(command, cwd).run()
     shared = {'written': {}, 'texts': MAX_TEXTS} if shared is None else shared
-    written, texts = shared['written'], []
+    if lexer.loose:
+        shared['loose'] = True
+    written, texts, owners = shared['written'], [], []
     for entry in lexer.commands:
+        mine = entry['group'] if group is None else group
         argv, info = strip_wrappers(entry['argv'])
+        if not argv and entry['redirects']:
+            shared['loose'] = True  # X=1 > f, exec 3> f: a redirection no entry carries
         folder = entry['cwd']
         if info['chdir']:
             folder = resolve_folder(folder, info['chdir'], entry['vars'])
         outer = info['wrappers'] | wrappers
         fed = stdin_of(entry, stdin, folder, written)
+        if any(operator == '<' and file_key(folder, target) in written for operator, target in entry['redirects']):
+            shared['fed'] = True
         env = {**entry['exports'], **info['env']}
         texts.extend((text, folder, outer, fed, remote) for text in info['texts'])
         targets = []
@@ -1661,7 +1699,7 @@ def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=Fal
             away = remote or name in ELSEWHERE
             yield {
                 'argv': argv, 'env': env, 'wrappers': outer, 'folder': folder, 'redirects': entry['redirects'],
-                'remote': remote, 'vars': entry['vars'], 'stdin': fed[1], 'source': entry['source'],
+                'remote': remote, 'vars': entry['vars'], 'stdin': fed[1], 'source': entry['source'], 'group': mine,
             }  # fmt: skip
             targets.append((argv, outer, remote))
             if len(argv) == 1 and ' ' in argv[0].strip():
@@ -1690,7 +1728,7 @@ def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=Fal
                         around = outer | more['wrappers'] | ({'find'} if kind == 'bulk' else set())
                         yield {
                             'argv': inner, 'env': env, 'wrappers': around, 'folder': folder, 'redirects': [],
-                            'remote': away, 'vars': entry['vars'], 'stdin': None, 'source': None,
+                            'remote': away, 'vars': entry['vars'], 'stdin': None, 'source': None, 'group': mine,
                         }  # fmt: skip
                         targets.append((inner, around, away))
         for target, around, away in targets:
@@ -1707,32 +1745,37 @@ def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=Fal
             else:
                 texts.extend((text, folder, around, fed, away) for text in nested_texts(target))
             if script and FETCHED in script and (base in SHELLS or base in ('source', '.')):
-                yield {'reason': FETCHED_TEXT}
+                yield {'reason': FETCHED_TEXT, 'group': mine}
             if script and file_key(folder, script) in written:
+                shared['fed'] = True
                 texts.extend((body, folder, around, NO_STDIN, away) for body in written[file_key(folder, script)])
             if base in SQL_CLIENTS:
                 files = [target[k + 1] for k in range(1, len(target) - 1) if target[k] in ('-f', '--file', '-i')]
                 given = (fed[1] or []) + [body for f in files for body in written.get(file_key(folder, f), [])]
+                shared['fed'] = shared.get('fed') or any(file_key(folder, f) in written for f in files)
                 if any(SQL_DESTRUCTIVE.search(text) for text in given):
-                    yield {'reason': base + ' gets DROP or TRUNCATE on its input or from a file written on the line'}
+                    reason = base + ' gets DROP or TRUNCATE on its input or from a file written on the line'
+                    yield {'reason': reason, 'group': mine}
         if reader and fed[0]:
             if fed[1] is None:
-                yield {'reason': UNSEEN_STDIN}
+                yield {'reason': UNSEEN_STDIN, 'group': mine}
             else:
                 texts.extend((text, folder, outer, NO_STDIN, remote) for text in fed[1])
-    for text, folder, around, fed, away in texts:
+        owners.extend([mine] * (len(texts) - len(owners)))
+    for (text, folder, around, fed, away), owner in zip(texts, owners):
         shared['texts'] -= 1
         if depth >= MAX_DEPTH or shared['texts'] < 0:
-            yield {'reason': 'there are too many nested commands for me to evaluate'}
+            yield {'reason': 'there are too many nested commands for me to evaluate', 'group': owner}
             continue
         if FETCHED in text:
-            yield {'reason': FETCHED_TEXT}
+            yield {'reason': FETCHED_TEXT, 'group': owner}
             continue
         try:
-            yield from walk(text, folder, depth + 1, around, fed, away, shared)
+            yield from walk(text, folder, depth + 1, around, fed, away, shared, owner)
         except ValueError:
+            shared['unread'] = True
             if GUARDED_WORD.search(text):
-                yield {'reason': UNREADABLE}
+                yield {'reason': UNREADABLE, 'group': owner}
 
 
 def run_git(run, folder, *args):
@@ -1951,6 +1994,219 @@ def created_secrets(entry):
     return [path for path in (os.path.join(folder, t) for t in targets) if local_secret(path)]
 
 
+# Approval of a line that stays in one clone of tmp/work/ (the trail): every command runs in the clone, every path it
+# names stays there, and none reaches a remote system. What it cannot tell is left to the normal permission flow.
+WORK_NAME = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$')
+# Programs never approved: they reach a remote system, a cloud or a cluster (downloading dependencies is not that:
+# npm, pip, uv, go, mvn, gradle and dotnet are judged like any command), run as another user or elsewhere, change the
+# machine outside the clone, or keep their own rules (Docker and SQL clients; the workspace scripts, allowed by rule).
+NOT_APPROVED = {
+    'ssh', 'scp', 'sftp', 'rsync', 'ftp', 'telnet', 'nc', 'ncat', 'netcat', 'socat', 'mosh', 'rclone', 's3cmd',
+    'aws', 'az', 'gcloud', 'gsutil', 'bq', 'kubectl', 'helm', 'terraform', 'tofu', 'pulumi', 'gh', 'glab', 'eksctl',
+    'oc', 'doctl', 'flyctl', 'fly', 'heroku', 'vercel', 'netlify', 'firebase', 'wrangler', 'serverless', 'sls', 'cdk',
+    'sam', 'ansible', 'ansible-playbook', 'vagrant', 'packer', 'skaffold', 'twine', 'pipx', 'docker-compose', 'kill',
+    'pkill', 'killall', 'systemctl', 'launchctl', 'service', 'crontab', 'mount', 'umount', 'shutdown', 'reboot',
+    'osascript', 'open', 'xdg-open', 'brew', 'apt', 'apt-get', 'dnf', 'yum', 'pacman', 'snap', 'defaults',
+    'security', 'gpg', 'ssh-add', 'ssh-keygen', 'ssh-copy-id',
+} | FETCHERS | DOCKERS | SQL_CLIENTS | LAUNCHERS | set(AIWP_SCRIPTS) | set(AIWP_PROGRAMS)  # fmt: skip
+# Subcommand words that act on a remote system: npm publish, mvn deploy, gem push, twine upload, cargo yank...
+REMOTE_WORDS = {'push', 'publish', 'unpublish', 'deploy', 'release', 'upload', 'login', 'logout', 'adduser', 'yank'}
+# Package tools whose config subcommand writes the user's configuration (~/.npmrc, pip.conf, go env -w).
+PACKAGE_TOOLS = {
+    'npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'uv', 'poetry', 'cargo', 'go', 'gem', 'bundle', 'composer',
+}  # fmt: skip
+# Wrappers whose command runs as another user, under a lock, or on arguments the line does not show.
+UNCLEAR_WRAPPERS = {'sudo', 'doas', 'gosu', 'sshpass', 'xargs', 'parallel', 'flock'}
+# Programs whose target, when it is the clone itself, takes its .git folder along (the hooks that scan and push).
+WHOLE_CLONE = {'rm', 'mv', 'chmod', 'chown', 'chgrp'}
+URL = re.compile(r'^[A-Za-z][A-Za-z0-9+.-]*://')
+# What separates the tokens of a word that holds code or a message.
+TOKEN_SEPARATORS = re.compile(r'[\s\'"`();,|&<>]+')
+GLOB_ONLY = '*?['
+MAX_MATCHES = 1000
+SAFE_TARGETS = {'/dev/null', '/dev/stdout', '/dev/stderr', '/dev/stdin'}
+# What entry_clone returns for a command that runs nowhere in particular: a cd, pushd or popd with no target.
+ANYWHERE = ''
+
+
+def clone_of(root, folder):
+    """Returns the clone that holds a folder, as a real path: <root>/tmp/work/<yyyy-mm-dd>-<slug>/<clone>, links
+    resolved; None when the folder is unknown or lies in no clone."""
+    if folder is None or '$' in folder:
+        return None
+    work = os.path.realpath(os.path.join(root, 'tmp', 'work'))
+    real = os.path.realpath(folder)
+    if not strictly_under(real, work):
+        return None
+    parts = os.path.relpath(real, work).split(os.sep)
+    if len(parts) < 2 or not WORK_NAME.match(parts[0]):
+        return None
+    return os.path.join(work, parts[0], parts[1])
+
+
+def stays_in(path, clone):
+    """True when a path, links resolved, is the clone or lies inside it, out of its .git folder (which holds the hooks
+    that scan and push the branch)."""
+    real = os.path.realpath(path)
+    return is_under(real, clone) and os.path.relpath(real, clone).split(os.sep)[0] != '.git'
+
+
+def glob_stays(piece, folder, clone):
+    """True when what a wildcard word matches stays in the clone: the folder of its literal part is in the clone, no
+    .. and no segment that starts with a dot follows the wildcard (.* may match ..), and what it matches now, links
+    resolved, is in the clone too."""
+    segments = piece.split('/')
+    first = next(k for k, segment in enumerate(segments) if any(char in segment for char in GLOB_ONLY))
+    rest = segments[first:]
+    if '..' in rest or any(segment.startswith('.') for segment in rest):
+        return False
+    prefix = '/'.join(segments[:first]) or ('/' if piece.startswith('/') else '.')
+    if not stays_in(os.path.join(folder, prefix), clone):
+        return False
+    pattern = os.path.join(glob.escape(folder), piece)
+    matches = list(itertools.islice(glob.iglob(pattern), MAX_MATCHES + 1))
+    return len(matches) <= MAX_MATCHES and all(stays_in(match, clone) for match in matches)
+
+
+def piece_stays(piece, folder, clone):
+    """True when one piece of a word, read as a path from the folder, stays in the clone. Every piece is read as a
+    path: a plain name stays unless it is a link that leaves, or .git."""
+    if piece in ('', '-', '{}'):
+        return True
+    if piece.startswith('~') or re.search(r'\{[^}]*(,|\.\.)', piece):
+        return False  # the home folder, or a brace expansion ({a,../x}, {1..3}) that may name anything
+    if any(char in piece for char in GLOB_ONLY):
+        return glob_stays(piece, folder, clone)
+    return stays_in(os.path.join(folder, piece), clone)
+
+
+def word_stays(word, folder, clone):
+    """True when every path a word may name stays in the clone, read from the folder: the word itself and each token
+    of it (code or a message given as one word: python3 -c "open('/x')"), and of each, the value after its first =
+    (--out=x, of=x, DESTDIR=x), the value glued to a short option (-o/x) and each piece between colons (a:/x). A URL is
+    not a path, except file:. False when it cannot tell: a $ (a variable, a substitution), a ~, a brace expansion or a
+    wildcard that could leave."""
+    if '$' in word:
+        return False
+    candidates = []
+    for token in dict.fromkeys([word, *TOKEN_SEPARATORS.split(word)]):
+        candidates.append(token)
+        if token.startswith('-') and not token.startswith('--'):
+            candidates.append(token[2:])
+        if '=' in token:
+            candidates.append(token.partition('=')[2])
+    pieces = []
+    for item in candidates:
+        if URL.match(item):
+            if item.lower().startswith('file:'):
+                return False
+            continue
+        pieces.append(item)
+        if ':' in item and '://' not in item:
+            pieces.extend(item.split(':'))
+    return all(piece_stays(piece, folder, clone) for piece in pieces)
+
+
+def redirects_stay(redirects, folder, clone):
+    """True when every redirection target stays in the clone: /dev/null and the standard streams, a file descriptor
+    duplication (2>&1, >&-), or a file read from the folder. With no clone, only the first two."""
+    for operator, target in redirects:
+        if target in SAFE_TARGETS or (operator.endswith('&') and (target.isdigit() or target == '-')):
+            continue
+        if clone is None or folder is None or not word_stays(target, folder, clone):
+            return False
+    return True
+
+
+def reaches_out(argv):
+    """True when a command acts on a remote system or outside the clone by what it is, whatever its paths say: a
+    program of NOT_APPROVED (also run by a shell, a runner or after --), a remote subcommand word (push, publish,
+    deploy...), git remote add or set-url, a git config write (it can turn off the clone's hooks), a link, a global
+    install (npm -g, pip --user, go install, cargo install) and a package tool's configuration (npm config, go env
+    -w)."""
+    name, args = os.path.basename(argv[0]), argv[1:]
+    words = plain_words(args)
+    if name in NOT_APPROVED or makes_links(argv):
+        return True
+    if any(w.partition(':')[0] in REMOTE_WORDS or w.startswith('publish') for w in words):
+        return True
+    if (name in SHELLS | RUNNERS | {'source', '.'} or '--' in args) and any(
+        os.path.basename(a) in NOT_APPROVED for a in args
+    ):
+        return True
+    if name == 'git':
+        parts = git_parts(argv)
+        return parts['sub'] in ('remote', 'config', 'credential', 'send-email', 'request-pull') and not git_reads(
+            parts['sub'], parts['args']
+        )
+    if name in ('npm', 'pnpm', 'yarn', 'bun') and ({'-g', '--global'} & set(args) or words[:1] == ['global']):
+        return True
+    if name in PACKAGE_TOOLS and (words[:1] == ['config'] or words[:1] == ['env'] and '-w' in args):
+        return True  # npm config set, pip config set, go env -w: the user's configuration, outside the clone
+    return (name in ('go', 'cargo') and words[:1] == ['install']) or (name in ('pip', 'pip3') and '--user' in args)
+
+
+def entry_clone(entry, root):
+    """Returns the clone one command of the line stays in (a real path); ANYWHERE for a cd, pushd or popd with no
+    target, which only moves the folder of what follows; None when it cannot tell. The outer scripts/aiwp-cmds.sh run
+    <work>/<clone> -- <command> of this workspace stays in the clone it names wherever it runs: its command is judged
+    on its own, in the clone."""
+    argv, folder = entry['argv'], entry['folder']
+    if entry['remote'] or entry['wrappers'] & UNCLEAR_WRAPPERS:
+        return None
+    values = list(entry['env'].values())
+    name, args = os.path.basename(argv[0]), argv[1:]
+    if name in ('cd', 'pushd', 'popd'):
+        target = None if name == 'popd' else first_operand(args)
+        if target in (None, '-'):
+            return ANYWHERE if redirects_stay(entry['redirects'], folder, None) else None
+        clone = None if '$' in target or '~' in target[:1] else clone_of(root, resolve_folder(folder, target))
+    elif aiwp_run(argv, folder):
+        run = aiwp_run(argv, folder)
+        script = next(a for a in argv if os.path.basename(a) == 'aiwp-cmds.sh')
+        own = os.path.realpath(os.path.join(root, 'scripts', 'aiwp-cmds.sh'))
+        mine = folder is not None and os.path.realpath(os.path.join(folder, script)) == own
+        clone = clone_of(root, run[1]) if mine and run[1] else None
+    else:
+        clone = clone_of(root, folder)
+        if clone is None or reaches_out(argv):
+            return None
+        values += argv
+        if name in WHOLE_CLONE and any(os.path.realpath(os.path.join(folder, w)) == clone for w in plain_words(args)):
+            return None
+    if clone is None or folder is None or not redirects_stay(entry['redirects'], folder, clone):
+        return None
+    return clone if all(word_stays(word, folder, clone) for word in values) else None
+
+
+def approval(entries, root, shared):
+    """Returns the clone, relative to the root, that every command of the line stays in, or None when it cannot tell
+    (a nested text it could not read, a redirection with no command, a command that asks on its own, two clones, one
+    command outside a clone)."""
+    if shared.get('unread') or shared.get('loose'):
+        return None
+    clones = set()
+    for entry in entries:
+        try:
+            found = None if 'reason' in entry else entry_clone(entry, root)
+        except (OSError, ValueError):
+            found = None  # a path the system cannot resolve (a NUL byte, a name too long): it cannot tell
+        if found is None:
+            return None
+        clones.add(found)
+    clones.discard(ANYWHERE)
+    return os.path.relpath(clones.pop(), os.path.realpath(root)) if len(clones) == 1 else None
+
+
+def alone_reason(asks):
+    """Returns the reason of the refusal of a line that would ask and holds other commands too."""
+    what = '; '.join(reason.rstrip('.') for reason in asks[:3])
+    return (
+        'Run it alone: ' + what + '. Run the other commands of this line first, then this one alone in its own call, '
+        'so the question shows only what it asks about.'
+    )
+
+
 def emit(decision, reason):
     """Prints the hook decision."""
     output = {'hookEventName': 'PreToolUse', 'permissionDecision': decision, 'permissionDecisionReason': reason}
@@ -1958,23 +2214,26 @@ def emit(decision, reason):
 
 
 def decide(data, root, run=subprocess.run):
-    """Judges one Bash tool call: deny or ask with the reason, or stay silent. Denies: a git write in projects/ or in
-    the core, Terraform that changes the cloud, git push --no-verify, a commit with a local secret file or a secret,
-    chmod, chown, chgrp, git init or git clone in the read-only core of an installed workspace, aiwp update, rollback
-    and repair. Asks: deleting a database, aiwp-cmds.sh release, hotfix, hotfix-tag, hotfix-down, checkpoint,
-    developer --create, gate --untested, apply --apply and close --discard. The rest is left to Claude Code's own
-    permission mode."""
+    """Judges one Bash tool call: deny, ask or allow with the reason, or stay silent. Denies: a git write in projects/
+    or in the core, Terraform that changes the cloud, git push --no-verify, a commit with a local secret file or a
+    secret, chmod, chown, chgrp, git init or git clone in the read-only core of an installed workspace, aiwp update,
+    rollback and repair. Asks: deleting a database, aiwp-cmds.sh release, hotfix, hotfix-tag, hotfix-down, checkpoint,
+    developer --create, gate --untested, apply --apply and close --discard; a line that would ask and holds other
+    top-level commands too is denied instead, with "Run it alone:", so the question shows only what it asks about.
+    Allows, with no question, a line it can tell stays in one clone of tmp/work/ and reaches no remote system
+    (approval); never over a deny or an ask. The rest is left to Claude Code's own permission mode."""
     command = data['tool_input']['command']
     if not isinstance(command, str):
         raise TypeError('command is not a string')
     cwd = data.get('cwd') or os.getcwd()
+    shared = {'written': {}, 'texts': MAX_TEXTS}
     try:
-        entries = list(walk(command, cwd))
+        entries = list(walk(command, cwd, shared=shared))
     except ValueError:
         if GUARDED_WORD.search(command):
             emit('ask', UNREADABLE + '. Confirm.')
         return
-    asks, staging, created = [], [], []
+    asks, asked, staging, created = [], set(), [], []
     core = CoreGuard(root, cwd, run, entries)
     for entry in entries:
         verdict = None
@@ -2012,10 +2271,21 @@ def decide(data, root, run=subprocess.run):
         if verdict and verdict[0] == 'deny':
             emit(*verdict)
             return
-        if verdict and verdict[1] not in asks:
-            asks.append(verdict[1])
+        if verdict:
+            asked.add(entry['group'])
+            if verdict[1] not in asks:
+                asks.append(verdict[1])
     if asks:
-        emit('ask', 'Confirm before running: ' + '; '.join(reason.rstrip('.') for reason in asks[:3]) + '.')
+        groups = {entry['group'] for entry in entries}
+        # A command that runs a file the line wrote keeps the question: alone, in a later call, the file is not seen.
+        if groups - asked and not shared.get('fed'):
+            emit('deny', alone_reason(asks))
+        else:
+            emit('ask', 'Confirm before running: ' + '; '.join(reason.rstrip('.') for reason in asks[:3]) + '.')
+        return
+    clone = approval(entries, root, shared)
+    if clone:
+        emit('allow', 'Stays in the clone ' + clone + ' and reaches no remote system')
 
 
 def out_of_time(signum, frame):

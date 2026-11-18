@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Claude Code PreToolUse hook for the Bash tool: the human confirms a destructive or outward command; a commit that
-# carries a secret and a change to the read-only core of an installed workspace are refused. The decision logic lives
-# in guard-bash.py, next to this file.
+# Claude Code PreToolUse hook for the Bash tool: the human confirms a destructive or outward command, alone in its
+# call; a commit that carries a secret and a change to the read-only core of an installed workspace are refused; a line
+# that stays in one clone of tmp/work/ is allowed with no question. The decision logic lives in guard-bash.py, next to
+# this file.
 set -euo pipefail
 
 # Prints the command reference.
@@ -56,6 +57,31 @@ the core changes only through aiwp. Outside an installed workspace (this reposit
         whose command word it cannot see (from xargs or parallel, a variable, a command substitution). aiwp check,
         version, list, new (aiwp refuses it over a registered folder) and --help run silently, as does bash -n.
 A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in the clone's folder.
+  deny  "Run it alone: ..." instead of a question above when the line holds other commands too (joined by ;, &&, ||,
+        & or a newline at the top level; a pipeline, a subshell, a compound command (if, for, while, case, { }) and
+        what is nested in the asked command (bash -c, $(...)) count as one). Run the other commands first, then the
+        asked one alone in its own call, so the question shows only it. A line that runs a file it wrote itself
+        (cat > f.sh ... && bash f.sh) keeps the question: alone, later, that file is not seen.
+  allow a line it can tell stays in one clone, tmp/work/<yyyy-mm-dd>-<slug>/<clone>/ (the work trail), when no deny or
+        ask above applies:
+        - every command runs in that clone (a cd into it from the root counts; scripts/aiwp-cmds.sh run
+          <work>/<clone> -- <command> of this workspace counts, wherever it runs, and its command is judged in the
+          clone);
+        - every path it names stays in that clone, out of its .git (the hooks that scan and push): each argument and
+          each token of it (code or a message given as one word), the value after = (--out=x, of=x, DESTDIR=x), the
+          value glued to a short option (-o/x), each piece between colons, every redirection target; read from the
+          folder the command runs in, links resolved. /dev/null and 2>&1 are fine; a URL is not a path (file: is);
+        - nothing it runs acts on a remote system or outside the clone: git push (the clone's hooks push; a push by
+          hand is never allowed), git remote add/set-url, git config writes, ssh, scp, rsync, sftp, curl, wget, cloud
+          and cluster CLIs (aws, az, gcloud, kubectl, helm, terraform, tofu, pulumi, gh, glab...), a remote word
+          (push, publish, deploy, release, upload, login: npm publish, mvn deploy, twine upload, gem push), a global
+          install (npm -g, pip --user, go install, cargo install), npm config, links (ln, cp -s), kill, sudo, xargs.
+          Installing dependencies (npm install, pip install, uv sync, go mod download, mvn, gradle, dotnet restore) is
+          not remote. Docker, docker compose, SQL clients and the workspace scripts (aiwp, aiwp-cmds.sh other than
+          run, aiwp-gate.sh) are never allowed here: they keep their own rules.
+        It stays silent when it cannot tell: a word with $ (a variable, a substitution) or ~, a brace expansion, a
+        wildcard that may leave (a dot segment after it, a match that is a link out), a folder it does not know, two
+        clones, a redirection with no command, a nested text it could not read.
   anything else, and --help of any program -> silent (the normal permission flow decides).
 How it reads the line: the way a shell groups it. Quotes, escapes, line continuations, # comments, redirections (never
 taken as arguments), heredocs, $(...), backticks, <(...), subshells, arithmetic, if/then/do/{ and other keywords.
@@ -76,7 +102,8 @@ Where it looks for a command:
 A heredoc body is otherwise data; with an unquoted delimiter, its $(...) and backticks are read, because they run.
 A command it cannot read (an open quote) asks when it names a guarded program. Malformed input, no python3, any
 internal error and a run longer than 240 s ask too: never a silent pass, never a block of every command.
-Not seen, by design: a command held in a variable or a function, what a script or an interpreter builds at run time,
+Not seen, by design: a command held in a variable or a function, what a script or an interpreter builds at run time
+(an allowed line may run a script of the clone: the trail trusts the clone, not what the script does),
 and what runs inside a container or another host beyond the command line given here. Other tools that change
 permissions (setfacl, chattr, install -m, a chmod inside a script or an interpreter) are not judged.
 This is a speed bump with the human's confirmation behind it, not a sandbox.
