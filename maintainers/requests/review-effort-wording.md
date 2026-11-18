@@ -1,4 +1,4 @@
-# Functional request: Docs and /caw-draft-prompt still say every review is effort high
+# Functional request: Docs and /caw-draft-request still say every review is effort high
 
 **Project:** claude-cli-agents-workspace
 
@@ -6,7 +6,7 @@
 
 ## What
 
-`docs/maintenance.md` (the paragraph above the subagents table) and `.claude/skills/caw-draft-prompt/SKILL.md` ("Steps and effort") say every review runs with effort high, while `.claude/rules/models.md` and `review.md` set the effort by risk. New requests would keep asking for high on every review.
+`docs/maintenance.md` (the paragraph above the subagents table) and `.claude/skills/caw-draft-request/SKILL.md` ("Steps and effort") say every review runs with effort high, while `.claude/rules/models.md` and `review.md` set the effort by risk. New requests would keep asking for high on every review.
 
 ## Done when
 

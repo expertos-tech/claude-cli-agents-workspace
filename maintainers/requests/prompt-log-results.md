@@ -15,7 +15,7 @@ The owner decided that the prompt log keeps "prompt and result" per project and 
 summaries built from the commits. Two gaps were found when it was built and never closed:
 
 - prompts that touch no project go to the `workspace` bucket, and prompts of the folders listed in
-  `custom/prompts/log/sources.json` go to their named project, but both never show a result: commits are only looked
+  `custom/config/prompt-log/sources.json` go to their named project, but both never show a result: commits are only looked
   up in the repositories of `projects/`, so the commits of `custom/` and of a maintenance clone are missing;
 - most older sessions have no `custom-title`, so the log shows the short session id instead of a readable title.
 
