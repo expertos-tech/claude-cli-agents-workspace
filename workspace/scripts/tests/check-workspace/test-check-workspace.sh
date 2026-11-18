@@ -1189,6 +1189,41 @@ test_AC25_secrets_config_by_target() {
   log_has "--path ./ is the root scan" "gitleaks-root.toml"
 }
 
+# Every secret finding is in the secrets check, so the gate can hold it alone as a hard rule: trivy's secret scanner
+# runs there (whole target and --files copy), and vuln runs only the vulnerability scanner.
+test_trivy_secret_scanner_is_part_of_secrets_not_vuln() {
+  new_validate_tree trivy-secrets
+  mkdir -p "$TREE/a"
+  printf 'x\n' >"$TREE/a/notes.md"
+  vl --only secrets
+  rc_is 0
+  log_has "secrets runs trivy's secret scanner on the whole target" "trivy fs --quiet --scanners secret --severity HIGH,CRITICAL --exit-code 1 --skip-dirs refs,.history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist,tmp,projects,custom,logs --skip-files **/.env /work"
+  : >"$STUB_LOG"
+  vl --only vuln
+  log_has "vuln runs the vulnerability scanner only" "trivy fs --quiet --scanners vuln --severity"
+  log_lacks "and no secret scanner" "secret"
+  : >"$STUB_LOG"
+  local list="$BASE_DIR/trivy-files.list"
+  printf 'a/notes.md\n' >"$list"
+  vl --only secrets --files "$list"
+  log_has "with --files, trivy scans the copy of the list" "--skip-files **/.env /work/.history/validate-secrets."
+  # A finding of trivy's secret scanner alone fails secrets; vuln does not see it.
+  cat >"$FAKE_BIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >>"$STUB_LOG"
+case "$*" in *"--scanners secret "*) echo "CRITICAL: AWS (aws-access-key-id)"; exit 1 ;; esac
+exit 0
+STUB
+  vl --only secrets,vuln
+  rc_is 1
+  has "secrets fails on a trivy secret finding" "FAIL secrets"
+  has "its finding is shown" "aws-access-key-id"
+  has "vuln passes" "PASS vuln"
+  vl --only secrets --files "$list"
+  rc_is 1
+  has "so does the --files copy" "FAIL secrets"
+}
+
 test_AC25_vuln_and_iac_skip_tmp_only_at_the_root() {
   new_validate_tree skip-dirs
   mkdir -p "$TREE/tmp/worktrees/r/b" "$TREE/projects/x"
@@ -1694,7 +1729,8 @@ test_AC24_poc_paths_are_never_lint_gated() {
   put tools/p/run.sh DEFECT
   cwj
   rc_is 0
-  log_lacks "AC-24 a POC defect reaches no linter" "tools"
+  # tools/p, the POC: the skip list of trivy's secret scanner names the console's tools/ folder, never this one.
+  log_lacks "AC-24 a POC defect reaches no linter" "tools/p"
   log_has "AC-24 secrets run" " gitleaks dir /work/.history/validate-secrets."
   STUB_SECRETS_RC=1 cwj
   rc_is 1
@@ -2206,7 +2242,9 @@ test_ledger_keeps_a_validate_pass_while_the_folder_holds() {
   rc_is 0
   CHECK_LEDGER_DISABLE="" vl --only secrets
   has "same folder" "CACHED secrets"
-  eq "the tool ran once" "1" "$(grep -c '^docker ' "$STUB_LOG")"
+  # The secrets check runs two tools, gitleaks and trivy's secret scanner: each ran once.
+  eq "gitleaks ran once" "1" "$(grep -c ' gitleaks ' "$STUB_LOG")"
+  eq "trivy ran once" "1" "$(grep -c ' trivy fs ' "$STUB_LOG")"
   put docs/a.md "changed"
   CHECK_LEDGER_DISABLE="" vl --only secrets
   has "a changed file runs it" "PASS secrets"

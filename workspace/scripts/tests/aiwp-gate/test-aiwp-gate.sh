@@ -71,9 +71,10 @@ rc_is() { [ "$RC" -eq "$1" ]; check "rc $1" $?; }
 eq() { [ "$2" = "$3" ]; check "$1: expected [$2] got [$3]" $?; }
 
 # Fresh workspace with the scripts, a stub validate.sh, projects/app on developer with a bare remote, and a clone on
-# OPEN_BRANCH (default feat/sample-change). The stub validate.sh fails, with VALIDATE_SECRETS set, when a run that
-# includes the secrets check (every check, or --only with secrets) finds LEAKED anywhere in the target: the whole-tree
-# scan of the ordinary gate.
+# OPEN_BRANCH (default feat/sample-change). The stub validate.sh prints PASS or FAIL per check it runs (every check, or
+# --only, less --skip), as the real one does: secrets fails, with VALIDATE_SECRETS set, when LEAKED is anywhere in the
+# target (the whole-tree scan of the ordinary gate); a check named in VALIDATE_FAIL (comma list) fails; VALIDATE_RC
+# exits with that code before any check (validate.sh that could not run).
 fixture() {
   R="$BASE/ws.$CURRENT"
   REMOTE="$BASE/remote.$CURRENT.git"
@@ -91,20 +92,33 @@ fixture() {
 #!/usr/bin/env bash
 echo "validate \$*" >>"$R/validate.log"
 target=""
-scan=1
+checks="secrets vuln iac shell dockerfile markdown mermaid terraform python typescript coverage"
+skip=""
 while [ \$# -gt 0 ]; do
   case "\$1" in
     --path) target="\$2"; shift ;;
-    --only) case ",\$2," in *,secrets,*) ;; *) scan=0 ;; esac; shift ;;
+    --only) checks="\$(echo "\$2" | tr ',' ' ')"; shift ;;
+    --skip) skip="\$2"; shift ;;
     --files) shift ;;
   esac
   shift
 done
-if [ -n "\${VALIDATE_SECRETS:-}" ] && [ "\$scan" = 1 ] && grep -rq --exclude-dir=.git LEAKED "$R/\$target"; then
-  echo "FAIL secrets"
-  exit 1
-fi
-exit "\${VALIDATE_RC:-0}"
+[ -z "\${VALIDATE_RC:-}" ] || exit "\$VALIDATE_RC"
+rc=0
+for c in \$checks; do
+  case ",\$skip," in *",\$c,"*) continue ;; esac
+  if [ "\$c" = secrets ] && [ -n "\${VALIDATE_SECRETS:-}" ] && grep -rq --exclude-dir=.git LEAKED "$R/\$target"; then
+    echo "FAIL secrets"
+    rc=1
+  elif case ",\${VALIDATE_FAIL:-}," in *",\$c,"*) true ;; *) false ;; esac; then
+    echo "FAIL \$c"
+    echo "  FAIL a finding of \$c"
+    rc=1
+  else
+    echo "PASS \$c"
+  fi
+done
+exit "\$rc"
 STUB
   git init -q --bare -b main "$REMOTE"
   git init -q -b main "$R/projects/app"
@@ -127,7 +141,7 @@ exit 0
 STUB
   chmod +x "$BASE/scan.sh"
   export AIWP_SECRETS_CMD="$BASE/scan.sh"
-  unset VALIDATE_RC VALIDATE_SECRETS
+  unset VALIDATE_RC VALIDATE_SECRETS VALIDATE_FAIL
   (cd "$R" && bash scripts/aiwp-cmds.sh open "$W" app --branch "${OPEN_BRANCH:-feat/sample-change}" >/dev/null 2>&1)
 }
 
@@ -233,18 +247,136 @@ test_gate_needs_tests_unless_docs_only() {
   has "SKIP tests: documentation only"
 }
 
-test_gate_stops_on_failing_tests_or_validate() {
+test_gate_stops_on_failing_tests_or_a_validate_that_could_not_run() {
   fixture
   commit_in feature.txt one
   gate gate "$W/app" --test "false"
   rc_is 1
   has "the tests failed"
   [ ! -f "$R/tmp/work/$W/.gate-app" ]; check "no record" $?
-  export VALIDATE_RC=1
+  local code
+  for code in 1 2; do
+    export VALIDATE_RC="$code"
+    gate gate "$W/app" --test true
+    rc_is 1
+    [ "$code" = 2 ] || has "the secrets check failed"
+    [ ! -f "$R/tmp/work/$W/.gate-app" ]; check "no record with validate exit $code" $?
+  done
+  unset VALIDATE_RC
+}
+
+# A failing check of validate.sh that is not secrets is a warning: phase 1 passes, prints it and writes it into the
+# audit's Warnings section; the secrets check runs alone first, and the rest with --skip secrets.
+test_gate_turns_a_failing_check_that_is_not_secrets_into_a_warning() {
+  fixture
+  commit_in feature.txt one
+  export VALIDATE_FAIL=shell,coverage
+  gate gate "$W/app" --test true
+  rc_is 0
+  has "gate: checks passed for"
+  has "with 2 warning(s)"
+  has "WARNING: the shell check of validate.sh failed on tmp/work/$W/app — lint or format findings"
+  has "WARNING: the coverage check of validate.sh failed on tmp/work/$W/app — a module is under 85%"
+  has "not refused: shell is not a hard rule"
+  hasnt_out "WARNING: the  FAIL"
+  [ -f "$R/tmp/work/$W/.gate-app" ]; check "phase 1 recorded" $?
+  grep -qx -- "validate --path tmp/work/$W/app --only secrets" "$R/validate.log"; check "secrets alone first" $?
+  grep -qx -- "validate --path tmp/work/$W/app --skip secrets" "$R/validate.log"; check "the rest after it" $?
+  OUT="$(sed -n '/^## Warnings$/,$p' "$R/tmp/work/$W/gate-app.md")"
+  has "- WARNING: the shell check of validate.sh failed on tmp/work/$W/app"
+  has "- WARNING: the coverage check of validate.sh failed"
+  hasnt_out "none"
+  local sha
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  gate gate --merge "$W/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  unset VALIDATE_FAIL
+  # No failed check: the section is there, with none.
+  fixture
+  commit_in feature.txt one
+  gate gate "$W/app" --test true
+  rc_is 0
+  hasnt_out "warning(s)"
+  OUT="$(sed -n '/^## Warnings$/,$p' "$R/tmp/work/$W/gate-app.md")"
+  has "none"
+}
+
+# The hard rules still refuse, with warnings around them: a failing test command, a secret in the tree, an env file
+# in the commits, a normalization out of its scope.
+test_the_hard_rules_still_refuse_beside_warnings() {
+  fixture
+  export VALIDATE_FAIL=python,vuln
+  commit_in feature.txt one
+  gate gate "$W/app" --test false
+  rc_is 1
+  has "the tests failed"
+  [ ! -f "$R/tmp/work/$W/.gate-app" ]; check "no record: tests" $?
+  fixture
+  export VALIDATE_FAIL=python,vuln VALIDATE_SECRETS=1
+  printf 'token LEAKED-OLD\n' >"$R/projects/app/config.txt"
+  git -C "$R/projects/app" add -A
+  git -C "$R/projects/app" commit -q -m "config with an old token"
+  git -C "$R/projects/app" push -q origin developer
+  rm -rf "$R/tmp/work"
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$W" app --branch feat/other-change >/dev/null 2>&1)
+  commit_in feature.txt one
   gate gate "$W/app" --test true
   rc_is 1
-  has "validate failed"
-  unset VALIDATE_RC
+  has "the secrets check failed"
+  hasnt_out "WARNING:"
+  [ ! -f "$R/tmp/work/$W/.gate-app" ]; check "no record: secret" $?
+  unset VALIDATE_SECRETS
+  # A secret only trivy's secret scanner finds fails the secrets check too (validate.sh runs it there): refused.
+  fixture
+  export VALIDATE_FAIL=secrets,vuln
+  commit_in feature.txt one
+  gate gate "$W/app" --test true
+  rc_is 1
+  has "the secrets check failed"
+  hasnt_out "WARNING:"
+  [ ! -f "$R/tmp/work/$W/.gate-app" ]; check "no record: secret of the secrets check" $?
+  fixture
+  export VALIDATE_FAIL=python
+  commit_in feature.txt one
+  mkdir -p "$(c)/cfg"
+  printf 'K=1\n' >"$(c)/cfg/.env"
+  git -C "$(c)" add -f cfg/.env
+  git -C "$(c)" commit -q --no-verify -m env >/dev/null 2>&1
+  git -C "$(c)" push -q --no-verify origin HEAD:refs/heads/feat/sample-change 2>/dev/null
+  git -C "$(c)" config aiwp.pushed "$(git -C "$(c)" rev-parse HEAD)"
+  gate gate "$W/app" --test true
+  rc_is 1
+  has "carry a local env file"
+  [ ! -f "$R/tmp/work/$W/.gate-app" ]; check "no record: env file" $?
+  norm_fixture
+  export VALIDATE_FAIL=markdown
+  commit_in README.md "$(printf '%s\n# app' "$MARKER")"
+  commit_in src/app.js "code"
+  gate gate "$W/app" --test true
+  rc_is 1
+  has "a normalization changes only documentation"
+  has "src/app.js"
+  [ ! -f "$R/tmp/work/$W/.gate-app" ]; check "no record: scope" $?
+  unset VALIDATE_FAIL
+}
+
+# The lint run of a normalization follows the same rule: its failures are warnings.
+test_normalization_lint_failures_are_warnings() {
+  norm_fixture
+  export VALIDATE_FAIL=markdown
+  commit_in README.md "$(printf '%s\n# app' "$MARKER")"
+  gate gate "$W/app" --test true
+  rc_is 0
+  has "WARNING: the markdown check of validate.sh failed on tmp/work/$W/app"
+  [ ! -e "$R/tmp/work/$W/.gate-files-app" ]; check "list removed" $?
+  grep -q "^- WARNING: the markdown check" "$R/tmp/work/$W/gate-app.md"; check "in the audit" $?
+  export VALIDATE_RC=2
+  gate gate "$W/app" --test true
+  rc_is 1
+  has "validate could not run its checks (exit 2"
+  [ ! -e "$R/tmp/work/$W/.gate-files-app" ]; check "list removed on a refusal" $?
+  unset VALIDATE_FAIL VALIDATE_RC
 }
 
 test_gate_brings_the_updated_base_in() {
@@ -559,7 +691,7 @@ test_normalization_gate_judges_only_what_the_branch_adds() {
   commit_in feature.txt one
   gate gate "$W/app" --test true
   rc_is 1
-  has "validate failed"
+  has "the secrets check failed"
   unset VALIDATE_SECRETS
 }
 

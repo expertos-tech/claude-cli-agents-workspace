@@ -9,7 +9,7 @@ Rules for adding or updating tools: `rules/rules.md` "Tooling".
 | --- | --- | --- | --- |
 | terraform | Terraform 1.17.1 | terraform | fmt, init without backend, validate |
 | tflint | TFLint v0.65.0 | terraform | Terraform lint (`config/tflint.hcl` recommended preset; a module `.tflint.hcl` with provider rulesets takes precedence) |
-| trivy | Trivy 0.76.1 | vuln, iac | dependency CVEs, secrets, IaC misconfig (also `trivy image`) |
+| trivy | Trivy 0.76.1 | vuln, iac, secrets | dependency CVEs, IaC misconfig, secrets (with gitleaks, in `secrets`; also `trivy image`) |
 | gitleaks | Gitleaks v8.30.1 | secrets | secrets in files, config `config/gitleaks.toml`; `gitleaks git` for history runs with the default rules only, never with that config (`rules/security.md` "Secrets") |
 | shellcheck | ShellCheck v0.11.0 | shell | bash lint |
 | hadolint | Hadolint v2.15.1 | dockerfile | Dockerfile lint |

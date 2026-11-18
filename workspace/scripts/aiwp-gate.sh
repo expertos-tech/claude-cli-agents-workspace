@@ -16,10 +16,16 @@ gate <work>/<clone> [--test "<command>" | --docs-only | --untested]
       remote. Prints the state of the project (scripts/aiwp-project-state.sh): with no marker or out of date, an
       attention: line, never a failure. In the clone: merge the updated base into the branch and push it; run the
       full test command (--test, required unless every changed file is documentation and --docs-only is given); run
-      scripts/validate.sh --path <clone> with every check; refuse env files and secrets in base..HEAD; write the audit
-      of what leaves the base (deleted or renamed-away files, removed or disabled tests, destructive SQL, infra and
-      dependency changes, large deletions) to tmp/work/<work>/gate-<clone>.md. The tests and checks must leave the
-      tracked files unchanged. On success records the checked sha and prints the merge command.
+      scripts/validate.sh --path <clone>: first its secrets check alone (gitleaks and trivy's secret scanner; a
+      failure refuses: a secret, or a tracked .env or local.settings.json, is a hard rule, rules/security.md), then
+      every other check (--skip secrets; vuln is then the vulnerability scanner only), whose failures are warnings,
+      not refusals: one "WARNING: <what> — <why> — <what the person can do>" line per failed check, printed at the
+      end and written under "## Warnings" of the audit, for /merge to list; validate.sh that exits 2 or fails with
+      no FAIL line (it could not run) still refuses. Refuse env files and secrets in
+      base..HEAD; write the audit of what leaves the base (deleted or renamed-away files, removed or disabled tests,
+      destructive SQL, infra and dependency changes, large deletions, the warnings) to tmp/work/<work>/gate-<clone>.md.
+      The tests and checks must leave the tracked files unchanged. On success records the checked sha and prints the
+      merge command.
       While a hotfix on main waits to be merged into developer (the remote main is not in the remote developer), the
       gate of a clone of developer refuses and says so, unless the branch holds that main: it is the merge of main
       into developer (fix/<slug>-developer), which clears the wait.
@@ -34,7 +40,8 @@ gate <work>/<clone> [--test "<command>" | --docs-only | --untested]
       a -x-y-z suffix names a pending migration); line 1 of README.md must be the marker of this workspace VERSION;
       the branch may add or change only documentation, images, .gitignore and the sample .env (deletions are
       allowed); validate.sh runs only its lint
-      checks, only on the files the branch changed; the secret check is the scan of the commits the branch adds
+      checks, only on the files the branch changed, and their failures are warnings as above; the secret check is the
+      scan of the commits the branch adds
       (their added lines: a new secret or env file still fails, one already in the base does not); --untested is
       accepted when the person chose to go on without running the branch, and the audit says so.
 gate --merge <work>/<clone> <sha>
@@ -143,6 +150,8 @@ REFUSED_ORDER="refused: the merge happens only when the person types /merge in t
 # An order older than this many seconds is spent: a /merge typed hours ago, refused or declined, is no order now.
 MERGE_ORDER_TTL=43200
 ORDER_FILE=""
+# The WARNING lines of a phase 1 (validate_warn), one per line: printed at its end and written into its audit.
+WARNINGS=""
 
 # Prints an error and exits with the given code.
 die() {
@@ -419,6 +428,41 @@ changed_files() {
   done < <(git -C "$clone" diff --no-renames --name-only --diff-filter=d "$range")
 }
 
+# Prints the WARNING line (rules/security.md "Warnings") of a check of scripts/validate.sh that failed on the clone
+# (workspace-relative path $2): not a hard rule, so phase 1 goes on and the person decides at /merge.
+check_warning() {
+  local check="$1" rel="$2" why fix
+  fix="read its output above (bash scripts/validate.sh --path $rel --only $check --verbose); fix it in the clone and run the gate again, or merge it as it is"
+  case "$check" in
+    vuln) why="trivy found a HIGH or CRITICAL dependency vulnerability (its secret scanner runs in secrets, a hard rule)" ;;
+    iac) why="trivy found a HIGH or CRITICAL misconfiguration in Terraform, Dockerfile or Kubernetes files" ;;
+    terraform) why="a Terraform module fails fmt, init, validate or tflint" ;;
+    coverage) why="a module is under 85% of lines or branches, or its tests fail under coverage" ;;
+    shell | dockerfile | markdown | mermaid | python | typescript) why="lint or format findings enter the base with the branch" ;;
+    *) why="its findings enter the base with the branch" ;;
+  esac
+  printf 'WARNING: the %s check of validate.sh failed on %s — %s — %s\n' "$check" "$rel" "$why" "$fix"
+}
+
+# Runs scripts/validate.sh with the arguments after $1 (the clone, workspace-relative), its output shown as it goes, and
+# adds to WARNINGS one WARNING line per check that failed (its FAIL line): a failed check that is not a hard rule never
+# refuses. validate.sh exiting 2, or failing with no FAIL line, judged nothing: that refuses.
+validate_warn() {
+  local rel="$1" log rc=0 failed c
+  shift
+  log="$(mktemp)" || die 1 "could not create a temporary file for the output of validate"
+  bash "$root/scripts/validate.sh" "$@" 2>&1 | tee "$log" || rc=$?
+  failed="$(sed -n 's/^FAIL \([a-z][a-z]*\)$/\1/p' "$log")"
+  rm -f "$log"
+  [ "$rc" != 0 ] || return 0
+  [ "$rc" = 1 ] && [ -n "$failed" ] || die 1 "validate could not run its checks (exit $rc, above): fix that and run the gate again"
+  for c in $failed; do
+    [ "$c" != secrets ] || die 1 "the secrets check failed (above): a secret, or a tracked .env or local.settings.json, never enters the base"
+    WARNINGS="$WARNINGS$(check_warning "$c" "$rel")"$'\n'
+    echo "not refused: $c is not a hard rule (rules/security.md); its WARNING is in the summary below and in the audit"
+  done
+}
+
 # gate phase 1: checks and audit.
 cmd_gate_check() {
   local given="$1" test_cmd="$2" docs_flag="$3" untested="$4" clone src base branch work name sha range report record
@@ -486,17 +530,22 @@ cmd_gate_check() {
   if [ "$normalization" = 1 ]; then
     echo "== 4/6 validate, the lint checks on the files the normalization changed"
     files="$work_root/$work/.gate-files-$name"
+    # The list goes whatever happens next, a refusal included.
+    trap 'rm -f "${files:-}"' EXIT
     changed_files "$clone" "$range" "$files"
     if [ -s "$files" ]; then
-      bash "$root/scripts/validate.sh" --path "${clone#"$root"/}" --only "$LINT_CHECKS" --files "$files" ||
-        { rm -f "$files"; die 1 "validate failed: fix in the clone and run the gate again"; }
+      # Lint findings are warnings, never a refusal (validate_warn).
+      validate_warn "${clone#"$root"/}" --path "${clone#"$root"/}" --only "$LINT_CHECKS" --files "$files"
     else
       echo "SKIP validate: the normalization only deletes files"
     fi
     rm -f "$files"
+    trap - EXIT
   else
-    echo "== 4/6 validate, every check"
-    bash "$root/scripts/validate.sh" --path "${clone#"$root"/}" || die 1 "validate failed: fix in the clone and run the gate again"
+    echo "== 4/6 validate: secrets, a hard rule, then every other check, whose failures are warnings"
+    bash "$root/scripts/validate.sh" --path "${clone#"$root"/}" --only secrets ||
+      die 1 "the secrets check failed (above): a secret, or a tracked .env or local.settings.json, never enters the base: remove it from the branch in the clone (rotate a key that left the machine) and run the gate again"
+    validate_warn "${clone#"$root"/}" --path "${clone#"$root"/}" --skip secrets
   fi
   # What passed must be the commit that is recorded: a test or a check that rewrote a tracked file (a formatter, lint
   # --fix, a snapshot update) passed on another tree.
@@ -517,10 +566,22 @@ cmd_gate_check() {
       if [ "$untested" = 1 ]; then echo "- Tests: not run; the person chose to go on untested."; fi
     } >>"$report"
   fi
+  # The checks that failed but are not hard rules: /merge lists them in its summary, the person decides.
+  {
+    echo
+    echo "## Warnings"
+    echo
+    if [ -n "$WARNINGS" ]; then printf '%s' "$WARNINGS" | sed 's/^/- /'; else echo "none"; fi
+  } >>"$report"
   record="$work_root/$work/.gate-$name"
   printf '%s %s %s\n' "$sha" "$base_sha" "$(date +%s)" >"$record"
   echo
-  echo "gate: checks passed for $sha"
+  if [ -n "$WARNINGS" ]; then
+    printf '%s' "$WARNINGS"
+    echo "gate: checks passed for $sha, with $(printf '%s' "$WARNINGS" | grep -c '^WARNING:') warning(s): not refused, listed in the audit under Warnings for the person to decide at /merge"
+  else
+    echo "gate: checks passed for $sha"
+  fi
   echo "audit: ${report#"$root"/}"
   if [ "$hotfix" = 1 ]; then
     echo "next: review the fix ($range) against the error it fixes; with no BLOCKER open and the human's OK, the"

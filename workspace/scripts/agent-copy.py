@@ -9,7 +9,10 @@ its name matches GROUP_RE. Everything goes through the docker command on PATH, s
 Usage: python3 -I agent-copy.py up <group> <folder> <override> [--fallback <group>] [--env-file <file>]...
                                    [--custom-root <dir>] [--allow-root <dir>]... [-- <docker compose options>...]
 --allow-root: a folder the copy may read besides <folder> (binds, build context, env files, secret and config files);
-repeated. Without it: <folder> and AIWP_CUSTOM_DIR.
+repeated. Without it: <folder> and AIWP_CUSTOM_DIR. What would undo the copy's isolation is refused before anything
+starts; a service setting that only polices the person's compose (a key off SERVICE_KEYS, security_opt, a host
+namespace...) prints one WARNING line per service and the copy starts; the override labels each service
+com.aiwp.copy.safe=true, or false for a service it warned about (guard-bash then never auto-allows exec in it).
        python3 -I agent-copy.py down <group>
        python3 -I agent-copy.py destroy [--under <path>]... [<group>...]
        python3 -I agent-copy.py list [--under <path>]... [--group <group>]...
@@ -45,6 +48,10 @@ CUSTOM_DIR_VAR = 'AIWP_CUSTOM_DIR'
 # The one network of a copy that reaches outside Docker: only the services that publish a port join it. Every other
 # network of the copy is internal. Its name is <group>_edge, created by compose with the group's labels.
 EDGE_KEY = 'agent-edge'
+# The label the override writes on every service of a copy: "true" when up judged it safe (no WARNING), "false" when
+# it warned about it. guard-bash auto-allows exec only into a container labeled "true"; the override always sets it,
+# so a value from the compose files or the image never stands.
+SAFE_LABEL = 'com.aiwp.copy.safe'
 # An internal bridge still answers on its gateway, which is the host: the copy's internal networks have none.
 ISOLATED_GATEWAY = (
     'com.docker.network.bridge.gateway_mode_ipv4',
@@ -360,7 +367,10 @@ def q(value):
     return json.dumps(str(value))
 
 
-# The allowlist of a copy: what its compose files may hold. Anything else is refused, named, before anything starts.
+# The allowlist of a copy: what its compose files may hold. What would undo the copy's isolation (its internal networks,
+# its group's labels, no gateway to the host, nothing read from outside the clone) is refused, named, before anything
+# starts; what only polices the person's own services (a service key off SERVICE_KEYS, a security_opt, a host
+# namespace, a deploy key off DEPLOY_KEYS, an extra host on host-gateway) is a WARNING and the copy starts.
 TOP_KEYS = {'name', 'services', 'networks', 'volumes', 'secrets', 'configs'}
 SERVICE_KEYS = {
     'image', 'build', 'command', 'entrypoint', 'environment', 'env_file', 'ports', 'expose', 'volumes', 'tmpfs',
@@ -452,39 +462,90 @@ def mount_refusals(service, spec, volumes, roots, remap):
     return refusals
 
 
+def own_mode(key, value, services):
+    """Returns True when a namespace or network mode keeps the service to the copy: unset, a mode of PRIVATE_MODES, or
+    service:<x> of the same files."""
+    value = str(value or '')
+    return (
+        not value
+        or value in PRIVATE_MODES.get(key, ())
+        or (value.startswith('service:') and value.split(':', 1)[1] in services)
+    )
+
+
 def option_refusals(service, spec, services):
-    """Returns why a service's options may not run in a copy: security_opt other than no-new-privileges, a namespace
-    or network_mode that is not service:<x> of the file (nor a mode of PRIVATE_MODES), a deploy key off DEPLOY_KEYS or
-    reserved devices, a log driver that sends elsewhere, an extra host on the host gateway."""
+    """Returns why a service's options would undo the copy's isolation: a network_mode that is not service:<x> of the
+    files (host, bridge, none, another container: off the copy's internal networks), the volumes of a container
+    outside the files (another stack's data), a log driver that sends the logs off the machine."""
     refusals = []
-    for option in spec.get('security_opt') or []:
-        if option not in SECURITY_OPTS:
-            refusals.append(f'service {service} sets security_opt {option}')
-    for key in ('pid', 'ipc', 'uts', 'cgroup', 'network_mode'):
-        value = str(spec.get(key) or '')
-        if value in PRIVATE_MODES.get(key, ()):
-            continue
-        if value and not (value.startswith('service:') and value.split(':', 1)[1] in services):
-            refusals.append(f'service {service} sets {key} {value}: only service:<x> of the same files')
-    deploy = spec.get('deploy') or {}
-    refusals += unknown_keys(f'service {service} deploy', deploy, DEPLOY_KEYS)
-    if ((deploy.get('resources') or {}).get('reservations') or {}).get('devices'):
-        refusals.append(f'service {service} reserves devices')
+    if not own_mode('network_mode', spec.get('network_mode'), services):
+        refusals.append(
+            f'service {service} sets network_mode {spec["network_mode"]}: only service:<x> of the same files'
+        )
+    for item in spec.get('volumes_from') or []:
+        source = str(item)
+        name = source.split(':', 2)[1] if source.startswith('container:') else source.split(':', 1)[0]
+        if source.startswith('container:') or name not in services:
+            refusals.append(f'service {service} takes the volumes of {source}, outside the compose files')
     driver = (spec.get('logging') or {}).get('driver') or ''
     if driver not in LOG_DRIVERS:
         refusals.append(f'service {service} logs through {driver}')
+    return refusals
+
+
+def service_warnings(spec, services):
+    """Returns (what may reach the host, what is only unusual) of a service's settings that a copy runs as they are:
+    a key off SERVICE_KEYS (privileged, cap_add, devices, volumes_from, sysctls...), a security_opt other than
+    no-new-privileges, a pid, ipc, uts or cgroup namespace that is not the copy's own, reserved devices; a deploy key
+    off DEPLOY_KEYS, an extra host on host-gateway."""
+    reach, unusual = [f'{key}' for key in sorted(spec) if key not in SERVICE_KEYS and not extension(key)], []
+    reach += [f'security_opt {option}' for option in spec.get('security_opt') or [] if option not in SECURITY_OPTS]
+    for key in ('pid', 'ipc', 'uts', 'cgroup'):
+        if not own_mode(key, spec.get(key), services):
+            reach.append(f'{key} {spec[key]}')
+    deploy = spec.get('deploy') or {}
+    if ((deploy.get('resources') or {}).get('reservations') or {}).get('devices'):
+        reach.append('deploy reserved devices')
+    unusual += [f'deploy {key}' for key in sorted(deploy) if key not in DEPLOY_KEYS and not extension(key)]
     hosts = spec.get('extra_hosts') or []
     values = hosts.values() if isinstance(hosts, dict) else hosts
     if any('host-gateway' in str(value) for value in values):
-        refusals.append(f'service {service} maps a name to host-gateway, the host')
-    return refusals
+        unusual.append('an extra host on host-gateway')
+    return reach, unusual
+
+
+def copy_warnings(config):
+    """Returns {service: its WARNING line (rules/security.md "Warnings")} for each service whose settings a copy runs
+    as they are, though they are off its safe list (service_warnings): the copy starts, the person decides, and the
+    override labels the service SAFE_LABEL=false, so guard-bash never auto-allows a command in it."""
+    services = config.get('services') or {}
+    found = {}
+    for service, spec in sorted(services.items()):
+        reach, unusual = service_warnings(spec, services)
+        if not reach and not unusual:
+            continue
+        if reach:
+            why = "such a container may reach the host past the copy's internal networks"
+        else:
+            why = (
+                'compose outside a swarm ignores such a deploy key, and host-gateway reaches the host only from a '
+                'service that publishes a port'
+            )
+        found[service] = (
+            f'WARNING: service {service} sets {", ".join(reach + unusual)}, off the safe list of a copy — {why}; '
+            f'guard-bash auto-allows a command only in a container up labeled {SAFE_LABEL}=true, so exec in {service} '
+            'falls back to the permission mode — the copy starts; remove them from the compose files if the copy '
+            'does not need them'
+        )
+    return found
 
 
 def isolation_refusals(config, roots=(), remap=lambda path: path):
     """Returns why the copy cannot run isolated, each named, from an allowlist: only the keys of TOP_KEYS,
-    SERVICE_KEYS, BUILD_KEYS, NETWORK_KEYS, VOLUME_KEYS and FILE_KEYS (and x-* extensions), only bridge networks,
-    local volumes with no options, files and binds inside the roots (the clone and the folders the caller allows; links
-    followed), env files inside them, no runtime socket, and the options option_refusals allows. Nothing external."""
+    BUILD_KEYS, NETWORK_KEYS, VOLUME_KEYS and FILE_KEYS (and x-* extensions), only bridge networks, local volumes with
+    no options, files and binds inside the roots (the clone and the folders the caller allows; links followed), env
+    files inside them, no runtime socket, and the options option_refusals allows. Nothing external. A service key off
+    SERVICE_KEYS and the other settings of service_warnings are not refused: copy_warnings names them."""
     refusals = unknown_keys('the compose files', config, TOP_KEYS)
     services = config.get('services') or {}
     volumes = config.get('volumes') or {}
@@ -511,7 +572,6 @@ def isolation_refusals(config, roots=(), remap=lambda path: path):
                 if why:
                     refusals.append(why)
     for service, spec in sorted(services.items()):
-        refusals += unknown_keys(f'service {service}', spec, SERVICE_KEYS)
         if 'build' in spec:
             refusals += build_refusals(service, spec['build'], roots)
         for item in spec.get('env_file') or []:
@@ -604,13 +664,14 @@ def network_roles(config, entries):
     return roles
 
 
-def build_override(config, group, entries, ports, custom_root='', custom=''):
+def build_override(config, group, entries, ports, custom_root='', custom='', unsafe=()):
     """Returns the text of the override file of a copy: the group's name, the image of each built service (and of a
     service that runs that image) with no extra build tag, no fixed container name, the ports moved, the port
     variables in every service, the configuration binds moved to AIWP_CUSTOM_DIR, no fixed network or volume name, and
     no fixed address (a service's ipv4_address or ipv6_address, a network's ipam.config subnet). Every network of the
     copy is internal (no way out of Docker); a service that publishes a port also joins <group>_edge (edge_services),
-    the one network that is not, so the host reaches its port. Aliases and service names keep resolving."""
+    the one network that is not, so the host reaches its port. Aliases and service names keep resolving. Every service
+    carries SAFE_LABEL: "false" for the services in unsafe (those up warned about), "true" for the others."""
     services = config.get('services') or {}
     edge = edge_services(config, entries)
     renamed = {}
@@ -646,6 +707,7 @@ def build_override(config, group, entries, ports, custom_root='', custom=''):
                 lines.append(f'        protocol: {q(entry["protocol"])}')
         lines.append('    environment:')
         lines += [f'      {key}: {q(value)}' for key, value in variables.items()]
+        lines += ['    labels:', f'      {q(SAFE_LABEL)}: {q("false" if service in unsafe else "true")}']
         attached = {}
         for name, attach in sorted(service_networks(spec).items()):
             resets = [
@@ -752,9 +814,10 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options, a
     refusals = isolation_refusals(config, roots, remap)
     if refusals:
         raise Refused('; '.join(refusals))
+    warnings = copy_warnings(config)
     entries = port_entries(config)
     ports = pick_ports(entries, read_ports_env(ports_path(override)), free_checker(own_ports(found)))
-    text = build_override(config, group, entries, ports, custom_root, custom)
+    text = build_override(config, group, entries, ports, custom_root, custom, set(warnings))
     os.makedirs(os.path.dirname(os.path.abspath(override)), exist_ok=True)
     with open(override, 'w', encoding='utf-8') as handle:
         handle.write(text)
@@ -763,6 +826,8 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options, a
         handle.write(''.join(f'{key}={value}\n' for key, value in values.items()))
     env = {**os.environ, **values}
     print(f'group: {group}', flush=True)
+    for line in warnings.values():
+        print(line, flush=True)
     dropped, notes = fixed_addresses(config)
     if dropped:
         print(
