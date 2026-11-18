@@ -12,6 +12,10 @@
     "**/claude-cli-agents-workspace/.claude/worktrees/*/tmp/**"
   ],
   "permissions": {
+    "allow": [
+      "Edit(/tmp/work/**)",
+      "Bash(bash tests/caw-work.sh *)"
+    ],
     "deny": [
       "Read(.env)",
       "Read(.env.*)",
