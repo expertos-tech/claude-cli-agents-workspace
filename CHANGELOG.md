@@ -56,14 +56,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - `developer` is the default branch; `main` moves only by a product release.
-- `/caw-prompt` works in a clone on a work branch under `tmp/work/`, and finds a bare file name in
-  `maintainers/requests/`, then `tmp/prompts/`, then `tmp/`.
+- `/caw-request` works in a clone on a work branch under `tmp/work/`, and finds a bare file name in
+  `maintainers/requests/`, then `tmp/requests/`, then `tmp/`.
 - The maintenance skills carry the prefix `caw-`, apart from the product's; `/caw-merge`, `/caw-request` (was
   `/caw-prompt`), `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same purpose.
 - An approved plan is recorded as a pending request, no longer in `done/`.
 - Plans and requests are shown to the owner in their language and saved in English.
 - A merge into `developer` checks and reviews only the difference that enters, with the review effort by risk and no
-  review for documentation alone; a RECOMMENDED finding becomes a backlog item.
+  review for documentation alone; a RECOMMENDED finding becomes a `ready` request.
 - Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
 - `/caw-merge --main` ends with the same final review as the product's: what enters and what leaves, then general.
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
