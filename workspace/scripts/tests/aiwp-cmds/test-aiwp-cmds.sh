@@ -321,8 +321,8 @@ STUB
 stub_config() {
   local volume='{"name":"app-data"}' name="${2:-agent_1116-sample-change}"
   [ "${1:-}" != external ] || volume='{"name":"shared-data","external":true}'
-  printf '{"name":"%s","services":{"web":{"build":{"context":"."},"image":"app-web","container_name":"app-web","ports":[{"target":80,"published":"8080","protocol":"tcp","host_ip":"127.0.0.1"}]},"db":{"image":"postgres:16","ports":[{"target":5432,"published":"5432","protocol":"tcp"}]},"worker":{"image":"app-web"}},"networks":{"default":{"name":"app-net"}},"volumes":{"data":%s}}\n' \
-    "$name" "$volume" >"$STUB/config.json"
+  printf '{"name":"%s","services":{"web":{"build":{"context":"%s","dockerfile":"Dockerfile"},"image":"app-web","container_name":"app-web","ports":[{"target":80,"published":"8080","protocol":"tcp","host_ip":"127.0.0.1"}]},"db":{"image":"postgres:16","ports":[{"target":5432,"published":"5432","protocol":"tcp"}]},"worker":{"image":"app-web"}},"networks":{"default":{"name":"app-net"}},"volumes":{"data":%s}}\n' \
+    "$name" "$(clone)" "$volume" >"$STUB/config.json"
 }
 
 dock() { # aiwp-cmds.sh with the docker stub first on PATH; output in OUT
@@ -398,7 +398,7 @@ test_up_refuses_what_it_cannot_isolate_and_the_final_stack() {
   printf 'services: {}\n' >"$(clone)/compose.yaml"
   dock up "$W/app"
   rc_is 1
-  has "volume data is external (shared-data)"
+  has "volume data sets external"
   ! grep -q 'up -d' "$DOCKER_LOG"; check "nothing started" $?
   dock up app
   rc_is 1

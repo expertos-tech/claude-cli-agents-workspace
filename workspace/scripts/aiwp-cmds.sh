@@ -57,17 +57,23 @@ Commands:
         built service the group's own image (<group>-<service>), drops a fixed container_name and a fixed network or
         volume name (compose !reset), and moves every published port to a random free host port in 61000-65535 (on
         Linux free in /proc/net, in docker ps and by a bind test; elsewhere by docker ps and the bind test); the port
-        of the last up is kept while it is free. Refused, nothing started, with the reason: Docker Engine older than
-        28; an external network or volume; a network that is not a bridge; a local volume on a host path; a service
-        with network_mode other than service:<x>, privileged, cap_add, devices, security_opt, device_cgroup_rules,
-        pid/ipc/uts/cgroup/userns_mode host, a container runtime socket, or a bind outside the clone (a named
-        volume of the group is fine). Every network of the copy is internal (internal: true, and driver_opts
-        com.docker.network.bridge.gateway_mode_ipv4 and _ipv6 set to isolated, so not even its gateway, the host,
-        answers); a service that publishes a port also joins <group>_edge (compose key agent-edge, labeled
-        com.docker.compose.project=<group> like the others), the copy's only network that is not internal, so its
-        port answers on the host; service names and aliases keep resolving. Prints "network: <service> edge",
-        "internal" or "shares <service>" per service. Then docker compose up -d --build in the group. Prints
-        "port: <service> <port>/<protocol> -> <host port> http://localhost:<host port> <variable>" per port. The
+        of the last up is kept while it is free. The compose files are checked against an allowlist first;
+        anything off it is refused, named, and nothing starts: Docker Engine older than 28; a top-level key other
+        than services, networks, volumes, secrets, configs, name and x-*; a service key off the list of
+        scripts/agent-copy.py (SERVICE_KEYS: so no privileged, cap_add, devices, volumes_from, sysctls...); a build
+        with network, ssh, secrets, additional_contexts or entitlements, or a context or Dockerfile outside the
+        clone; an env_file, a bind, or a secret or config file outside the clone (links followed) or of a container
+        runtime socket; a volume the files do not declare, or one with driver_opts or a driver other than local; a
+        network that is external, not a bridge or with driver_opts; security_opt other than no-new-privileges; pid,
+        ipc, uts, cgroup or network_mode other than service:<x> of the same files; deploy other than resources (no
+        devices); a log driver other than json-file, local or none; an extra host on host-gateway. Every network of
+        the copy is internal (internal: true, and driver_opts com.docker.network.bridge.gateway_mode_ipv4 and _ipv6
+        set to isolated, so not even its gateway, the host, answers); a service that publishes a port also joins
+        <group>_edge (compose key agent-edge, labeled com.docker.compose.project=<group> like the others), the copy's
+        only network that is not internal, so its port answers on the host; service names and aliases keep resolving.
+        Prints "network: <service> edge", "internal" or "shares <service>" per service. Then docker compose up -d
+        --build in the group. Prints "port: <service> <port>/<protocol> -> <host port> http://localhost:<host port>
+        <variable>" per port. The
         variables AGENT_GROUP and AGENT_PORT_<SERVICE>_<PORT> (_UDP for udp; service upper-case, other characters
         as _) reach the compose files (interpolation) and every service's environment, and are kept in
         tmp/work/<work>/agent-<clone>.ports.env. No rollback tag for a copy. <repo> is refused: the final stack of
