@@ -101,6 +101,10 @@ class FakeRun:
                 self.listed = handle.read().split()
             return subprocess.CompletedProcess(cmd, self.validate_rc, self.validate_out, '')
         self.other_calls.append(cmd[:2])
+        if self.labels is not None and cmd[1:2] == ['ps'] and any(a.startswith('volume=') for a in cmd):
+            name = next(a for a in cmd if a.startswith('volume=')).partition('=')[2]
+            users = ''.join(user + '\n' for user in self.labels.get('psvol:' + name, []))
+            return subprocess.CompletedProcess(cmd, 0, users, '')
         if self.labels is not None and cmd[1:2] == ['ps']:
             filters = dict(cmd[k + 1].split('=')[1:3] for k in range(len(cmd) - 1) if cmd[k] == '--filter')
             key = 'ps:' + filters.get(LABEL, '') + '/' + filters.get('com.docker.compose.service', '')
@@ -1851,10 +1855,10 @@ HOST_REACHING = (
     'priv', 'caps', 'pid', 'ipc', 'uts', 'sock', 'run', 'varrun', 'root', 'badmount', 'nomounts', 'notype', 'tmpfs',
     'dockercfg', 'colima', 'ssh', 'devices', 'seccomp', 'cloneroot', 'clonegit', 'gw', 'pidpeer', 'ipcpeer', 'utsc',
     'cgrouphost', 'cgroupc', 'otherpeer', 'nopeer', 'foreignvol', 'novolname', 'missingvol', 'nomode', 'oddmode',
-    'nnpmix',
+    'nnpmix', 'sharedanon', 'unusedanon',
 )  # fmt: skip
 # Services of the group whose container keeps to the group: a volume and a namespace of the group, no-new-privileges.
-KEEPS_TO_GROUP = ('data', 'grouppeer', 'nnp', 'nnptrue', 'shareable')
+KEEPS_TO_GROUP = ('data', 'grouppeer', 'nnp', 'nnptrue', 'shareable', 'anon')
 HOME = os.path.expanduser('~')
 
 
@@ -1925,6 +1929,12 @@ class TrailTestCase(unittest.TestCase):
         'c-nnptrue': box(GROUP + '_internal', opts=['no-new-privileges:true']),
         'c-nnpmix': box(GROUP + '_internal', opts=['no-new-privileges', 'apparmor=unconfined']),
         'peer1': {LABEL: GROUP}, 'peer2': {LABEL: 'agent_1118-other'},
+        # Anonymous volumes (an image's VOLUME): one only the group uses, one another project uses too, one unused.
+        'c-anon': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Name': 'a1b2', 'Source': '/v'}]),
+        'c-sharedanon': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Name': 'c3d4', 'Source': '/v'}]),
+        'c-unusedanon': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Name': 'e5f6', 'Source': '/v'}]),
+        'a1b2': {'com.docker.volume.anonymous': ''}, 'c3d4': {'com.docker.volume.anonymous': ''},
+        'e5f6': {'com.docker.volume.anonymous': ''}, 'psvol:a1b2': [GROUP, GROUP], 'psvol:c3d4': [GROUP, 'billing'],
         'c-flat': 'null',
         GROUP + '_internal': {'internal': True, 'labels': {LABEL: GROUP}, 'options': ISOLATED},
         GROUP + '_gw': {'internal': True, 'labels': {LABEL: GROUP}, 'options': {}},

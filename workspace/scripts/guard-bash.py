@@ -2652,6 +2652,7 @@ def pflag_operands(words, flags, values, interspersed=True):
 
 # The compose label that names the service of a container, and what docker network inspect prints of a network.
 SERVICE_LABEL = 'com.docker.compose.service'
+ANONYMOUS_LABEL = 'com.docker.volume.anonymous'
 NETWORK_FORMAT = '{"internal":{{json .Internal}},"labels":{{json .Labels}},"options":{{json .Options}}}'
 # The bridge options that keep the host's gateway out of an internal network (Docker 28 and later).
 ISOLATED_GATEWAY = ('com.docker.network.bridge.gateway_mode_ipv4', 'com.docker.network.bridge.gateway_mode_ipv6')
@@ -2820,7 +2821,7 @@ class DockerGroups:
         non-internal network (<group>_edge): not isolated. No container, Docker that does not answer, a container
         with no network, host or none networking, or one that may reach the host past its networks (reaches_host,
         against the clone; the volumes it mounts and the containers whose namespaces it shares must carry the label
-        of the group): not isolated."""
+        of the group, or be an anonymous volume only the group uses): not isolated."""
         if not RESOURCE_NAME.match(service):
             return False
         labels = ('label=' + GROUP_LABEL + '=' + group, 'label=' + SERVICE_LABEL + '=' + service)
@@ -2836,10 +2837,13 @@ class DockerGroups:
             return False
         volumes = {volume for found, _ in shared for volume in found}
         peers = {peer for _, found in shared for peer in found}
-        for kind, names in (('volume', volumes), ('container', peers)):
-            found = self.labels(kind, sorted(names)) if names else []
-            if found is None or any(item.get(GROUP_LABEL) != group for item in found):
+        for kind, names in (('volume', sorted(volumes)), ('container', sorted(peers))):
+            found = self.labels(kind, names) if names else []
+            if found is None:
                 return False
+            for name, item in zip(names, found):
+                if item.get(GROUP_LABEL) != group and not (kind == 'volume' and self.anonymous_of(name, item, group)):
+                    return False
         if not all(isinstance(nets, dict) and nets for nets in attached):
             return False
         names = sorted({name for nets in attached for name in nets})
@@ -2854,6 +2858,14 @@ class DockerGroups:
             and all((net.get('options') or {}).get(option) == 'isolated' for option in ISOLATED_GATEWAY)
             for net in networks
         )
+
+    def anonymous_of(self, name, labels, group):
+        """True when a volume is an anonymous one (an image's VOLUME, labeled com.docker.volume.anonymous, which
+        compose does not label with its project) that only containers of the group use, stopped ones included."""
+        if ANONYMOUS_LABEL not in labels:
+            return False
+        users = self.docker(['ps', '-a', '--filter', 'volume=' + name, '--format', '{{.Label "' + GROUP_LABEL + '"}}'])
+        return bool(users) and all(user == group for user in users)
 
     def labels(self, kind, names):
         """Returns the labels of each named resource, from docker inspect; None when Docker does not answer, a
