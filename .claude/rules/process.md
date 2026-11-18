@@ -38,8 +38,11 @@ How the project is maintained. Every change goes through these steps; a typo fix
   each into `developer`, one at a time, with `bash tests/check.sh --base origin/developer --i18n-pending` green.
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
-- Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
-  stage closes; after its fixes, the return review (`review.md`). A review covers only the difference it is given; a RECOMMENDED finding becomes a `ready` request.
+- Hooks, the installer, security and risky actions: effort high. The agent is the developer of the stage: it
+  implements, tests what it did, fixes and tests again; the stage closes with its own tests and the suite passing. No
+  independent review runs during the stages, hooks and security included: the one review runs at `/caw-merge`
+  (`review.md`). A doubt that is not a hard rule (`security.md`) never stops a stage: it goes to the closing board as
+  a warning.
 - A stage that cannot finish: write where it stopped and the next steps into the request, or into `tmp/request.md`.
 
 ## 5. Prove

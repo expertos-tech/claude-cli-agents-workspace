@@ -48,7 +48,8 @@ Detail in `.claude/rules/process.md`.
 4. **Execute** in stages with subagents (`/caw-request`, which works in a clone on a work branch under `tmp/work/`,
    opened by `bash tests/caw-work.sh open`; a session is either on `developer` at the root or in such a clone), always
    with explicit model and effort (high for hooks, the installer, security and risky actions), in parallel only on
-   disjoint paths, and an independent clean-context review of hooks and security (`.claude/rules/review.md`).
+   disjoint paths. The agent tests its own work; the one independent review runs at `/caw-merge`
+   (`.claude/rules/review.md`), and only a hard rule (`.claude/rules/security.md`) refuses: the rest is a warning.
 5. **Prove**: `bash tests/check.sh --base origin/developer --i18n-pending` on every change, only what changed
    (`/caw-check`); the release runs it strict from the last tag; `/caw-test-install` whenever the installer,
    a hook or `setup-claude.sh` changes.

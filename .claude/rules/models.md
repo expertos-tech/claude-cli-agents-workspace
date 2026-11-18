@@ -4,14 +4,14 @@
 - Models: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` (the agent files use the full ids; a call that
   accepts only aliases uses `opus`, `sonnet`, `haiku`). Fable only when the owner asks for it by name.
 - Effort `high` for hooks, the installer, security and risky actions; the effort of the stage otherwise. Merge
-  reviews by content (`review.md`): `xhigh` for code and configuration, the only use of it, `high` for documents.
+  reviews by base (`review.md`): `medium` into `developer`, `high` into `main`. No rule or skill uses an effort
+  above `high`.
 
 | Task | Agent | Model | Effort |
 | --- | --- | --- | --- |
 | Gaps of a plan or request | `requirements-analyst` | claude-opus-5-5 | high |
-| Merge review | `reviewer` | claude-opus-5-5 | by content (`review.md`): xhigh or high |
+| Merge review | `reviewer` | claude-opus-5-5 | by base (`review.md`): medium into `developer`, high into `main` |
 | Return review after fixes | `reviewer`, two in parallel | claude-opus-5-5 | high focused on the findings, medium light on the whole range |
-| Independent review of a stage | `reviewer` | claude-opus-5-5 | high |
 | Scripts, hooks and their tests | `script-engineer` | claude-opus-5-5 | high for hooks and the installer, else medium |
 | Docs in English | `docs-writer` | claude-sonnet-5-5 | medium |
 | The pt-BR and es translations, once per release | `docs-writer`, one call | claude-sonnet-5-5 | medium |
