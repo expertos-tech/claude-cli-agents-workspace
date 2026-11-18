@@ -27,7 +27,7 @@ check:
 	$(GO) vet ./...
 	$(GO) build ./...
 	@if [ -f web/package-lock.json ]; then \
-		$(NPM) --prefix web audit --audit-level=high; \
+		$(NPM) --prefix web audit --audit-level=high && \
 		$(NPM) --prefix web run check; \
 	fi
 

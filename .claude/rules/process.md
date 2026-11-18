@@ -35,7 +35,7 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - `/caw-request` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
   `tmp/**`), so several requests run in separate sessions, each in its own clone. Respect the order in
   `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/caw-merge` takes
-  each into `developer`, one at a time, with `bash tests/check.sh --all` green.
+  each into `developer`, one at a time, with `bash tests/check.sh --base origin/developer --i18n-pending` green.
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
 - Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
@@ -60,4 +60,18 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - `/caw-merge` takes the work into `developer` and writes the root `CHANGELOG.md` and, for a product change,
   `workspace/CHANGELOG.md`. Other pushes only when the owner asks, each request covering that push only. Only the
   product is released, through `/caw-merge --main`; the root sections are dated by that release.
-- End with a short report: what changed (commits), what was verified (commands and results), what is left.
+- End with the closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the
+  values are in the language of the conversation. A stage that cannot finish writes where it stopped into the request
+  first (step 4), and the board names it.
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE CLOSED: <request> — <stage>
+Done:       <what changed: commits (sha, title), branch pushed>
+Verified:   <command and result; each skip named>
+Left:       <next stages, with effort | /caw-merge | nothing>
+Pending:    <decisions for the owner, findings, refused push | none>
+Request:    maintainers/requests/<file>.md | tmp/request.md | none
+➜ Next: <the command to run, and where: /caw-merge from the clone, /caw-request <name>>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```

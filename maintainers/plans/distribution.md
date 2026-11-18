@@ -170,8 +170,8 @@ claude-cli-agents-workspace/
   .claude/           settings.json (claudeMdExcludes for workspace/**, deny, ask, attribution),
                      rules/, skills/ and agents/ of the maintenance; no hooks
   tests/             check.sh (the suite), test-install.sh (the test installation)
-  maintainers/       backlog/, plans/, requests/, reviews/: the maintainers' work, public
-  tmp/               git-ignored: test installations, private analyses of real use, tmp/prompt.md
+  maintainers/       plans/, requests/, reviews/: the maintainers' work, public
+  tmp/               git-ignored: test installations, private analyses of real use, tmp/request.md
   workspace/         the product: AGENTS.md, CLAUDE.md, rules/, scripts/, tools/, docker/,
                      docs/, assets/, templates/, VERSION, CHANGELOG.md
   i18n/              translations of documents and READMEs

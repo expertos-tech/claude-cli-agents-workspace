@@ -33,8 +33,8 @@ use that release to test `aiwp update` on a real installed workspace.
   a refused output counts as a failure".
 - BR-6 (D6) `rules/models.md` "When to delegate": "parallel subagents that need temp files each get their own folder in
   the brief and never delete outside it."
-- BR-7 (D7) `rules/skills/prompt/SKILL.md`: "A file the request expects from earlier work, not at the named path: search
-  for it by name before reporting it missing." Never used to find the prompt itself.
+- BR-7 (D7) `rules/skills/request/SKILL.md`: "A file the request expects from earlier work, not at the named path: search
+  for it by name before reporting it missing." Never used to find the request file itself.
 - BR-8 (D8) the lesson line in `custom/docs/lessons.md` (`AGENTS.md`) gets three tags: weight (`grave`, `attention`,
   `suggestion`; `grave` when a rule let the forbidden through or was bypassed, or there was a security failure, data
   loss, a destructive action without confirmation, or a BLOCKER that reached the base or came back from the same cause),

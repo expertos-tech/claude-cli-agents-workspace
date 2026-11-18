@@ -15,5 +15,6 @@ says what must be true when it is done. Read the plan before running its request
 | `run-tools.md` | The single compose file of the tools and `/run-tools` | `requests/qa/run-tools.md` |
 | `tools-hub.md` | The tools page, the menu icon and the Workspace area | `requests/tools-hub.md` |
 | `fork-my-rules.md` | Giving own rules back to the project by fork and pull request | `requests/fork-my-rules.md` |
+| `assisted-mode.md` | `/pilot assisted`: boxes that teach the workspace to a newcomer, the default per person, `/caw-pilot` | `requests/assisted-mode.md` |
 
 The order in which they run is in `maintainers/requests/README.md`.

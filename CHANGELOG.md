@@ -29,6 +29,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   their configuration from `custom/`.
 - The container consoles animate opening and closing a Compose group, and the chevron of the jobs panel rotates; the
   menu switch is now "Animations".
+- `make check` of the container consoles fails on a high `npm audit` finding instead of ignoring it.
 - Configurable rules: the custom layer turns optional core rules, skills and agents off, replaces a core rule, and
   keeps its own in `custom/my-rules/` (was `custom/rules/`); the mandatory core in `rules/manifest.json`; `/rules`.
 
@@ -44,7 +45,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `maintainers/requests/done/`: delivered requests, and every plan the owner approves, recorded at approval.
 - `maintainers/requests/qa/`: the requests on `developer` not released yet, each with what each merge did; the
   backlog becomes pending requests (`idea` or `ready`).
-- `tests/check.sh` checks every `caw-*` layer: its product skill exists and its three sections are there.
+- `tests/check.sh` checks every `caw-*` layer, whatever its name: its `@` line names an existing product skill (the
+  same-named one when there is one) and its three sections are there; a `caw-<name>` with no `@` line next to a
+  product skill `<name>` fails.
 - `/caw-merge --hotfix <description>`: a fix of the released product from `main`, as a patch version with its tag
   and GitHub release when the owner says to publish, then `main` merged into `developer` (`--down` resumes it); a
   maintenance-only fix is not a hotfix. `/caw-merge` and `/caw-request` refuse to start while `main` is not in
@@ -56,23 +59,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - `developer` is the default branch; `main` moves only by a product release.
-- `/caw-prompt` works in a clone on a work branch under `tmp/work/`, and finds a bare file name in
-  `maintainers/requests/`, then `tmp/prompts/`, then `tmp/`.
+- `/caw-request` works in a clone on a work branch under `tmp/work/`, and finds a bare file name in
+  `maintainers/requests/`, then `tmp/requests/`, then `tmp/`.
 - The maintenance skills carry the prefix `caw-`, apart from the product's; `/caw-merge`, `/caw-request` (was
   `/caw-prompt`), `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same purpose.
 - An approved plan is recorded as a pending request, no longer in `done/`.
 - Plans and requests are shown to the owner in their language and saved in English.
 - A merge into `developer` checks and reviews only the difference that enters, with the review effort by risk and no
-  review for documentation alone; a RECOMMENDED finding becomes a backlog item.
+  review for documentation alone; a RECOMMENDED finding becomes a `ready` request.
 - Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
 - `/caw-merge --main` ends with the same final review as the product's: what enters and what leaves, then general.
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
 - `docs/features.md` lists `/run-tools` and the tools' compose group.
 - The `rules-config` plan records that it is built, with what the build decided beyond it.
+- Maintenance work ends with a closing board (`.claude/rules/process.md` step 6), like the product's: what was done,
+  verified, left and pending, the request, and the next command.
 
 ### Removed
 
 - `/release`: replaced by `/caw-merge --main`.
+
+### Fixed
+
+- `.claude/rules/process.md` step 4 names the suite `/caw-merge` runs into `developer`
+  (`--base origin/developer --i18n-pending`), not the strict `--all`, which fails on translations left for the release.
 
 ## [0.1.0] - 2026-11-16
 
