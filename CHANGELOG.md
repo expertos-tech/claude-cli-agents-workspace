@@ -29,6 +29,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   their configuration from `custom/`.
 - The container consoles animate opening and closing a Compose group, and the chevron of the jobs panel rotates; the
   menu switch is now "Animations".
+- Configurable rules: the custom layer turns optional core rules, skills and agents off, replaces a core rule, and
+  keeps its own in `custom/my-rules/` (was `custom/rules/`); the mandatory core in `rules/manifest.json`; `/rules`.
 
 ### Added
 
@@ -66,6 +68,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `/caw-merge --main` ends with the same final review as the product's: what enters and what leaves, then general.
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
 - `docs/features.md` lists `/run-tools` and the tools' compose group.
+- The `rules-config` plan records that it is built, with what the build decided beyond it.
 
 ### Removed
 
