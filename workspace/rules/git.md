@@ -86,7 +86,8 @@ A request goes through three folders of `custom/requests/`, one per state of its
 ## Commits
 
 - One logical change per commit. Never mix a refactor with a feature, or unrelated files.
-- Stage by path. Never `git add -A` or `git add .` without reading what it adds.
+- Stage by path, then commit by the same paths: `git add -- <paths>`, then `git commit -F <file> -- <paths>`; a commit by path alone fails for a file git does not track yet. Never `git add -A` or `git add .` without reading what it adds.
+- Write the paths out in the command, never in a shell variable: the session's shell may be zsh, which passes an unquoted variable as one word.
 - Never stage a secret, `.env`, a credential or personal data. A clone's pre-push hook refuses commits that add `.env` or `local.settings.json` and commits gitleaks finds a secret in, so they never leave the machine; in `custom/`, the `guard-bash` hook refuses such a commit.
 - Ignoring a folder at the repo root: anchor the pattern (`/reports/`). An unanchored one hides same-named folders elsewhere.
 - Message: Conventional Commits, English, imperative and specific title of at most 72 characters, no final period. A body with at least one bullet: what changed and why.
