@@ -62,12 +62,14 @@ this repository.
   merge into `main` (release, hotfix) effort `high`. It replaces the split by content of `autonomous-work` (BR-15:
   `xhigh` for code and configuration, `high` for documents), and `xhigh` leaves the rules. The return review after
   fixes (BR-8) keeps its focused part at `high` and its light part at `medium`.
-- BR-13: a review already run during the request counts at the merge. The independent reviews of stages (and their
-  return reviews) are recorded with the commits they covered and their verdict (in the request's resume point or the
-  merge's Execution block); the merge review then reads only the commits no review saw, plus the three questions on
-  the whole request in one light pass (effort `medium` into `developer`, BR-12), and never repeats a finding the
-  person already decided (an accepted risk, an authorization). Only a real BLOCKER returns the branch; the rest goes
-  to the merge summary as warnings.
+- BR-13: two roles. During the request the agent works as a developer, with context: it implements, tests what it
+  did, makes sure it works, fixes, tests again and releases; its concern is to deliver what was asked. No independent
+  review runs during the stages, hooks and security included (`.claude/rules/process.md` step 4 and
+  `.claude/rules/review.md` "When" lose the review of a stage). The independent review runs once, at the merge, as
+  the tech lead: it validates what the agent did against the standards already defined, before it enters
+  `developer` (effort `medium`) or `main` (effort `high`, BR-12), and it cares about the rest (BR-4). A finding the
+  person already decided (an accepted risk, an authorization) is never repeated; only a real BLOCKER returns the
+  branch, the rest goes to the merge summary as warnings.
 - BR-11: the warnings have one format in the product and in the maintenance, short, each with what was seen, why it
   may be a problem, and what the person can do; the closing board and the merge summary list them under
   "Warnings".
@@ -88,8 +90,9 @@ this repository.
 - AC-6: Given the change of an existing installer or hook, then its review covers only the difference.
 - AC-8: Given a merge into `developer`, then its review runs with effort `medium`; given a merge into `main` (release or
   hotfix), with effort `high`; no rule or skill of the product or the maintenance names `xhigh`.
-- AC-9: Given a request whose stages were reviewed during the work, when it merges into `developer`, then the merge
-  review covers only the commits no review saw plus the three questions in one pass, and repeats no decided finding.
+- AC-9: Given a request with stages on hooks or security, when it runs, then no independent review runs before the
+  merge, each stage ends with the agent's own tests passing, and the merge into `developer` runs one review (and its
+  return review after fixes, if any).
 - AC-7: Given `tests/check.sh --all`, then the hooks' suites prove BR-2 refusals still hold, and the texts of
   `rules/review.md`, `.claude/rules/review.md`, `/merge`, `/caw-merge`, the `reviewer` agents and `AGENTS.md` /
   `CLAUDE.md` say the same rules.
