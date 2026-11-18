@@ -70,11 +70,14 @@ Commands:
         its own files give (their name:, else the folder name), never an agent_ group. developer (default): from
         projects/<repo>, which must be on developer with no change. main: from a fresh checkout of main (the remote's
         main when it can be fetched, else the local one) in tmp/deploy/<clone name>-main/, with the repo's .env and
-        local.settings.json files and -p forced to the final stack's name; removed afterwards, unless a bind mount of
-        the stack lies inside it (kept, and said). Before the build, tags each image of the stack's containers as
-        <name>:rollback-latest and <name>:rollback-<yyyymmdd-hhmmss>, keeping the last 3 (an image with no container:
-        its newest published tag); then docker compose up -d --build (never down -v, never a volume removed); then
-        tags each image as <name>:published-<yyyymmdd-hhmmss>-<sha>.
+        local.settings.json files and -p forced to the final stack's name. Every bind whose source lies in the
+        checkout is mounted from the same path of projects/<repo> instead (an override next to the checkout), so the
+        stack keeps the data developer uses; a bind of tracked files that differ between main and projects/<repo> is
+        refused, nothing deployed. The checkout is removed afterwards, and never while a container binds a path in it
+        (then the deploy is refused before anything changes). Before the build, tags each image of the stack's
+        containers as <name>:rollback-latest and <name>:rollback-<yyyymmdd-hhmmss>, keeping the last 3 (an image with
+        no container: its newest published tag); then docker compose up -d --build (never down -v, never a volume
+        removed); then tags each image as <name>:published-<yyyymmdd-hhmmss>-<sha>.
   rollback <repo> [-- <docker compose options>...]
         Points each image of the final stack back to its rollback-latest tag and runs docker compose up -d --no-build.
         Volumes are never touched. A clone is refused: a copy has no rollback tags (run up again).
@@ -718,27 +721,24 @@ cmd_down() {
   agent_copy down "$group"
 }
 
-# Prints "yes" when the compose stack of a folder binds a path inside it (a main checkout then stays).
-binds_inside() {
-  local folder="$1"
-  shift
-  (cd "$folder" && docker compose "$@" config --format json) | python3 -I -c '
-import json, os, sys
-folder = os.path.realpath(sys.argv[1])
-for service in (json.load(sys.stdin).get("services") or {}).values():
-    for mount in service.get("volumes") or []:
-        source = os.path.normpath(mount.get("source") or "")
-        if mount.get("type") == "bind" and (source == folder or source.startswith(folder + os.sep)):
-            print("yes")
-            sys.exit(0)
-' "$folder"
+# Fails when a container binds a path inside a folder about to be deleted (a checkout of main still in use).
+require_unbound() {
+  local out rc=0
+  [ -e "$1" ] || return 0
+  out="$(agent_copy bound-under "$1" 2>/dev/null)" || rc=$?
+  case "$rc" in
+    1) return 0 ;;
+    0) die 1 "refused: a container binds ${1#"$root"/}, which is never deleted while in use; nothing deployed: $out" ;;
+    *) die 1 "Docker not reachable: ${1#"$root"/} is kept; nothing deployed" ;;
+  esac
 }
 
 # deploy: the final stack of projects/<repo> from developer (projects/<repo> itself) or main (a fresh checkout), with
 # the replaced images tagged for rollback; never down -v, never a volume removed.
 cmd_deploy() {
   [ $# -ge 1 ] || die 2 "usage: deploy <repo> [developer|main] [-- <docker compose options>...]"
-  local repo="$1" branch=developer src folder project current changes url start stamp sha rc=0 args
+  local repo="$1" branch=developer src folder project current changes url start stamp sha rc=0 args override="" opts \
+    line deploy_opts=()
   shift
   case "${1:-}" in developer | main) branch="$1"; shift ;; esac
   [ "${1:-}" != "--" ] || shift
@@ -757,9 +757,12 @@ cmd_deploy() {
     changes="$(projects_changes "$src")" || die 1 "git status failed in projects/$repo"
     [ -z "$changes" ] || die 1 "projects/$repo has changes in its checkout: nothing deployed"
     folder="$src"
+    deploy_opts=("$@")
   else
     folder="$root/tmp/deploy/$(clone_name "$repo" "$src")-main"
-    rm -rf "${folder:?}"
+    override="$folder.binds.compose.yaml"
+    require_unbound "$folder"
+    rm -rf "${folder:?}" "$override"
     mkdir -p "$(dirname "$folder")"
     git clone -q --local --no-checkout "$src" "$folder" || die 1 "could not make the checkout of main"
     url="$(git -C "$src" remote get-url origin 2>/dev/null || true)"
@@ -773,19 +776,24 @@ cmd_deploy() {
     [ -n "$start" ] || { rm -rf "${folder:?}"; die 1 "$repo has no main to deploy"; }
     git -C "$folder" checkout -q --detach "$start"
     copy_env_files "$src" "$folder"
+    # Every bind of the checkout is mounted from projects/<repo> (an override outside the checkout): the stack's data
+    # stays where developer keeps it, and the checkout can go. Tracked files that differ there are refused.
+    opts="$(agent_copy deploy-binds "$project" "$folder" "$src" "$override" -- "$@")" ||
+      { rm -rf "${folder:?}" "$override"; die 1 "nothing deployed (above)"; }
+    while IFS= read -r line; do [ -z "$line" ] || deploy_opts+=("$line"); done <<<"$opts"
   fi
   sha="$(git -C "$folder" rev-parse --short HEAD 2>/dev/null || echo nogit)"
   stamp="$(date +%Y%m%d-%H%M%S)"
-  args=(-p "$project" "$@")
+  args=(-p "$project" ${deploy_opts[@]+"${deploy_opts[@]}"})
   echo "deploy: $project from projects/$repo $branch at $sha"
   tag_rollback "$folder" "$stamp" "${args[@]}"
   (cd "$folder" && docker compose "${args[@]}" up -d --build) || rc=$?
   [ "$rc" -ne 0 ] || tag_published "$folder" "$stamp" "$sha" "${args[@]}"
   if [ "$branch" = main ]; then
-    if [ "$(binds_inside "$folder" "${args[@]}" 2>/dev/null)" = yes ]; then
-      echo "kept: ${folder#"$root"/} (the stack binds a path inside it; the next deploy of main replaces it)"
+    if agent_copy bound-under "$folder" >/dev/null 2>&1; then
+      echo "kept: ${folder#"$root"/} (a container binds a path inside it)"
     else
-      rm -rf "${folder:?}"
+      rm -rf "${folder:?}" "$override"
     fi
   fi
   [ "$rc" -eq 0 ] || die 1 "docker compose up failed (exit $rc); the images before it are <name>:rollback-latest: bash scripts/aiwp-cmds.sh rollback $repo"

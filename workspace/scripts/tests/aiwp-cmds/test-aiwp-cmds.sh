@@ -260,12 +260,13 @@ test_open_custom_for_a_poc() {
 }
 
 # Fake docker on PATH: records every call in DOCKER_LOG. The state it answers from lives in $STUB: containers/<project>
-# (one line: the compose folder; the container is c-<project>, running, web 80/tcp on host port 61500),
+# (one line: the compose folder; the container is c-<project>, running, web 80/tcp on host port 61500), mounts/<project>
+# (the source of one bind of that container),
 # res/<kind>.<project> (the lines of docker <kind> ls for that label), config.json (docker compose config --format json).
 docker_stub() {
   STUB="$BASE/stub.$CURRENT"
   rm -rf "$STUB"
-  mkdir -p "$BASE/bin" "$STUB/containers" "$STUB/res"
+  mkdir -p "$BASE/bin" "$STUB/containers" "$STUB/res" "$STUB/mounts"
   export STUB
   cat >"$BASE/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -274,7 +275,7 @@ label="com.docker.compose.project"
 case "$*" in
   "version "*) [ -z "${DOCKER_DOWN:-}" ] || exit 1; echo 28.0 ;;
   "ps -aq --filter label=$label="*) p="${4##*=}"; [ ! -f "$STUB/containers/$p" ] || echo "c-$p" ;;
-  "ps -aq --filter label=$label") for f in "$STUB"/containers/*; do [ -f "$f" ] && echo "c-${f##*/}"; done ;;
+  "ps -aq --filter label=$label" | "ps -aq") for f in "$STUB"/containers/*; do [ -f "$f" ] && echo "c-${f##*/}"; done ;;
   "ps --format "*) [ -z "${BUSY:-}" ] || echo "0.0.0.0:$BUSY->80/tcp" ;;
   "inspect -f "*) echo "app-web sha256:aaa" ;;
   "inspect "*)
@@ -283,8 +284,10 @@ case "$*" in
     printf '['
     for id in "$@"; do
       p="${id#c-}"
-      printf '%s{"Id":"%s","Config":{"Labels":{"%s":"%s","%s.working_dir":"%s","com.docker.compose.service":"web"}},"State":{"Running":true},"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"61500"}]}}}' \
-        "$sep" "$id" "$label" "$p" "$label" "$(cat "$STUB/containers/$p")"
+      mounts="[]"
+      [ ! -f "$STUB/mounts/$p" ] || mounts="[{\"Source\":\"$(cat "$STUB/mounts/$p")\"}]"
+      printf '%s{"Id":"%s","Name":"/%s-web-1","Config":{"Labels":{"%s":"%s","%s.working_dir":"%s","com.docker.compose.service":"web"}},"State":{"Running":true},"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"61500"}]}},"Mounts":%s}' \
+        "$sep" "$id" "$p" "$label" "$p" "$label" "$(cat "$STUB/containers/$p")" "$mounts"
       sep=","
     done
     printf ']\n'
@@ -299,7 +302,11 @@ case "$*" in
   compose*" config --format json"*) cat "$STUB/config.json" ;;
   compose*" config --images"*) echo app-web ;;
   compose*" ps -aq"*) [ -n "${STACK_DOWN:-}" ] || echo c1 ;;
-  compose*" up -d --build"*) echo "cwd $PWD" >>"$DOCKER_LOG"; [ -z "${UP_FAILS:-}" ] || exit 1 ;;
+  compose*" up -d --build"*)
+    echo "cwd $PWD" >>"$DOCKER_LOG"
+    for a in "$@"; do case "$a" in *.binds.compose.yaml) cp "$a" "$STUB/binds.yaml" ;; esac; done
+    [ -z "${UP_FAILS:-}" ] || exit 1
+    ;;
 esac
 exit 0
 STUB
@@ -398,9 +405,13 @@ test_up_refuses_what_it_cannot_isolate_and_the_final_stack() {
   has "/docker-deploy"
   has "deploy app [developer|main]"
   stub_config
-  dock up "$W/app" -- -p other
-  rc_is 1
-  has "drop -p/--project-name"
+  local opt
+  for opt in "-p other" -pother --project-name=other; do
+    # shellcheck disable=SC2086  # "-p other" is two options on purpose
+    dock up "$W/app" -- $opt
+    rc_is 1
+    has "drop -p/--project-name"
+  done
   DOCKER_DOWN=1 dock up "$W/app"
   rc_is 1
   has "Docker: not reachable"
@@ -524,16 +535,65 @@ test_deploy_main_builds_a_checkout_of_main_under_the_final_name() {
   fixture
   docker_stub
   stub_config "" app
+  printf 'services: {}\n' >"$R/projects/app/compose.yaml"
+  git -C "$R/projects/app" add compose.yaml
+  git -C "$R/projects/app" commit -q -m stack
+  git -C "$R/projects/app" branch -f main developer
+  git -C "$R/projects/app" push -q origin main
   printf 'v2\n' >"$R/projects/app/app.txt"
   git -C "$R/projects/app" commit -q -am "developer only"
   dock deploy app main
   rc_is 0
   grep -q "^cwd $R/tmp/deploy/app-main$" "$DOCKER_LOG"; check "built from the checkout of main" $?
-  grep -q 'compose -p app up -d --build' "$DOCKER_LOG"; check "-p forced to the final name" $?
+  grep -q 'compose -p app -f compose.yaml up -d --build' "$DOCKER_LOG"; check "-p forced to the final name" $?
   has "deployed: app from projects/app main at $(git -C "$R/projects/app" rev-parse --short main)"
   has "copied: .env"
   [ ! -e "$R/tmp/deploy/app-main" ]; check "checkout removed" $?
   eq "projects/app stays on developer" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
+}
+
+# The review finding on deploy main: a bind of the checkout would run the final stack on the checkout's empty data,
+# and the next deploy would delete it while bound.
+test_deploy_main_binds_the_data_of_projects_and_never_deletes_a_bound_checkout() {
+  fixture
+  docker_stub
+  local app="$R/projects/app" co="$R/tmp/deploy/app-main"
+  printf 'pgdata/\n' >>"$app/.gitignore"
+  printf 'services: {}\n' >"$app/compose.yaml"
+  printf 'server {}\n' >"$app/nginx.conf"
+  git -C "$app" add -A
+  git -C "$app" commit -q -m "stack"
+  git -C "$app" branch -f main developer
+  git -C "$app" push -q origin main developer
+  mkdir -p "$app/pgdata"
+  printf '{"name":"app","services":{"db":{"image":"postgres:16","volumes":[{"type":"bind","source":"%s/pgdata","target":"/var/lib/postgresql/data","bind":{"create_host_path":true}},{"type":"bind","source":"%s/nginx.conf","target":"/etc/nginx.conf","read_only":true},{"type":"bind","source":"/srv/acme","target":"/srv"}]}}}\n' \
+    "$co" "$co" >"$STUB/config.json"
+  dock deploy app main
+  rc_is 0
+  grep -q "^docker compose -p app -f compose.yaml -f $co.binds.compose.yaml up -d --build$" "$DOCKER_LOG"; check "the binds override" $?
+  grep -q "source: \"$app/pgdata\"" "$STUB/binds.yaml"; check "data from projects/app" $?
+  grep -q "source: \"$app/nginx.conf\"" "$STUB/binds.yaml"; check "the same tracked file from projects/app" $?
+  grep -q 'create_host_path: true' "$STUB/binds.yaml" && grep -q 'read_only: true' "$STUB/binds.yaml"; check "bind options kept" $?
+  ! grep -q '/srv/acme' "$STUB/binds.yaml"; check "a bind outside the checkout stays" $?
+  [ ! -e "$co" ] && [ ! -e "$co.binds.compose.yaml" ]; check "checkout and override removed" $?
+  # A tracked file of the bind that differs between main and projects/app: refused, nothing deployed.
+  printf 'server { listen 81; }\n' >"$app/nginx.conf"
+  : >"$DOCKER_LOG"
+  dock deploy app main
+  rc_is 1
+  has "main differs from the repo checkout in nginx.conf"
+  ! grep -q 'up -d' "$DOCKER_LOG"; check "nothing deployed" $?
+  [ ! -e "$co" ]; check "refused checkout removed" $?
+  git -C "$app" checkout -q -- nginx.conf
+  # A checkout a container still binds is never deleted.
+  mkdir -p "$co/pgdata"
+  echo "$app" >"$STUB/containers/app"
+  echo "$co/pgdata" >"$STUB/mounts/app"
+  dock deploy app main
+  rc_is 1
+  has "refused: a container binds tmp/deploy/app-main"
+  [ -d "$co/pgdata" ]; check "bound checkout kept" $?
+  ! grep -q 'up -d' "$DOCKER_LOG"; check "still nothing deployed" $?
 }
 
 test_deploy_refuses_a_moved_checkout_a_copy_and_a_clone() {

@@ -1772,6 +1772,36 @@ test_the_order_is_for_the_target_typed_and_expires() {
   has "developer moved after phase 1: run the gate again"
 }
 
+# The review finding on the project target: aiwp.source is a physical path, and a project, or projects/ itself, may be
+# a link to a folder elsewhere; the order of its project must still let it through, and only it.
+test_a_project_order_holds_for_a_linked_project_or_projects_folder() {
+  local sha w2=2026-11-18-linked-app
+  fixture
+  mv "$R/projects/app" "$BASE/linked-app.$CURRENT"
+  ln -s "$BASE/linked-app.$CURRENT" "$R/projects/app"
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$w2" app --branch feat/linked-app >/dev/null 2>&1)
+  checked "$w2" app one.txt
+  sha="$(git -C "$R/tmp/work/$w2/app" rev-parse HEAD)"
+  typed sess-1 "/merge --main billing"
+  in_session sess-1 gate --merge "$w2/app" "$sha"
+  rc_is 1
+  has "the last /merge was for the project billing, not $w2/app"
+  typed sess-1 "/merge --hotfix app"
+  in_session sess-1 gate --merge "$w2/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  fixture
+  mv "$R/projects" "$BASE/linked-projects.$CURRENT"
+  ln -s "$BASE/linked-projects.$CURRENT" "$R/projects"
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$w2" app --branch feat/linked-app >/dev/null 2>&1)
+  checked "$w2" app one.txt
+  sha="$(git -C "$R/tmp/work/$w2/app" rev-parse HEAD)"
+  typed sess-1 "/merge --main app"
+  in_session sess-1 gate --merge "$w2/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+}
+
 test_an_order_without_a_target_or_for_the_project_still_works() {
   fixture
   local sha

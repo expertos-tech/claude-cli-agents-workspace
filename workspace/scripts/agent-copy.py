@@ -11,9 +11,16 @@ Usage: python3 -I agent-copy.py up <group> <folder> <override> [--fallback <grou
        python3 -I agent-copy.py down <group>
        python3 -I agent-copy.py destroy [--under <path>]... [<group>...]
        python3 -I agent-copy.py list [--under <path>]... [--group <group>]...
-Exit: 0 ok; 1 refused or failed; 2 usage error; 3 (list) Docker not reachable.
+       python3 -I agent-copy.py deploy-binds <project> <checkout> <repo> <override> [-- <docker compose options>...]
+       python3 -I agent-copy.py bound-under <path>
+deploy-binds (aiwp-cmds.sh deploy main): every bind of the stack whose source lies in the checkout of main is mounted
+from the same path under the repo instead (its data stays there, and the checkout can go); a bind of tracked files that
+differ between the two is refused. Prints the compose options to use, one per line.
+bound-under: prints each container with a mount under the path (exit 0), none (exit 1).
+Exit: 0 ok; 1 refused or failed; 2 usage error; 3 (list, bound-under) Docker not reachable.
 """
 
+import filecmp
 import json
 import os
 import random
@@ -126,7 +133,7 @@ def split_compose_options(folder, options, environ):
     files, rest, i = [], [], 0
     while i < len(options):
         arg = options[i]
-        if arg in ('-p', '--project-name') or arg.startswith(('--project-name=', '-p=')):
+        if arg.startswith(('-p', '--project-name')):
             raise Refused('the group is the project name of a copy: drop -p/--project-name')
         if arg in ('-f', '--file'):
             if i + 1 >= len(options):
@@ -334,10 +341,39 @@ def remapped_volumes(spec, custom_root, custom):
     return moved
 
 
+def fixed_addresses(config):
+    """Returns (the fixed addresses a copy drops: the services' ipv4_address and ipv6_address, the subnets, ranges
+    and gateways of the networks' ipam.config; the attention lines for each environment value or extra host of a
+    service that still names one of them). A copy cannot keep them: the final stack holds the same subnet."""
+    dropped = set()
+    for spec in (config.get('services') or {}).values():
+        for attach in (spec.get('networks') or {}).values():
+            for key in ('ipv4_address', 'ipv6_address'):
+                if (attach or {}).get(key):
+                    dropped.add(str(attach[key]))
+    for spec in (config.get('networks') or {}).values():
+        for block in ((spec or {}).get('ipam') or {}).get('config') or []:
+            for key in ('subnet', 'ip_range', 'gateway'):
+                if (block or {}).get(key):
+                    dropped.add(str(block[key]))
+    notes = []
+    for service, spec in sorted((config.get('services') or {}).items()):
+        values = [f'{k}={v}' for k, v in sorted((spec.get('environment') or {}).items())]
+        values += [f'extra host {h}' for h in spec.get('extra_hosts') or []]
+        for value in values:
+            for address in sorted(dropped):
+                host = address.split('/', 1)[0]
+                if host and host in str(value):
+                    notes.append(f'{service}: {value} names {host}, a fixed address the copy does not have')
+                    break
+    return dropped, notes
+
+
 def build_override(config, group, entries, ports, custom_root='', custom=''):
     """Returns the text of the override file of a copy: the group's name, the image of each built service (and of a
-    service that runs that image), no fixed container name, the ports moved, the port variables in every service,
-    the configuration binds moved to AIWP_CUSTOM_DIR, no fixed network or volume name."""
+    service that runs that image) with no extra build tag, no fixed container name, the ports moved, the port
+    variables in every service, the configuration binds moved to AIWP_CUSTOM_DIR, no fixed network or volume name, and
+    no fixed address (a service's ipv4_address or ipv6_address, a network's ipam.config subnet)."""
     services = config.get('services') or {}
     renamed = {}
     for service, spec in services.items():
@@ -355,6 +391,8 @@ def build_override(config, group, entries, ports, custom_root='', custom=''):
         lines.append(f'  {q(service)}:')
         if 'build' in spec:
             lines.append(f'    image: {q(f"{group}-{service}".lower())}')
+            if (spec.get('build') or {}).get('tags'):
+                lines += ['    build:', '      tags: !reset []']
         elif spec.get('image') in renamed:
             lines.append(f'    image: {q(renamed[spec["image"]])}')
         if spec.get('container_name'):
@@ -370,6 +408,17 @@ def build_override(config, group, entries, ports, custom_root='', custom=''):
                 lines.append(f'        protocol: {q(entry["protocol"])}')
         lines.append('    environment:')
         lines += [f'      {key}: {q(value)}' for key, value in variables.items()]
+        pinned = [
+            (name, key)
+            for name, attach in sorted((spec.get('networks') or {}).items())
+            for key in ('ipv4_address', 'ipv6_address')
+            if (attach or {}).get(key)
+        ]
+        if pinned:
+            lines.append('    networks:')
+            for name in dict.fromkeys(name for name, _ in pinned):
+                lines.append(f'      {q(name)}:')
+                lines += [f'        {key}: !reset null' for other, key in pinned if other == name]
         moved = remapped_volumes(spec, custom_root, custom)
         if moved:
             lines.append('    volumes:')
@@ -380,16 +429,18 @@ def build_override(config, group, entries, ports, custom_root='', custom=''):
                 if mount.get('read_only'):
                     lines.append('        read_only: true')
     for kind in ('networks', 'volumes'):
-        fixed = [
-            key
-            for key, spec in sorted((config.get(kind) or {}).items())
-            if (spec or {}).get('name') and spec['name'] != f'{group}_{key}'
-        ]
-        if fixed:
+        resets = {}
+        for key, spec in sorted((config.get(kind) or {}).items()):
+            spec = spec or {}
+            if spec.get('name') and spec['name'] != f'{group}_{key}':
+                resets.setdefault(key, []).append('    name: !reset null')
+            if kind == 'networks' and (spec.get('ipam') or {}).get('config'):
+                resets.setdefault(key, []).append('    ipam: !reset {}')
+        if resets:
             lines.append(f'{kind}:')
-            for key in fixed:
+            for key, entries_of in resets.items():
                 lines.append(f'  {q(key)}:')
-                lines.append('    name: !reset null')
+                lines += entries_of
     return '\n'.join(lines) + '\n'
 
 
@@ -445,6 +496,13 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options):
         handle.write(''.join(f'{key}={value}\n' for key, value in values.items()))
     env = {**os.environ, **values}
     print(f'group: {group}', flush=True)
+    dropped, notes = fixed_addresses(config)
+    if dropped:
+        print(
+            f'attention: the copy drops the fixed addresses {", ".join(sorted(dropped))} (the final stack holds them)'
+        )
+    for note in notes:
+        print(f'attention: {note}')
     if run_live([*base, '-f', override, *extra, 'up', '-d', '--build'], cwd=folder, env=env) != 0:
         print(f'error: docker compose up failed for {group}; the copy is still its own group', file=sys.stderr)
         return 1
@@ -548,6 +606,97 @@ def cmd_destroy(groups, under):
     return 0 if ok else 1
 
 
+def tracked_differences(checkout, repo, rel):
+    """Returns the files git tracks under rel in the checkout whose content is not the same at that path of the repo
+    (missing there included)."""
+    code, out, err = run(['git', '-C', checkout, 'ls-files', '-z', '--', rel])
+    if code != 0:
+        raise Refused(f'git ls-files failed in the checkout: {first_line(err)}')
+    differ = []
+    for path in [item for item in out.split('\0') if item]:
+        other = os.path.join(repo, path)
+        if not os.path.isfile(other) or not filecmp.cmp(os.path.join(checkout, path), other, shallow=False):
+            differ.append(path)
+    return differ
+
+
+def deploy_binds(config, checkout, repo):
+    """Returns ({service: [moved mounts]}, refusals) for a checkout of main: each bind source in the checkout moves to
+    the same relative path in the repo; tracked files that differ there cannot move (main would run with another
+    file), and are refused."""
+    moved, refusals = {}, []
+    for service, spec in sorted((config.get('services') or {}).items()):
+        for mount in spec.get('volumes') or []:
+            source = mount.get('source') or ''
+            if mount.get('type') != 'bind' or not source or not inside(source, checkout):
+                continue
+            rel = os.path.relpath(os.path.normpath(source), checkout)
+            differ = tracked_differences(checkout, repo, rel)
+            if differ:
+                refusals.append(
+                    f'{service} binds {rel}, and main differs from the repo checkout in {", ".join(differ[:3])}'
+                )
+                continue
+            moved.setdefault(service, []).append({**mount, 'source': os.path.normpath(os.path.join(repo, rel))})
+    return moved, refusals
+
+
+def binds_override(moved):
+    """Returns the text of an override that mounts the moved binds (compose merges a service's volumes by target)."""
+    lines = ['# Written by agent-copy.py deploy-binds: the binds of a checkout of main, mounted from the repo.']
+    lines.append('services:')
+    for service, mounts in moved.items():
+        lines += [f'  {q(service)}:', '    volumes:']
+        for mount in mounts:
+            lines += [
+                '      - type: bind',
+                f'        source: {q(mount["source"])}',
+                f'        target: {q(mount["target"])}',
+            ]
+            if mount.get('read_only'):
+                lines.append('        read_only: true')
+            if 'create_host_path' in (mount.get('bind') or {}):
+                flag = 'true' if mount['bind']['create_host_path'] else 'false'
+                lines += ['        bind:', f'          create_host_path: {flag}']
+    return '\n'.join(lines) + '\n'
+
+
+def cmd_deploy_binds(project, checkout, repo, override, options):
+    """Prints the compose options of a deploy from a checkout of main, its binds moved to the repo by an override."""
+    checkout, repo = os.path.realpath(checkout), os.path.realpath(repo)
+    files, rest = split_compose_options(checkout, options, os.environ)
+    args = [item for name in files for item in ('-f', name)]
+    code, out, err = run(['docker', 'compose', '-p', project, *args, *rest, 'config', '--format', 'json'], cwd=checkout)
+    if code != 0:
+        raise Refused(f'docker compose config failed: {first_line(err or out)}')
+    moved, refusals = deploy_binds(load_json(out, 'docker compose config'), checkout, repo)
+    if refusals:
+        raise Refused('main cannot be deployed from a checkout: ' + '; '.join(refusals))
+    if moved:
+        with open(override, 'w', encoding='utf-8') as handle:
+            handle.write(binds_override(moved))
+        args += ['-f', override]
+    print('\n'.join([*args, *rest]))
+    return 0
+
+
+def cmd_bound_under(path):
+    """Prints each container with a mount under the path; exit 0 when there is one, 1 none, 3 Docker not reachable."""
+    if not docker_ok():
+        return 3
+    code, out, _ = run(['docker', 'ps', '-aq'])
+    ids = out.split() if code == 0 else []
+    found = 0
+    if ids:
+        code, out, _ = run(['docker', 'inspect', *ids])
+        for item in load_json(out, 'docker inspect') if code == 0 else []:
+            for mount in item.get('Mounts') or []:
+                if mount.get('Source') and inside(mount['Source'], os.path.realpath(path)):
+                    print(f'bound: {item.get("Name", "").lstrip("/")} {mount["Source"]}')
+                    found += 1
+    return 0 if found else 1
+
+
 def cmd_list(under, named):
     """Prints one line per copy group: name, state, ports. Exit 3 when Docker is not reachable."""
     if not docker_ok():
@@ -631,6 +780,14 @@ def main(argv):
             if not plain and not found['--under']:
                 raise ValueError('destroy [--under <path>]... [<group>...]')
             return cmd_destroy(plain, found['--under'])
+        if command == 'deploy-binds':
+            if len(rest) < 4 or (len(rest) > 4 and rest[4] != '--'):
+                raise ValueError('deploy-binds <project> <checkout> <repo> <override> [-- <docker compose options>...]')
+            return cmd_deploy_binds(*rest[:4], rest[5:])
+        if command == 'bound-under':
+            if len(rest) != 1:
+                raise ValueError('bound-under <path>')
+            return cmd_bound_under(rest[0])
         if command == 'list':
             found, plain = parse_pairs(rest, ('--under', '--group'))
             if plain:

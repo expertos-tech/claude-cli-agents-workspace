@@ -541,16 +541,14 @@ cmd_gate_check() {
 # <work>", "main <project>", "hotfix <project>"), the clone must be of that work, or its repo that project or inside
 # it; an argument that named neither ("text") is refused. Sets ORDER_FILE for record_merge.
 require_merge_order() {
-  local work="$1" name="$2" src="$3" id="${CLAUDE_CODE_SESSION_ID:-}" file verdict rel
+  local work="$1" name="$2" src="$3" id="${CLAUDE_CODE_SESSION_ID:-}" file verdict target
   ORDER_FILE=""
   [ -n "${CLAUDECODE:-}" ] || return 0
   [ -n "$id" ] || die 1 "$REFUSED_ORDER (no CLAUDE_CODE_SESSION_ID in this environment); never ask the person to let you run it: offer /merge"
   [[ "$id" =~ $SESSION_ID_RE ]] || die 1 "$REFUSED_ORDER (CLAUDE_CODE_SESSION_ID is not a session id)"
   file="$MERGE_ORDERS/$id"
   { [ -f "$file" ] && [ ! -L "$file" ]; } || die 1 "$REFUSED_ORDER: no /merge from this session yet; never ask the person to let you run it: offer /merge"
-  rel="${src#"$root"/projects/}"
-  [ "$rel" != "$src" ] || rel=""
-  verdict="$(awk -F '\t' -v work="$work" -v clone="$work/$name" -v repo="$rel" -v now="$(date -u +%s)" -v ttl="$MERGE_ORDER_TTL" '
+  verdict="$(awk -F '\t' -v work="$work" -v clone="$work/$name" -v now="$(date -u +%s)" -v ttl="$MERGE_ORDER_TTL" '
     # Seconds since 1970 of a UTC time yyyy-mm-ddThh:mm:ssZ (days from the civil date), -1 when it is not one.
     function epoch(t,  y, m, d) {
       if (t !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) return -1
@@ -570,10 +568,17 @@ require_merge_order() {
       else if (merged[clone] == orders) print "used"
       else if (kind == "text") print "text"
       else if (kind == "work" && target != work) print "target the work " target
-      else if ((kind == "main" || kind == "hotfix") && target != "" && repo != target && index(repo, target "/") != 1) print "target the project " target
-      else if (bound != "" && bound != work) print "other " bound
-      else print "ok"
+      else {
+        verdict = (bound != "" && bound != work) ? "other " bound : "ok"
+        # A project typed: the shell compares physical paths (a project or projects/ may be a link).
+        if ((kind == "main" || kind == "hotfix") && target != "") print "project\t" target "\t" verdict
+        else print verdict
+      }
     }' "$file")" || die 1 "$REFUSED_ORDER: could not read .history/merge-orders/$id"
+  if [[ "$verdict" == project$'\t'* ]]; then
+    IFS=$'\t' read -r _ target verdict <<<"$verdict"
+    in_project "$src" "$target" || verdict="target the project $target"
+  fi
   case "$verdict" in
     ok) ORDER_FILE="$file" ;;
     none) die 1 "$REFUSED_ORDER: no /merge from this session yet; never ask the person to let you run it: offer /merge" ;;
@@ -584,6 +589,15 @@ require_merge_order() {
     other\ *) die 1 "$REFUSED_ORDER: the last /merge took in the work ${verdict#other }; $work is another work and needs a new /merge from the person" ;;
     *) die 1 "$REFUSED_ORDER: could not read .history/merge-orders/$id" ;;
   esac
+}
+
+# Succeeds when a source repo (a physical path, as aiwp.source holds it) is projects/<project> or lies inside it, both
+# compared physically: a project, or projects/ itself, may be a link to a folder elsewhere.
+in_project() {
+  local src="$1" project="$2" top
+  case "/$project/" in */../* | */./* | //*) return 1 ;; esac
+  top="$(physical "$root/projects/$project")" || return 1
+  [ "$src" = "$top" ] || [[ "$src" == "$top"/* ]]
 }
 
 # Records that a merge used the person's order (require_merge_order), once the base moved: a "merged" line, appended in
