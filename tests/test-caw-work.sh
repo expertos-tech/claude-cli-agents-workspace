@@ -188,6 +188,7 @@ test_a_term_in_a_file_is_not_pushed() {
   has "notes.txt:1:made for ACMECORP inc"
   has "refused: the lines above hold a company term"
   has "NOT pushed"
+  has "bash tests/caw-work.sh push $W/claude-cli-agents-workspace"
   eq "remote unchanged" "$pushed" "$(remote_sha "heads/$B")"
   eq "commit stays" "change notes.txt" "$(git -C "$C" log -1 --format=%s)"
   # Removing it in a later commit is not enough: the first one would still leave.
@@ -232,7 +233,7 @@ test_rewriting_pushed_commits_is_refused() {
   rc_not 0
   has "that is a force push"
   eq "remote unchanged by --force" "$pushed" "$(remote_sha "heads/$B")"
-  run run "$W" -- git push -q --force-with-lease origin "HEAD:refs/heads/$B"
+  in_clone push -q --force-with-lease origin "HEAD:refs/heads/$B"
   rc_not 0
   has "that is a force push"
   eq "remote unchanged by a lease" "$pushed" "$(remote_sha "heads/$B")"
@@ -250,7 +251,7 @@ test_rebase_pushes_at_the_end() {
   OUT="$(GIT_SEQUENCE_EDITOR=true git -C "$C" rebase -q -i --force-rebase HEAD~2 2>&1)"
   RC=$?
   rc_is 0
-  hasnt "HEAD is on"
+  hasnt "HEAD is not on"
   has "caw-work: pushed $B"
   eq "the rebase is pushed at the end" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
 }
@@ -276,30 +277,30 @@ test_protected_refs_are_refused() {
   local dev main
   dev="$(remote_sha developer)"
   main="$(remote_sha main)"
-  run run "$W" -- git push -q origin HEAD:developer
+  in_clone push -q origin HEAD:developer
   rc_not 0
   has "never pushes developer"
   eq "developer unchanged" "$dev" "$(remote_sha developer)"
-  run run "$W" -- git push -q origin HEAD:main
+  in_clone push -q origin HEAD:main
   rc_not 0
   has "never pushes main"
   eq "main unchanged" "$main" "$(remote_sha main)"
   git -C "$C" tag v9.9.9
-  run run "$W" -- git push -q origin v9.9.9
+  in_clone push -q origin v9.9.9
   rc_not 0
   has "never pushes a tag"
   eq "no tag on the remote" none "$(remote_sha tags/v9.9.9)"
-  run run "$W" -- git push -q origin HEAD:refs/notes/x
+  in_clone push -q origin HEAD:refs/notes/x
   rc_not 0
   has "branches only"
   # Another branch: pushed after the scan, and its deletion passes.
-  run run "$W" -- git push -q origin HEAD:refs/heads/chore/side
+  in_clone push -q origin HEAD:refs/heads/chore/side
   rc_is 0
   eq "side branch pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha heads/chore/side)"
-  run run "$W" -- git push -q origin --delete chore/side
+  in_clone push -q origin --delete chore/side
   rc_is 0
   eq "side branch deleted" none "$(remote_sha heads/chore/side)"
-  run run "$W" -- git push -q origin --delete developer
+  in_clone push -q origin --delete developer
   rc_not 0
   eq "developer not deleted" "$dev" "$(remote_sha developer)"
 }
@@ -363,6 +364,194 @@ test_run_refuses_paths_outside_the_clone() {
   rc_is 1
   run run "$W" true
   rc_is 2
+}
+
+test_run_refuses_ways_around_the_hooks() {
+  fixture
+  run open "$B"
+  local dev main
+  dev="$(remote_sha developer)"
+  main="$(remote_sha main)"
+  # A repository with no hooks inside the clone.
+  git -C "$C" clone -q "$REMOTE" sub
+  run run "$W" -- git --git-dir=sub/.git push "$REMOTE" HEAD:refs/heads/developer
+  rc_is 1
+  has "run uses the clone itself"
+  run run "$W" -- env GIT_DIR=sub/.git git push origin HEAD:refs/heads/main
+  rc_is 1
+  has "a GIT_* variable"
+  has "env: a wrapper"
+  run run "$W" -- bash -c 'git push --no-veri origin HEAD:refs/heads/developer'
+  rc_is 1
+  mkdir -p "$BASE/home"
+  # shellcheck disable=SC2016  # $HOME is for the inner shell, which must never run
+  HOME="$BASE/home" run run "$W" -- bash -c 'touch "$HOME/x"'
+  rc_is 1
+  [ ! -e "$BASE/home/x" ]; check "nothing touched outside the clone" $?
+  has "gives the interpreter its code"
+  eq "developer unchanged" "$dev" "$(remote_sha developer)"
+  eq "main unchanged" "$main" "$(remote_sha main)"
+  local args
+  while IFS= read -r args; do
+    # shellcheck disable=SC2086  # each line is a command, split on purpose
+    run run "$W" -- $args </dev/null
+    [ "$RC" -eq 1 ]; check "refused: $args" $?
+  done <<'LIST'
+git push origin
+git push -q origin HEAD:refs/heads/feat/sample-change
+git send-pack origin
+git http-push x
+git -C sub status
+git -Csub status
+git -c user.name=x status
+git -cuser.name=x status
+git --work-tree=sub status
+git --work-tree sub status
+git --exec-path=bin status
+git --config-env=core.editor=EDITOR status
+git --namespace=x log
+git --super-prefix=x status
+git config user.name x
+git config --unset caw.branch
+git config alias.p push
+git rebase -x true HEAD
+git rebase --exec=true HEAD
+git submodule foreach true
+git bisect run true
+git filter-branch HEAD
+printf %s GIT_DIR=sub/.git
+printf %s GIT_CONFIG_COUNT=1
+env true
+xargs true
+nohup true
+timeout 5 true
+nice true
+sudo true
+parallel true
+command true
+stdbuf -o0 true
+setsid true
+find . -exec true ;
+find . -execdir true ;
+find . -ok true ;
+eval true
+source README.md
+. README.md
+bash -c true
+bash -ec true
+bash -lc true
+sh -c true
+zsh -c true
+dash -c true
+ksh -c true
+fish -c true
+fish --command true
+bash
+bash -s
+bash -i README.md
+bash --rcfile README.md
+bash missing.sh
+bash -- missing.sh
+python3 -c pass
+python3 -Ic pass
+python -c pass
+python3.12 -c pass
+python3
+python3 -
+python3 -i s.py
+python3 missing.py
+node -e 1
+node --eval=1
+node --eval 1
+node -p 1
+node
+deno eval 1
+deno repl
+bun -e 1
+perl -e 1
+perl -ne 1
+ruby -E 1
+ruby -e 1
+php -r 1
+php
+LIST
+}
+
+test_run_allows_scripts_and_git_in_the_clone() {
+  fixture
+  run open "$B"
+  printf 'echo ok-sh\n' >"$C/ok.sh"
+  printf 'print("ok-py")\n' >"$C/s.py"
+  run run "$W" -- bash ok.sh
+  rc_is 0
+  eq "bash script" ok-sh "$OUT"
+  run run "$W" -- bash -euo pipefail ok.sh
+  eq "bash with options" ok-sh "$OUT"
+  run run "$W" -- sh ./ok.sh
+  eq "sh script" ok-sh "$OUT"
+  run run "$W" -- python3 s.py
+  eq "python script" ok-py "$OUT"
+  run run "$W" -- python3 -I s.py
+  eq "python -I script" ok-py "$OUT"
+  run run "$W" -- python3 -m platform
+  rc_is 0
+  run run "$W" -- bash tests/caw-work.sh --help
+  rc_is 0
+  has "Usage: bash tests/caw-work.sh"
+  run run "$W" -- find . -name ok.sh
+  rc_is 0
+  has "./ok.sh"
+  run run "$W" -- git status --short
+  rc_is 0
+  has "ok.sh"
+  run run "$W" -- git add ok.sh s.py
+  rc_is 0
+  run run "$W" -- git commit -q -m "add the scripts"
+  rc_is 0
+  has "caw-work: pushed $B"
+  eq "commit through run pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  run run "$W" -- git log --oneline -1
+  has "add the scripts"
+  run run "$W" -- git --no-pager log -1 --format=%s
+  eq "git --no-pager" "add the scripts" "$OUT"
+  run run "$W" -- git config --get caw.branch
+  eq "git config read" "$B" "$OUT"
+  run run "$W" -- git config caw.branch
+  eq "git config single key" "$B" "$OUT"
+  run run "$W" -- git commit -c HEAD --allow-empty -q
+  rc_is 0
+}
+
+test_push_command() {
+  fixture
+  run open "$B"
+  export AIWP_TERMS_FILE="$BASE/missing.txt"
+  commit_in a.txt one
+  has "NOT pushed"
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  run push "$W"
+  rc_is 0
+  has "caw-work: pushed $B"
+  eq "pushed by push" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  run push "$W/claude-cli-agents-workspace"
+  rc_is 0
+  commit_in b.txt acmecorp
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  run push "$W"
+  rc_is 1
+  has "refused: the lines above hold a company term"
+  eq "a term is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  git -C "$C" switch -q -c other
+  run push "$W"
+  rc_is 1
+  has "HEAD is not on $B"
+  run push
+  rc_is 2
+  run push bad
+  rc_is 2
+  run push 2026-01-01-missing
+  rc_is 1
 }
 
 test_run_accepts_paths_inside_the_clone() {

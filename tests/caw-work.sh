@@ -25,12 +25,27 @@ Commands:
         same branch, in any work folder, is reused. Refused: a clone of another branch in the folder, and the branch
         already on the remote with no clone here.
   run <work>[/<clone>] -- <command>...
-        Runs the command (no shell) with the clone as the current folder. Refuses, running nothing, an argument (or
-        the value after = of --opt=value, -o=value or NAME=value) that names a path outside the clone: an absolute
-        path not under it (/dev/null is fine), one starting with ~, or a relative one that leaves it through .. or a
-        symbolic link. Refuses --no-verify (or an abbreviation) and any argument holding core.hooksPath: they would
-        skip the hooks. When AIWP_TERMS_FILE is not set and this repository finds a terms list, exports it as
-        AIWP_TERMS_FILE, so tests/check.sh in the clone scans with the same list.
+        Runs the command (no shell) with the clone as the current folder; the command is the program itself.
+        Refuses, running nothing:
+        - an argument (or the value after = of --opt=value, -o=value or NAME=value) that names a path outside the
+          clone: absolute and not under it (/dev/null is fine), starting with ~, or leaving it through .. or a
+          symbolic link;
+        - an argument holding core.hooksPath, --no-verify (or an abbreviation) or a GIT_*= assignment;
+        - git with -C, -c, --git-dir, --work-tree, --exec-path, --config-env, --namespace or --super-prefix (any
+          spelling, =value included); git push, send-pack and http-push (the hooks push; see push); a git config
+          write (reads stay: --get, --list, a single key); git rebase --exec, submodule foreach, bisect run and
+          filter-branch, which run shell commands;
+        - a wrapper as the command (env, xargs, nohup, timeout, nice, sudo, parallel, command, time, stdbuf,
+          setsid...), find with -exec, -execdir, -ok or -okdir, and eval, source or .;
+        - a shell or an interpreter given code inline or on stdin: bash sh zsh dash ksh fish... with -c, -s or -i
+          (combined short flags too), python with -c or -i, node with -e, -p, -i or --eval, deno and bun with -e,
+          --eval, eval or repl, perl and ruby with -e or -E, php with -r; and any of them with no script file of the
+          clone. A script file of the clone stays allowed (bash tests/check.sh, python3 tools/x.py, python3 -m ...).
+        When AIWP_TERMS_FILE is not set and this repository finds a terms list, exports it as AIWP_TERMS_FILE, so
+        tests/check.sh in the clone scans with the same list. What a script builds at run time is not seen.
+  push <work>[/<clone>]
+        Pushes the branch now, exactly as the hooks do (what a failed automatic push left behind): never forced,
+        through the pre-push hook. Exit 1 when it is not pushed.
   status [<work>]
         Fetches origin (--prune), then one line per clone: branch, commits ahead of origin/developer, commits not on
         the remote, files not committed, and whether the branch is in origin/developer.
@@ -64,6 +79,7 @@ Examples:
   bash tests/caw-work.sh open feat/autonomous-work
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- git status --short
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- bash tests/check.sh --base origin/developer --i18n-pending
+  bash tests/caw-work.sh push 2026-11-18-autonomous-work
   bash tests/caw-work.sh status
   bash tests/caw-work.sh close 2026-11-18-autonomous-work
 USAGE
@@ -200,7 +216,8 @@ cmd_open() {
   echo "path: tmp/work/$work/$clone_dir"
 }
 
-# Prints one line per argument of a command that run refuses, with the reason; prints nothing when every one is fine.
+# Prints one line per reason run refuses a command, naming the argument; prints nothing when it may run. A command of
+# run is the program itself, run with no shell: it stays in the clone and never pushes but through the hooks.
 refused_args() {
   python3 -I - "$@" <<'PY'
 import os
@@ -208,6 +225,35 @@ import re
 import sys
 
 ASSIGN = re.compile(r"^(--?[A-Za-z0-9][A-Za-z0-9_.-]*|[A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
+GIT_VAR = re.compile(r"(^|[^A-Za-z0-9_])GIT_[A-Za-z0-9_]*=")
+SHORT = re.compile(r"^[-+][A-Za-z]+$")
+WRAPPERS = {
+    "env", "xargs", "nohup", "timeout", "nice", "sudo", "doas", "su", "runuser", "parallel", "command", "exec",
+    "builtin", "time", "stdbuf", "setsid", "watch", "flock", "ionice", "chrt", "taskset", "unbuffer", "script",
+    "busybox", "strace", "chroot",
+}
+BUILTINS = {"eval", "source", "."}
+SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh"}
+GIT_GLOBAL = {"--git-dir", "--work-tree", "--exec-path", "--config-env", "--namespace", "--super-prefix"}
+GIT_PUSH = {"push", "send-pack", "http-push"}
+GIT_CONFIG_READ = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list", "get", "list"}
+# Per interpreter family: the short-option letters that give it code inline or on stdin, the long options that do,
+# the options that take a value, and whether a script file of the clone is required.
+FAMILIES = {
+    "shell": ("csi", {"--command", "--rcfile", "--init-file"}, {"-o", "+o", "-O", "+O"}, True),
+    "python": ("ci", set(), {"-X", "-W"}, True),
+    "node": ("epi", {"--eval", "--print", "--interactive"}, {"-r", "--require", "--import", "--loader"}, True),
+    "perl": ("eE", set(), set(), True),
+    "ruby": ("eE", set(), set(), True),
+    "php": ("rRBEFa", set(), set(), True),
+    "deno": ("ep", {"--eval", "--print"}, set(), False),
+}
+
+
+def inside(clone, value):
+    """Return True when a path, relative to the clone or absolute, resolves (symbolic links too) inside the clone."""
+    path = os.path.realpath(value if os.path.isabs(value) else os.path.join(clone, value))
+    return path == clone or path.startswith(clone + os.sep)
 
 
 def outside(clone, value):
@@ -216,31 +262,121 @@ def outside(clone, value):
         return ""
     if value.startswith("~"):
         return "a path under ~ is outside the clone"
-    path = os.path.realpath(value if os.path.isabs(value) else os.path.join(clone, value))
-    if path == clone or path.startswith(clone + os.sep):
+    return "" if inside(clone, value) else "a path outside the clone"
+
+
+def argument_reason(clone, arg):
+    """Return why one argument is refused wherever it stands, or an empty string."""
+    if "core.hookspath" in arg.lower():
+        return "core.hooksPath would skip the clone's hooks"
+    if "--no-veri" in arg:
+        return "--no-verify would skip the clone's hooks"
+    if GIT_VAR.search(arg):
+        return "a GIT_* variable would point git at another repository or config"
+    match = ASSIGN.match(arg)
+    for value in [arg] + ([match.group(2)] if match else []):
+        why = outside(clone, value)
+        if why:
+            return why
+    return ""
+
+
+def family_of(name):
+    """Return the interpreter family of a program name, or None."""
+    if name in SHELLS:
+        return "shell"
+    if re.fullmatch(r"(python|pypy)[0-9.]*", name):
+        return "python"
+    if name in ("node", "nodejs"):
+        return "node"
+    if name in ("deno", "bun"):
+        return "deno"
+    if name in ("perl", "ruby", "php"):
+        return name
+    return None
+
+
+def interpreter_reason(clone, family, args):
+    """Return why an interpreter call is refused (code inline or on stdin, no script file of the clone), or ''."""
+    letters, longs, takes_value, needs_script = FAMILIES[family]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            i += 1
+            break
+        if arg == "-":
+            return "- reads the code from stdin"
+        if not arg.startswith("-") and not (family == "shell" and arg.startswith("+")):
+            break
+        if arg.split("=", 1)[0] in longs or (SHORT.match(arg) and any(c in arg[1:] for c in letters)):
+            return f"{arg} gives the interpreter its code on the command line or on stdin"
+        if family == "python" and SHORT.match(arg) and "m" in arg[1:]:
+            return ""
+        if arg in takes_value or (family == "shell" and SHORT.match(arg) and arg[-1] in "oO"):
+            i += 1
+        i += 1
+    if family == "deno":
+        if i >= len(args) or args[i] in ("eval", "repl"):
+            return "eval, repl or no command reads code inline or from stdin"
         return ""
-    return "a path outside the clone"
+    if i >= len(args):
+        return "with no script file it reads the code from stdin"
+    if needs_script and not (inside(clone, args[i]) and os.path.isfile(os.path.join(clone, args[i]))):
+        return f"{args[i]} is not a script file of the clone: run a script of the clone, never inline code"
+    return ""
+
+
+def git_reason(args):
+    """Return why a git call is refused (another repository or config, a push, a config write, a shell hook), or ''."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        arg = args[i]
+        if arg.split("=", 1)[0] in GIT_GLOBAL or arg.startswith(("-C", "-c")):
+            return f"git {arg}: run uses the clone itself, with its own config and hooks"
+        i += 1
+    if i == len(args):
+        return ""
+    sub, rest = args[i], args[i + 1 :]
+    if sub in GIT_PUSH:
+        return "the hooks push the branch after each commit; push it again with: bash tests/caw-work.sh push <work>"
+    if sub == "config":
+        plain = [a for a in rest if not a.startswith("-")]
+        if not (any(a in GIT_CONFIG_READ for a in rest) or (len(plain) == len(rest) == 1)):
+            return "git config writes are refused in a work clone: only reads (--get, --list)"
+    if sub == "rebase" and any(a.startswith(("-x", "--exec")) for a in rest):
+        return "git rebase --exec runs a shell command"
+    if (sub == "submodule" and "foreach" in rest) or (sub == "bisect" and "run" in rest) or sub == "filter-branch":
+        return f"git {sub} runs a shell command"
+    return ""
+
+
+def command_reason(clone, argv):
+    """Return why the program of the command is refused, or an empty string."""
+    name, rest = os.path.basename(argv[0]), argv[1:]
+    if name in WRAPPERS:
+        return "a wrapper: the command of run is the program itself"
+    if name in BUILTINS:
+        return "shell code: run a script file of the clone"
+    if name == "find" and any(a in ("-exec", "-execdir", "-ok", "-okdir") for a in rest):
+        return "find -exec runs other commands: the command of run is the program itself"
+    if name == "git":
+        return git_reason(rest)
+    family = family_of(name)
+    return interpreter_reason(clone, family, rest) if family else ""
 
 
 def main():
-    """Print each refused argument of sys.argv[2:] for the clone sys.argv[1], with the reason."""
+    """Print each reason the command sys.argv[2:] is refused in the clone sys.argv[1]."""
     clone = os.path.realpath(sys.argv[1])
-    for arg in sys.argv[2:]:
-        if "core.hookspath" in arg.lower():
-            print(f"  {arg}: core.hooksPath would skip the clone's hooks")
-            continue
-        if "--no-verify" in arg or (arg.startswith("--no-v") and "--no-verify".startswith(arg)):
-            print(f"  {arg}: --no-verify would skip the clone's hooks")
-            continue
-        values = [arg]
-        match = ASSIGN.match(arg)
-        if match:
-            values.append(match.group(2))
-        for value in values:
-            why = outside(clone, value)
-            if why:
-                print(f"  {arg}: {why}")
-                break
+    argv = sys.argv[2:]
+    for arg in argv:
+        why = argument_reason(clone, arg)
+        if why:
+            print(f"  {arg}: {why}")
+    why = command_reason(clone, argv)
+    if why:
+        print(f"  {os.path.basename(argv[0])}: {why}")
 
 
 main()
@@ -351,33 +487,41 @@ force_refused() {
   echo "caw-work: to keep the change, commit it on top of what is pushed: git reset --soft ${2:0:12}, then git commit" >&2
 }
 
-# _autopush: the post-commit, post-merge and post-rewrite hooks. Pushes the recorded branch; never fails the commit.
-cmd_autopush() {
-  local clone="$1" kind="${2:-}" branch current gitdir pushed
-  # An amend fires post-commit and then post-rewrite: post-commit already pushed it.
-  [ "$kind" != amend ] || return 0
-  branch="$(clone_branch "$clone")" || { echo "caw-work: not a clone made by open: $clone" >&2; return 0; }
-  # Inside a rebase HEAD is detached and each picked commit fires post-commit: post-rewrite pushes at the end.
-  current="$(git -C "$clone" symbolic-ref -q --short HEAD)" || return 0
-  gitdir="$(git -C "$clone" rev-parse --absolute-git-dir)"
-  if [ "$kind" != rebase ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then return 0; fi
+# Pushes the recorded branch of a clone, never forced, through its pre-push hook. Returns 0 when it is pushed, 1 when
+# not, with the reason and what to do on stderr.
+push_branch() {
+  local clone="$1" branch current pushed
+  branch="$(clone_branch "$clone")" || { echo "caw-work: not a clone made by open: $clone" >&2; return 1; }
+  current="$(git -C "$clone" symbolic-ref -q --short HEAD)" || current=""
   if [ "$current" != "$branch" ]; then
-    echo "caw-work: HEAD is on $current, not $branch: nothing pushed" >&2
-    return 0
+    echo "caw-work: HEAD is not on $branch: nothing pushed" >&2
+    return 1
   fi
   # git would reject a rewrite of pushed commits as non-fast-forward before the pre-push hook: say why here.
   pushed="$(git -C "$clone" rev-parse -q --verify "refs/remotes/origin/$branch" || true)"
   if [ -n "$pushed" ] && ! git -C "$clone" merge-base --is-ancestor "$pushed" HEAD; then
     force_refused "refs/heads/$branch" "$pushed"
     echo "caw-work: NOT pushed: the commit stays only in this clone" >&2
-    return 0
+    return 1
   fi
   if with_timeout 120 git -C "$clone" push -q origin "HEAD:refs/heads/$branch"; then
     echo "caw-work: pushed $branch $(git -C "$clone" rev-parse --short HEAD)"
-  else
-    echo "caw-work: NOT pushed: the commit stays only in this clone. Fix what the lines above say (an amend or a rebase of commits not on the remote is fine), then commit again, or push: bash tests/caw-work.sh run <work> -- git push origin HEAD:refs/heads/$branch" >&2
+    return 0
   fi
-  return 0
+  echo "caw-work: NOT pushed: the commit stays only in this clone. Fix what the lines above say (an amend or a rebase of commits not on the remote is fine), then commit again, or push: bash tests/caw-work.sh push ${clone#"$work_root"/}" >&2
+  return 1
+}
+
+# _autopush: the post-commit, post-merge and post-rewrite hooks. Pushes the recorded branch; never fails the commit.
+cmd_autopush() {
+  local clone="$1" kind="${2:-}" gitdir
+  # An amend fires post-commit and then post-rewrite: post-commit already pushed it.
+  [ "$kind" != amend ] || return 0
+  # Inside a rebase HEAD is detached and each picked commit fires post-commit: post-rewrite pushes at the end.
+  git -C "$clone" symbolic-ref -q HEAD >/dev/null || return 0
+  gitdir="$(git -C "$clone" rev-parse --absolute-git-dir)"
+  if [ "$kind" != rebase ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then return 0; fi
+  push_branch "$clone" || true
 }
 
 # Scans what the revisions "<sha> --not <sha>..." bring for company terms: every version of a file their commits add
@@ -493,6 +637,11 @@ case "$command" in
   run) cmd_run "$@" ;;
   status) cmd_status "$@" ;;
   close) cmd_close "$@" ;;
+  push)
+    [ $# -eq 1 ] || die 2 "usage: push <work>[/<clone>]"
+    clone="$(clone_path "$1")"
+    push_branch "$clone"
+    ;;
   _autopush)
     [ $# -ge 1 ] || die 2 "usage: _autopush <clone> [<post-rewrite kind>]"
     cmd_autopush "$@"
