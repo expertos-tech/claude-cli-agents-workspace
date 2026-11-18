@@ -101,6 +101,10 @@ class FakeRun:
                 self.listed = handle.read().split()
             return subprocess.CompletedProcess(cmd, self.validate_rc, self.validate_out, '')
         self.other_calls.append(cmd[:2])
+        if self.labels is not None and cmd[1:2] == ['ps']:
+            filters = dict(cmd[k + 1].split('=')[1:3] for k in range(len(cmd) - 1) if cmd[k] == '--filter')
+            key = 'ps:' + filters.get(LABEL, '') + '/' + filters.get('com.docker.compose.service', '')
+            return subprocess.CompletedProcess(cmd, 0, ''.join(i + '\n' for i in self.labels.get(key, [])), '')
         if self.labels is not None and cmd[2:3] == ['inspect']:
             names = cmd[5:]
             found = [self.labels[name] for name in names if name in self.labels]
@@ -1842,6 +1846,17 @@ WEB_GROUP = GROUP + '--billing-web'
 LABEL = 'com.docker.compose.project'
 
 
+# Services of the group whose container reaches the host past its networks.
+HOST_REACHING = ('priv', 'caps', 'pid', 'ipc', 'uts', 'sock', 'run', 'varrun', 'root', 'badmount', 'nomounts')
+
+
+def box(*networks, privileged=False, capadd=None, pid='', ipc='private', uts='', mounts=()):
+    """Returns what docker container inspect prints of a container (guard.CONTAINER_FORMAT) on those networks."""
+    found = {'networks': {name: {} for name in networks}, 'privileged': privileged, 'capadd': capadd, 'pid': pid}
+    found.update({'ipc': ipc, 'uts': uts, 'mounts': list(mounts) if mounts is not None else None})
+    return found
+
+
 class TrailTestCase(unittest.TestCase):
     """A workspace root with the work of CloneApprovalTests, its two clones, the override of a copy and Grafana's
     data folder; docker inspect answers from LABELS."""
@@ -1850,6 +1865,28 @@ class TrailTestCase(unittest.TestCase):
         GROUP + '_db': {LABEL: GROUP}, WEB_GROUP + '_db': {LABEL: WEB_GROUP}, 'other_db': {LABEL: 'agent_1118-other'},
         'bare_db': {}, 'c1': {LABEL: GROUP}, 'img': {LABEL: GROUP}, 'net': {LABEL: GROUP}, 'nolabels': 'null',
         'broken': '{not json',
+        # docker ps of a service, the networks of its containers, and what docker network inspect says of each.
+        'ps:' + GROUP + '/db': ['c-db'], 'ps:' + GROUP + '/app': ['c-app1', 'c-app2'],
+        'ps:' + GROUP + '/web': ['c-web'], 'ps:' + GROUP + '/foreign': ['c-foreign'],
+        'ps:' + GROUP + '/nonet': ['c-nonet'], 'ps:' + GROUP + '/broken': ['c-missing'],
+        'ps:' + GROUP + '/links': ['c-links'],
+        **{'ps:' + GROUP + '/' + name: ['c-' + name] for name in HOST_REACHING + ('data', 'flat')},
+        'c-db': box(GROUP + '_internal'), 'c-app1': box(GROUP + '_internal'), 'c-app2': box(GROUP + '_internal'),
+        'c-web': box(GROUP + '_internal', GROUP + '_edge'), 'c-foreign': box('other_internal'), 'c-nonet': box(),
+        'c-links': box('host'), 'c-priv': box(GROUP + '_internal', privileged=True),
+        'c-caps': box(GROUP + '_internal', capadd=['SYS_ADMIN']), 'c-pid': box(GROUP + '_internal', pid='host'),
+        'c-ipc': box(GROUP + '_internal', ipc='host'), 'c-uts': box(GROUP + '_internal', uts='host'),
+        'c-sock': box(GROUP + '_internal', mounts=[{'Source': '/srv/x/docker.sock'}]),
+        'c-run': box(GROUP + '_internal', mounts=[{'Source': '/run/containerd'}]),
+        'c-varrun': box(GROUP + '_internal', mounts=[{'Source': '/var/run'}]),
+        'c-root': box(GROUP + '_internal', mounts=[{'Source': '/'}]),
+        'c-badmount': box(GROUP + '_internal', mounts=['x']), 'c-nomounts': box(GROUP + '_internal', mounts=None),
+        'c-data': box(GROUP + '_internal', mounts=[{'Source': '/var/lib/docker/volumes/x/_data'}]),
+        'c-flat': 'null',
+        GROUP + '_internal': {'internal': True, 'labels': {LABEL: GROUP}},
+        GROUP + '_edge': {'internal': False, 'labels': {LABEL: GROUP}},
+        'other_internal': {'internal': True, 'labels': {LABEL: 'agent_1118-other'}},
+        'host': {'internal': False, 'labels': {}},
     }  # fmt: skip
 
     def setUp(self):
@@ -1899,6 +1936,33 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' up --force-recreate --remove-orphans -t 5 --quiet-pull',
             'docker compose -p ' + GROUP + ' build --no-cache --pull -q --progress plain app',
             'docker compose -p ' + GROUP + ' exec db psql -U app -d app -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec app python3 -c "import os; print(os.environ)"',
+            'docker compose -p ' + GROUP + ' exec app curl https://example.com',
+            'docker compose -p ' + GROUP + ' exec app npm publish',
+            'docker compose -p ' + GROUP + ' exec data psql -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db psql -h prod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db psql postgresql://u@prod.example.com/app -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db dropdb -h prod.example.com app',
+            'docker compose -p ' + GROUP + ' exec db dropdb --host=prod.example.com app',
+            'docker compose -p ' + GROUP + ' exec db psql -hprod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db psql "host=prod.example.com dbname=app" -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec db psql postgresql://prod.example.com/app -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec db sqlcmd -S prod.example.com -Q "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db sh -c "psql -h prod.example.com -c \'DROP DATABASE x\'"',
+            'docker compose -p ' + GROUP + ' exec -e PGHOST=prod.example.com db psql -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec --env PGHOST=prod.example.com db dropdb app',
+            'docker compose -p ' + GROUP + ' exec -e DATABASE_URL=postgres://u@prod.example.com/app db sh -c '
+            '\'psql "$DATABASE_URL" -c "DROP DATABASE x"\'',
+            'docker compose -p ' + GROUP + ' exec db sh -c "PGHOST=prod.example.com psql -c \'DROP DATABASE x\'"',
+            'docker compose -p ' + GROUP + ' exec db psql -Xh prod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db mysql -Bh prod.example.com -e "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db psql --hos=prod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec -eA=1 -u root db dropdb app',
+            'docker compose -p ' + GROUP + ' exec -ite A=1 db dropdb app',
+            'docker compose -p ' + GROUP + ' exec db env PGHOST=prod.example.com dropdb app',
+            'docker compose -p ' + GROUP + ' exec db PGHOST=prod.example.com dropdb app',
+            'docker compose -p ' + GROUP + ' exec db timeout 5 dropdb app',
+            'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
             'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' up -d',
             'docker volume rm ' + GROUP + '_db', 'docker volume rm -f ' + GROUP + '_db ' + WEB_GROUP + '_db',
             'docker volume inspect --format "{{.Mountpoint}}" ' + GROUP + '_db', 'docker rm -fv c1',
@@ -1923,35 +1987,26 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' run --rm -v billing-api_pgdata:/d app psql -c "DROP DATABASE x"',
             'docker compose -p ' + GROUP + ' exec --privileged db psql -c "DROP TABLE x"',
             'docker compose -p agent_1118-add-export-billing-web down -v',
-            'docker compose -p ' + GROUP + ' exec db psql -h prod.example.com -c "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec db psql postgresql://u@prod.example.com/app -c "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec db dropdb -h prod.example.com app',
-            'docker compose -p ' + GROUP + ' exec db dropdb --host=prod.example.com app',
-            'docker compose -p ' + GROUP + ' exec db psql -hprod.example.com -c "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec db psql "host=prod.example.com dbname=app" -c "DROP TABLE x"',
-            'docker compose -p ' + GROUP + ' exec db psql postgresql://prod.example.com/app -c "DROP TABLE x"',
-            'docker compose -p ' + GROUP + ' exec db sqlcmd -S prod.example.com -Q "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec db sh -c "psql -h prod.example.com -c \'DROP DATABASE x\'"',
-            'docker compose -p ' + GROUP + ' exec -e PGHOST=prod.example.com db psql -c "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec --env PGHOST=prod.example.com db dropdb app',
-            'docker compose -p ' + GROUP + ' exec -e DATABASE_URL=postgres://u@prod.example.com/app db sh -c '
-            '\'psql "$DATABASE_URL" -c "DROP DATABASE x"\'',
-            'docker compose -p ' + GROUP + ' exec db sh -c "PGHOST=prod.example.com psql -c \'DROP DATABASE x\'"',
-            'docker compose -p ' + GROUP + ' exec db psql -Xh prod.example.com -c "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec db mysql -Bh prod.example.com -e "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec db psql --hos=prod.example.com -c "DROP DATABASE x"',
-            'docker compose -p ' + GROUP + ' exec -eA=1 -u root db dropdb app',
-            'docker compose -p ' + GROUP + ' exec -ite A=1 db dropdb app',
-            'docker compose -p ' + GROUP + ' exec db env PGHOST=prod.example.com dropdb app',
-            'docker compose -p ' + GROUP + ' exec db PGHOST=prod.example.com dropdb app',
-            'docker compose -p ' + GROUP + ' exec db timeout 5 dropdb app',
-            'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
+            'docker compose -p ' + GROUP + ' exec web psql -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec foreign psql -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec nonet psql -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec broken psql -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec gone psql -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec links psql -c "DROP TABLE x"',
+            *('docker compose -p ' + GROUP + ' exec ' + name + ' psql -c "DROP TABLE x"' for name in HOST_REACHING),
+            'docker compose -p ' + GROUP + ' exec flat psql -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' -p ' + WEB_GROUP + ' exec db psql -c "DROP TABLE x"',
         ):  # fmt: skip
             self.assertEqual(self.decided(command), 'ask', command)
         self.assertEqual(self.decided('docker compose -p ' + GROUP + ' down -v', self.root), 'ask')
         for error in (OSError('no docker'), subprocess.TimeoutExpired('docker', 5)):
             run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS), error=error)
             self.assertEqual(self.decided('docker volume rm ' + GROUP + '_db', run=run), 'ask', error)
+            exec_drop = 'docker compose -p ' + GROUP + ' exec db psql -c "DROP TABLE x"'
+            self.assertEqual(self.decided(exec_drop, run=run), 'ask', error)
+        run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS), docker_rc=1)
+        run.labels = None  # docker answers nothing: no container is known
+        self.assertEqual(self.decided('docker compose -p ' + GROUP + ' exec db psql -c "DROP TABLE x"', run=run), 'ask')
         run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS))
         self.assertEqual(self.decided('npm test && docker volume rm other_db', run=run), 'deny')
 
@@ -1980,8 +2035,7 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' up ../x', 'docker compose -p ' + GROUP + ' build --push',
             'docker compose -p ' + GROUP + ' run --volume=$HOME:/h app ls',
             'docker compose -p ' + GROUP + ' --env-file /etc/x.env up',
-            'docker compose -p ' + GROUP + ' exec app curl https://example.com',
-            'docker compose -p ' + GROUP + ' exec app npm publish', 'docker compose -p ' + GROUP + ' up > /etc/x',
+            'docker compose -p ' + GROUP + ' up > /etc/x',
             'X=/etc docker compose -p ' + GROUP + ' up', 'docker compose -p ' + GROUP + ' cp app:/etc/passwd x',
             'docker push img', 'docker login', 'docker rmi "img$X"', 'docker rm -l c1', 'docker volume ls',
             'docker image prune', 'docker rmi', 'docker network create n', 'docker',
@@ -2004,14 +2058,18 @@ class DockerGroupTests(TrailTestCase):
                          {'agent_1118-gone'})  # fmt: skip
         self.assertEqual(guard.option_value(['-pX'], 0), ('-p', 'X', 1))
         self.assertEqual(guard.option_value(['--file'], 0), ('--file', '', 2))
-        self.assertTrue(guard.inner_reaches_out(['app', 'ssh', 'host']))
-        self.assertFalse(guard.may_name_host(['-U', 'app', '-d', 'app', '-c', 'DROP TABLE x']))
-        self.assertTrue(guard.may_name_host(['--socket=/tmp/x']))
-        self.assertFalse(guard.container_command_ok([]))
-        self.assertFalse(guard.container_command_ok(['ssh', 'host']))
-        self.assertTrue(guard.container_command_ok(['psql', '-c', 'DROP TABLE x']))
-        self.assertFalse(guard.container_command_ok(['psql', '-c', 'DROP TABLE x'], env_given=True))
-        self.assertFalse(guard.inner_reaches_out(['db', 'psql', '-c', 'select 1']))
+        groups = guard.DockerGroups(self.root, self.run)
+        self.assertTrue(groups.isolated(GROUP, 'app'))
+        self.assertFalse(groups.isolated(GROUP, '-x'))
+        self.run.labels['ps:' + GROUP + '/odd'] = ['-c']
+        self.assertFalse(groups.isolated(GROUP, 'odd'))
+        self.run.labels['ps:' + GROUP + '/oddnet'] = ['c-oddnet']
+        self.run.labels['c-oddnet'] = box('-n')
+        self.assertFalse(groups.isolated(GROUP, 'oddnet'))
+        self.run.labels['ps:' + GROUP + '/junk'] = ['c-junk']
+        self.run.labels['c-junk'] = box(GROUP + '_junk')
+        self.run.labels[GROUP + '_junk'] = '{not json'
+        self.assertFalse(groups.isolated(GROUP, 'junk'))
         groups = guard.DockerGroups(self.root, self.run)
         self.assertFalse(groups.override('$X.yaml', self.clone, self.clone))
         self.assertFalse(groups.resources(['volume', 'rm', 'a b'], {GROUP}))

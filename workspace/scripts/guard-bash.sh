@@ -108,10 +108,14 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
           --wait-timeout, --force-recreate, --no-recreate, --remove-orphans, --no-deps, -t, --pull, --quiet-pull),
           down (-v, --volumes, --remove-orphans, -t), build (--no-cache, --pull, -q, --progress), each with service
           names, ps, logs, stop, start, restart, config, top, images, port, pause, unpause, or exec with only -T -i
-          -t -d -e -w -u --index (grouped short options read as docker does) running one program with plain words
-          (no shell, env, wrapper or VAR=x before it) that reaches no remote system. A database tool there (psql,
-          dropdb, mysql, pg_dump, mongosh...) gets no question, but only with no -e/--env on the exec, no short
-          option group holding h, H or S, no long option starting --h or --s, and no word with ://, @ or host=;
+          -t -d -e -w -u --index (grouped short options read as docker does) into a service whose running
+          containers, by docker ps and docker inspect, are attached only to networks that are internal (no route
+          out) and carry the label of the group. Then anything runs there with no question (a shell, an
+          interpreter, a database tool and its DROP): it cannot reach another machine. A service that publishes
+          ports is also on the non-internal <group>_edge network, so exec there, Docker that does not answer, no
+          container, host or none networking keep today's rules; so does a container that reaches the host past its
+          networks: privileged, added capabilities, pid, ipc or uts "host", or a mount of a runtime socket
+          (docker.sock, containerd.sock, podman.sock, anything under /run or /var/run) or of the host's /;
           docker rm, rmi, image rm, volume rm or inspect, network rm of resources that all carry the label
           com.docker.compose.project=<group> (docker inspect, 5 s; Docker that does not answer, a resource with no
           label or of another group: today's rules).

@@ -15,8 +15,8 @@ It allows, with no question, a line it can tell stays in one clone of tmp/work/<
 command runs there, every path it names (arguments and redirections, links resolved) stays there out of its .git and
 is no local secret file, nothing deletes that .git, and none reaches a remote system (a push, a publish, a deploy, ssh,
 curl, a cloud or cluster CLI, a global install). Docker only in the task's own group (agent_<MMDD>-<slug>[--<clone>]:
-an allowlist of docker compose subcommands, and resources told by their compose label), where deleting a volume or a
-database asks nothing. SQL clients on the
+an allowlist of docker compose subcommands, exec only into a container on internal networks of the group, resources
+told by their compose label), where deleting a volume or a database asks nothing. SQL clients on the
 host and the workspace scripts are never allowed by it. Every deny and ask comes first; what it cannot tell stays
 silent.
 A speed bump with the human's confirmation behind it, not a sandbox: text a shell builds at run time is not seen.
@@ -2655,46 +2655,37 @@ def pflag_operands(words, flags, values, interspersed=True):
     return operands
 
 
-# Database tools, which a container of the group may point at another host (an option, a URI, a variable).
-DATABASE_TOOLS = SQL_CLIENTS | {
-    'dropdb', 'createdb', 'mysqladmin', 'mysqldump', 'mariadb-dump', 'pg_dump', 'pg_dumpall', 'pg_restore', 'mongo',
-    'mongodump', 'mongorestore', 'redis-cli', 'cqlsh', 'clickhouse-client',
-}  # fmt: skip
-# Programs that run another command, or code, in the container: the command they run cannot be read here.
-CONTAINER_RUNNERS = SHELLS | set(WRAPPERS) | {'eval', 'source', '.', 'exec'}
+# The compose label that names the service of a container, and what docker network inspect prints of a network.
+SERVICE_LABEL = 'com.docker.compose.service'
+NETWORK_FORMAT = '{"internal":{{json .Internal}},"labels":{{json .Labels}}}'
+# What docker container inspect prints of a container: its networks and what may reach the host past them.
+CONTAINER_FORMAT = (
+    '{"networks":{{json .NetworkSettings.Networks}},"privileged":{{json .HostConfig.Privileged}},'
+    '"capadd":{{json .HostConfig.CapAdd}},"pid":{{json .HostConfig.PidMode}},"ipc":{{json .HostConfig.IpcMode}},'
+    '"uts":{{json .HostConfig.UTSMode}},"mounts":{{json .Mounts}}}'
+)
+# Sockets of a container runtime: a container that mounts one drives the host's containers.
+RUNTIME_SOCKETS = {'docker.sock', 'containerd.sock', 'podman.sock'}
 
 
-def inner_reaches_out(words):
-    """True when the command a container of the group runs reaches a remote system: a program of NOT_APPROVED other
-    than a SQL client, or a remote word (push, publish, deploy...)."""
-    if any(os.path.basename(word) in NOT_APPROVED - SQL_CLIENTS for word in words):
+def reaches_host(container):
+    """True when a container (what CONTAINER_FORMAT prints) can reach the host past its networks: privileged, added
+    capabilities, the host's pid, ipc or uts namespace, or a mount of a runtime socket (docker.sock, containerd.sock,
+    podman.sock, anything under /run or /var/run) or of the host's root."""
+    if container.get('privileged') is not False or container.get('capadd'):
         return True
-    return any(w.partition(':')[0] in REMOTE_WORDS or w.startswith('publish') for w in plain_words(words))
-
-
-def may_name_host(words):
-    """True when the arguments of a database tool may point it at a host, read strictly: a short option group that
-    holds h, H or S (-h, -Xh, -Bh, -S), a long option that starts with --h or --s (--host, --hos=, --server, --socket),
-    or a word with ://, @ or host=."""
-    for word in words:
-        if '://' in word or '@' in word or 'host=' in word.lower():
+    if any(container.get(key) == 'host' for key in ('pid', 'ipc', 'uts')):
+        return True
+    mounts = container.get('mounts')
+    if not isinstance(mounts, list):
+        return True
+    for mount in mounts:
+        source = os.path.normpath(str(mount.get('Source') or '')) if isinstance(mount, dict) else '/'
+        if source == '/' or os.path.basename(source) in RUNTIME_SOCKETS:
             return True
-        if word.startswith('--') and word[2:3].lower() in ('h', 's'):
-            return True
-        if word.startswith('-') and not word.startswith('--') and set(word[1:]) & set('hHS'):
+        if any(source == top or source.startswith(top + '/') for top in ('/run', '/var/run')):
             return True
     return False
-
-
-def container_command_ok(words, env_given=False):
-    """True when the command docker compose exec runs in a container of the group can be judged: one program with
-    plain words (no shell, env, wrapper or VAR=value before it), that reaches no remote system; a database tool only
-    when exec passes it no environment (env_given) and its arguments name no host (may_name_host)."""
-    if not words or ASSIGNMENT.match(words[0]) or os.path.basename(words[0]) in CONTAINER_RUNNERS:
-        return False
-    if inner_reaches_out(words):
-        return False
-    return os.path.basename(words[0]) not in DATABASE_TOOLS or not (env_given or may_name_host(words[1:]))
 
 
 class DockerGroups:
@@ -2702,22 +2693,23 @@ class DockerGroups:
     up, down or build with their known options, ps, logs, stop, start, restart, config, top, images, port, pause,
     unpause, or exec with its known options; and docker rm, rmi, image rm, volume rm or inspect, network rm of
     resources that all carry the compose label of that group. The command runs in a clone of tmp/work/, and the
-    group is one of the work of that clone. The labels come from docker inspect under a short timeout; what it cannot
-    tell is not its own. docker compose run, create, cp and docker run are never its own."""
+    group is one of the work of that clone. exec counts only when every network of the service's containers is
+    internal and of the group: then whatever it runs there (a shell, an interpreter, a database tool) cannot reach
+    another machine. The labels and networks come from docker inspect under a short timeout; what it cannot tell is
+    not its own. docker compose run, create, cp and docker run are never its own."""
 
     def __init__(self, root, run):
         self.root, self.run, self.known = root, run, {}
 
     def clone(self, entry):
-        """Returns the clone (a real path) of a docker command that acts only on its own group, or of a command a
-        container of that group runs through exec (docker compose -p <group> exec db psql); None otherwise. Cached per
-        entry."""
+        """Returns the clone (a real path) of a docker command that acts only on its own group, or of a command an
+        isolated container of that group runs through exec (docker compose -p <group> exec db psql); None otherwise.
+        Cached per entry."""
         key = id(entry)
         if key not in self.known:
             launcher = entry['remote']
             if isinstance(launcher, dict):
-                own = self.clone(launcher)
-                self.known[key] = own if own and container_command_ok(entry['argv']) else None
+                self.known[key] = self.clone(launcher)  # its exec reaches only an isolated container of the group
             else:
                 self.known[key] = self.judge(entry)
         return self.known[key]
@@ -2763,13 +2755,8 @@ class DockerGroups:
         sub, rest = args[i], args[i + 1 :]
         if sub == 'exec':
             operands = pflag_operands(rest, *EXEC_OPTIONS, interspersed=False)
-            if not operands:
-                return False
-            options = rest[: len(rest) - len(operands)]
-            env_given = any(
-                w.startswith('--env') or (w.startswith('-') and not w.startswith('--') and 'e' in w) for w in options
-            )
-            return container_command_ok(operands[1:], env_given)
+            single = len(set(projects)) == 1
+            return bool(operands) and single and self.isolated(projects[0], operands[0])
         if sub in ('down', 'up', 'build'):
             known = {'down': DOWN_OPTIONS, 'up': UP_OPTIONS, 'build': BUILD_OPTIONS}[sub]
             operands = pflag_operands(rest, *known)
@@ -2815,25 +2802,65 @@ class DockerGroups:
         labels = self.labels(kind, names) if names else None
         return labels is not None and all(found.get(GROUP_LABEL) in groups for found in labels)
 
+    def isolated(self, group, service):
+        """True when every running container of a service of the group is attached only to networks that are
+        internal (no route out of the machine) and carry the label of the group, as docker inspect says. A service
+        that publishes ports is also on a non-internal network (<group>_edge): not isolated. No container, Docker
+        that does not answer, a container with no network, host or none networking, or one that reaches the host
+        past its networks (reaches_host: privileged, capabilities, host namespaces, a runtime socket): not
+        isolated."""
+        if not RESOURCE_NAME.match(service):
+            return False
+        labels = ('label=' + GROUP_LABEL + '=' + group, 'label=' + SERVICE_LABEL + '=' + service)
+        ids = self.docker(['ps', '--filter', labels[0], '--filter', labels[1], '--format', '{{.ID}}'])
+        if not ids or not all(RESOURCE_NAME.match(found) for found in ids):
+            return False
+        containers = self.inspect(['container', 'inspect', '--format', CONTAINER_FORMAT], ids)
+        if containers is None or not all(isinstance(found, dict) for found in containers):
+            return False
+        attached = [found.get('networks') for found in containers]
+        if any(reaches_host(found) for found in containers) or not all(isinstance(n, dict) and n for n in attached):
+            return False
+        names = sorted({name for nets in attached for name in nets})
+        if not all(RESOURCE_NAME.match(name) for name in names):
+            return False
+        networks = self.inspect(['network', 'inspect', '--format', NETWORK_FORMAT], names)
+        if networks is None or not all(isinstance(net, dict) for net in networks):
+            return False
+        return all(
+            net.get('internal') is True and (net.get('labels') or {}).get(GROUP_LABEL) == group for net in networks
+        )
+
     def labels(self, kind, names):
-        """Returns the labels of each named resource, from docker inspect under a short timeout; None when Docker does
-        not answer, a resource is missing or has no labels."""
+        """Returns the labels of each named resource, from docker inspect; None when Docker does not answer, a
+        resource is missing or has no labels."""
+        found = self.inspect([kind, 'inspect', '--format', LABELS_FORMAT[kind]], names)
+        return found if found is not None and all(isinstance(item, dict) for item in found) else None
+
+    def inspect(self, args, names):
+        """Returns one JSON value per name from a docker inspect command line, or None when Docker does not answer, a
+        name is missing or a line is no JSON."""
+        lines = self.docker(args + list(names))
+        if lines is None or len(lines) != len(names):
+            return None
+        try:
+            return [json.loads(line) for line in lines]
+        except ValueError:
+            return None
+
+    def docker(self, args):
+        """Runs docker with the arguments under a short timeout; returns its lines that are not blank, or None when it
+        fails or does not answer."""
         docker = os.environ.get('GUARD_BASH_DOCKER', 'docker')
         try:
             done = self.run(
-                [docker, kind, 'inspect', '--format', LABELS_FORMAT[kind], *names],
-                capture_output=True, text=True, check=False, timeout=INSPECT_TIMEOUT_SECONDS,
-            )  # fmt: skip
+                [docker, *args], capture_output=True, text=True, check=False, timeout=INSPECT_TIMEOUT_SECONDS
+            )
         except (OSError, subprocess.SubprocessError):
             return None
-        lines = [line for line in (done.stdout or '').splitlines() if line.strip()]
-        if done.returncode != 0 or len(lines) != len(names):
+        if done.returncode != 0:
             return None
-        try:
-            found = [json.loads(line) for line in lines]
-        except ValueError:
-            return None
-        return found if all(isinstance(item, dict) for item in found) else None
+        return [line.strip() for line in (done.stdout or '').splitlines() if line.strip()]
 
 
 OWN_GROUP = "; Docker only in the task's own group"

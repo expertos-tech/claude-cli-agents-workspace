@@ -38,11 +38,15 @@
 #  D31 own group: docker compose run/create, an unknown exec option, a clone group spelled with one dash -> not allowed;
 #      a session-title.py spelled with a wildcard or read by cat -> deny; a Docker mount of Grafana's data -> ask
 #                                                                              test_docker_group, test_protected_folders
-#  D32 exec of a SQL client that names a host -> ask; build --ssh -> not allowed; reading the hook -> silent;
-#      a --mount of Grafana's data (comma-separated) -> ask ................. test_docker_group, test_protected_folders
-#  D33 exec of a database tool with -e, a shell or a host spelling -> ask; the hook's reader in a pipe -> deny
+#  D32 build --ssh -> not allowed; reading the hook -> silent; a --mount of Grafana's data (comma-separated) -> ask
 #                                                                              test_docker_group, test_protected_folders
-#  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask  test_real_docker
+#  D33 exec in a container of the own group whose networks are all internal and of the group -> allow, whatever it
+#      runs (psql -h <host>, sh -c); a container also on a non-internal network (<group>_edge) -> ask; the hook's
+#      reader in a pipe -> deny; a container that mounts docker.sock (or privileged...) -> ask
+#      .............................................. test_docker_group, test_protected_folders
+#  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask; with
+#      alpine:3.20 present, exec into a container on an internal network -> allow, once also on an edge one -> ask
+#                                                                              test_real_docker
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -179,14 +183,32 @@ test_docker_group() {
   clone="$root/tmp/work/2026-11-18-add-export/billing-api"
   new_repo "$clone"
   stub="$BASE/docker-labels"
-  # Answers docker <kind> inspect --format <format> <names...> with the labels of each name; exit 1 for an unknown one.
+  # Answers docker ps (service db: c-db on the group's internal network; web: c-web also on its edge network) and
+  # docker <kind> inspect --format <format> <names...> with one JSON line per name; exit 1 for an unknown one.
   cat >"$stub" <<'STUB'
 #!/usr/bin/env bash
+if [ "$1" = ps ]; then
+  case "$*" in
+    *service=db*) echo c-db ;;
+    *service=web*) echo c-web ;;
+    *service=sock*) echo c-sock ;;
+  esac
+  exit 0
+fi
 shift 4
 for name in "$@"; do
   case "$name" in
     agent_1118-add-export_db) echo '{"com.docker.compose.project":"agent_1118-add-export"}' ;;
     other_db) echo '{"com.docker.compose.project":"agent_1118-other"}' ;;
+    c-db) echo '{"networks":{"agent_1118-add-export_internal":{}},"privileged":false,"capadd":null,"mounts":[]}' ;;
+    c-sock) echo '{"networks":{"agent_1118-add-export_internal":{}},"privileged":false,"capadd":null,'\
+'"mounts":[{"Source":"/var/run/docker.sock"}]}' ;;
+    c-web) echo '{"networks":{"agent_1118-add-export_internal":{},"agent_1118-add-export_edge":{}},'\
+'"privileged":false,"capadd":null,"mounts":[]}' ;;
+    agent_1118-add-export_internal)
+      echo '{"internal":true,"labels":{"com.docker.compose.project":"agent_1118-add-export"}}' ;;
+    agent_1118-add-export_edge)
+      echo '{"internal":false,"labels":{"com.docker.compose.project":"agent_1118-add-export"}}' ;;
     *) exit 1 ;;
   esac
 done
@@ -215,11 +237,15 @@ STUB
   hook_docker "docker compose -p ${group}-billing-api down -v" "$clone" "$root" "$stub"
   has "a clone group spelled with one dash is another work's group: it asks" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group exec db psql -h prod.example.com -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
-  has "a SQL client in the container that names a host asks" '"permissionDecision": "ask"'
-  hook_docker "docker compose -p $group exec -e PGHOST=prod.example.com db psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
-  has "a database tool given the environment asks" '"permissionDecision": "ask"'
-  hook_docker "docker compose -p $group exec db psql -Xh prod.example.com -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
-  has "a grouped host option asks" '"permissionDecision": "ask"'
+  has "an isolated container may run anything, a host name included" '"permissionDecision": "allow"'
+  hook_docker "docker compose -p $group exec -e PGHOST=x db sh -c 'psql -c \"DROP DATABASE x\"'" "$clone" "$root" "$stub"
+  has "a shell in an isolated container is allowed" '"permissionDecision": "allow"'
+  hook_docker "docker compose -p $group exec web psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
+  has "a container also on the edge network keeps the question" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group exec sock psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
+  has "a container that mounts the Docker socket keeps the question" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group exec db psql -c 'DROP DATABASE x'" "$clone" "$root" "$BASE/no-such-docker"
+  has "exec with Docker that does not answer keeps the question" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group build --ssh default" "$clone" "$root" "$stub"
   silent "build with an option outside the allowlist prints nothing"
   hook_docker "docker compose -p ${group}--billing-api down -v" "$clone" "$root" "$stub"
@@ -292,6 +318,22 @@ test_real_docker() {
   hook_in "docker volume rm $other" "$clone" "$root"
   has "a real volume of another group asks" '"permissionDecision": "ask"'
   docker volume rm "$own" "$other" >/dev/null
+  if ! docker image inspect alpine:3.20 >/dev/null 2>&1; then
+    echo "skip test_real_docker exec: no local alpine:3.20 image"
+    return 0
+  fi
+  local group="agent_1118-$id" box="guard-bash-test-$id"
+  docker network create --internal --label "com.docker.compose.project=$group" "${group}_internal" >/dev/null
+  docker network create --label "com.docker.compose.project=$group" "${group}_edge" >/dev/null
+  docker run -d --pull never --name "$box" --network "${group}_internal" --label "com.docker.compose.project=$group" \
+    --label com.docker.compose.service=db alpine:3.20 sleep 120 >/dev/null
+  hook_in "docker compose -p $group exec db psql -h prod.example.com -c 'DROP DATABASE x'" "$clone" "$root"
+  has "exec into a real container on an internal network is allowed" '"permissionDecision": "allow"'
+  docker network connect "${group}_edge" "$box"
+  hook_in "docker compose -p $group exec db psql -c 'DROP DATABASE x'" "$clone" "$root"
+  has "once it is also on a non-internal network, exec asks" '"permissionDecision": "ask"'
+  docker rm -f "$box" >/dev/null
+  docker network rm "${group}_internal" "${group}_edge" >/dev/null
 }
 
 test_help_and_args() {
