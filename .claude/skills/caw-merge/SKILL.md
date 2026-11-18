@@ -10,8 +10,9 @@ effort: high
 @workspace/rules/skills/merge/SKILL.md
 
 Read that file in full and follow it as the procedure, with the sections below over it: they win where they differ.
-Running `/caw-merge` is the owner's order for the pushes it makes: the work branch and `developer`. `main`, the tag and
-the GitHub release are each confirmed (`--main`).
+Running `/caw-merge` is the owner's order for the push of `developer`, the one prompt of a task; the work branch is
+pushed by the clone's hooks (`tests/caw-work.sh`). `main`, the tag and the GitHub release are each confirmed
+(`--main`).
 
 ---
 
@@ -24,7 +25,8 @@ the GitHub release are each confirmed (`--main`).
 - The release per project with one clone per repo, the project root version and `aiwp-cmds.sh release`: here one
   repository, and only the product is released ("Release", below).
 - Step 6 of "Merge into developer" for a base that publishes to production: `developer` publishes nothing here.
-- The review effort `high` for every merge: here by risk (`.claude/rules/review.md` "When").
+- The review of the product's skill: here `.claude/rules/review.md` (the same three questions and effort by content,
+  with this repository's split of code and documents).
 - The product's "Hotfix" steps 1, 3, 9, 10, 12 and 13 (`aiwp-cmds.sh open --from-main`, `hotfix`, `hotfix-tag`,
   `hotfix-down`, the project's repos, the request in `qa/` marked pending): here "Hotfix", below, with plain git.
 
@@ -32,11 +34,11 @@ the GitHub release are each confirmed (`--main`).
 
 | Product | Here |
 | --- | --- |
-| `bash scripts/aiwp-cmds.sh run <clone> -- git ...` | `git -C <clone> ...` |
+| `bash scripts/aiwp-cmds.sh run <clone> -- git ...` | `bash tests/caw-work.sh run <work> -- git ...`, from the root; a clone with no hooks (release, hotfix): `git -C <clone> ...` |
 | the CHANGELOG of the changed component | the two changelogs ("CAW rules") |
-| the full test command and gate phase 1 | `bash <clone>/tests/check.sh --base origin/developer --i18n-pending`, with `AIWP_TERMS_FILE` set to the root's `workspace/custom/core-terms.txt` when it exists; `/caw-test-install` from the clone when the range changes `install.sh`, `tests/test-install.sh`, a hook or `workspace/scripts/setup-claude.sh`. Record the sha: `git -C <clone> rev-parse HEAD` |
-| gate phase 2 | at the root, on `developer` with no change: `git fetch -q origin`, `git merge --ff-only origin/developer`; the clone's sha still its HEAD and the remote branch (`git ls-remote origin <branch>`), else back to step 1; `git fetch -q <clone> <branch>`, `git merge --ff-only <sha>`, `git push origin developer`, `git push origin --delete <branch>` |
-| `aiwp-cmds.sh close <work>` | `rm -rf tmp/work/<work>/<clone>`, and the work folder when empty, once `developer` holds the sha |
+| the full test command and gate phase 1 | `bash tests/caw-work.sh run <work> -- bash tests/check.sh --base origin/developer --i18n-pending` (it sets `AIWP_TERMS_FILE` to the root's terms list); `/caw-test-install` from the clone when the range changes `install.sh`, `tests/test-install.sh`, a hook or `workspace/scripts/setup-claude.sh`. Record the sha: `git -C <clone> rev-parse HEAD` |
+| gate phase 2 | at the root, on `developer` with no change: `git fetch -q origin`, `git merge --ff-only origin/developer`; the clone's sha still its HEAD and the remote branch (`git ls-remote origin <branch>`), else back to step 1; `git fetch -q <clone> <branch>`, `git merge --ff-only <sha>`, then, alone in its call, `git push origin developer` |
+| `aiwp-cmds.sh close <work>` | `bash tests/caw-work.sh close <work>`, once `developer` holds the sha: it deletes the remote work branch and the work folder |
 | `custom/requests/` (and `qa/<project>/`, `done/<project>/`) | `maintainers/requests/` (and `qa/`, `done/`), committed in the clone, or on `developer` when the session has no clone; no `custom/` |
 | a `ready` request made of a RECOMMENDED | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, with its row in the README |
 | `rules/review.md`, `rules/docs.md` | `.claude/rules/review.md`, `.claude/rules/docs.md` (`workspace/rules/docs.md` "CHANGELOG.md" for the changelog rules) |
@@ -45,8 +47,9 @@ the GitHub release are each confirmed (`--main`).
 
 ### Push gate
 
-This repository is public. Every push `/caw-merge` makes (the work or release branch, `developer`, `main`) happens
-only right after a passing `tests/check.sh` run on that same commit: record `git rev-parse HEAD` after the run, and
+This repository is public. Every push `/caw-merge` makes (a release or hotfix branch, `developer`, `main`) happens
+only right after a passing `tests/check.sh` run on that same commit; a work branch is pushed by the clone's hooks,
+after the company-terms scan: record `git rev-parse HEAD` after the run, and
 push only when HEAD still equals it. Anything written after that run (an Execution block, a request made of a
 finding, a fix, a translation) means running the suite again before the push.
 
@@ -109,7 +112,7 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
 5. **Full suite, strict:** `bash <clone>/tests/check.sh --all --base <last tag>` (translations included) and
    `bash <clone>/tests/test-install.sh`. Passed: record `git -C <clone> rev-parse HEAD` and push the release branch
    with upstream.
-6. **Final review** (the product's step 4, `.claude/rules/review.md` "Final review") on `<last tag>..HEAD` of the
+6. **Final review** (the product's step 4, `.claude/rules/review.md`) on `<last tag>..HEAD` of the
    clone, against every request of `maintainers/requests/qa/`.
 7. **The findings, once** (the product's step 5): per finding, (1) fix now in the release clone or (2) a request in
    `maintainers/requests/`; a BLOCKER sent to a request stops the release. Fixes or requests written in the clone: rerun step 5 (which
@@ -157,8 +160,8 @@ names in `maintainers/requests/`, else the description.
    `developer` has (`comm -12` of the sorted `git -C <clone> rev-list origin/main..HEAD` and
    `git -C <clone> rev-list origin/main..origin/developer` is empty). Passed: record `git -C <clone> rev-parse HEAD`
    and push `fix/<slug>` with upstream.
-6. **Review against `main`** (the product's step 7: `reviewer`, claude-opus-5-5, effort `high`) on
-   `origin/main..<sha>`, with the error described. A BLOCKER: fix in the clone and back to step 5. A RECOMMENDED: a
+6. **Review against `main`** (the product's step 7, `.claude/rules/review.md`) on `<last tag>..<sha>`, widened as
+   needed, with the error described. A BLOCKER: fix in the clone and back to step 5. A RECOMMENDED: a
    `ready` request in `maintainers/requests/`, written in the down step (step 9), never on `main`.
 7. **Into `main`:** `main` here does not publish by itself (the installers take only tags), so: the owner's OK, with no
    BLOCKER open and HEAD still the recorded sha; then `git -C <clone> push origin <sha>:refs/heads/main` (a
@@ -183,7 +186,7 @@ names in `maintainers/requests/`, else the description.
      `developer`; in the changelogs, the `Unreleased` sections of `developer` stay on top and the dated patch sections
      go below them (an `Unreleased` version not above the patch takes the next one); `workspace/VERSION` keeps the
      version of `developer` when it is above. Then the request as in the clean case, push the branch, and take it into
-     `developer` by "Merge into developer" of this skill (the suite, the review of the resolution with effort `high`,
+     `developer` by "Merge into developer" of this skill (the suite, the review of the resolution (`.claude/rules/review.md`),
      phase 2). Ask the owner only when the resolution changes a business rule.
 
    `main` and its tag never change on the way down; never a rebase or a force push; no other branch is touched.

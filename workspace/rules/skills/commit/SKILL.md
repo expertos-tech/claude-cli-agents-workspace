@@ -16,5 +16,5 @@ Follow `rules/git.md`. This request authorizes commits only: no new branch, no m
 3. Select the changes: this session's only, or all with `--all`. Group them into logical changes; one commit each.
 4. Never write `CHANGELOG.md`: `/merge` writes it from the commits (`rules/docs.md` "CHANGELOG.md"), so the message must say what changed for the reader.
 5. Read the selected diff for keys, tokens, credentials and `.env`. A finding: stop and report.
-6. Write the message of `rules/git.md` "Commits" to a temporary file. Stage by path and commit: `git -C <checkout> add -- <paths>`, then `git -C <checkout> commit -F <file>`. A refusal (the clone's pre-push scan, or the `guard-bash` hook in `custom/`) is reported, never worked around.
+6. Write the message of `rules/git.md` "Commits" to a temporary file. Stage by path and commit by the same paths, written out (never in a shell variable): `git -C <checkout> add -- <paths>`, then `git -C <checkout> commit -F <file> -- <paths>`. A refusal (the clone's pre-push scan, or the `guard-bash` hook in `custom/`) is reported, never worked around.
 7. Reply in the language of the conversation: per repo, `<hash> <title>`, what was left and why.

@@ -18,7 +18,8 @@ Read that file in full and follow it as the procedure, with the sections below o
 - `--repo`, the clones of `tmp/work/` as separate repos and `custom/`: here there is one repository, the root (or the
   clone of `tmp/work/` the session works in, the same repository).
 - The step that checks a project's `CHANGELOG.md`: `/caw-merge` writes both changelogs.
-- The pre-push scan of a clone: this repository has no hooks.
+- The product's pre-push secret scan of a clone: here the clone's hooks run the company-terms scan
+  (`tests/caw-work.sh`).
 
 ## Mapping
 
@@ -34,5 +35,10 @@ Read that file in full and follow it as the procedure, with the sections below o
 - This request authorizes commits only: no push, no branch, no tag, no merge.
 - `/caw-check` passed on these changes in this session; if not, run it first.
 - A finding of company data: stop and report it without printing the term.
-- Write the message of `.claude/rules/git.md` to a file in the scratchpad and commit by path:
-  `git commit -F <file> -- <paths>`.
+- Stage, then commit by the same paths, written out in the command (never in a shell variable: zsh passes an unquoted
+  variable as one word): at the root, the message of `.claude/rules/git.md` in a file of the scratchpad,
+  `git add -- <paths>`, then `git commit -F <file> -- <paths>`. In a work clone, the message in the clone's
+  `.git/CAW_COMMIT_MSG` (inside the clone, never committed), then
+  `bash tests/caw-work.sh run <work> -- git add -- <paths>` and
+  `bash tests/caw-work.sh run <work> -- git commit -F .git/CAW_COMMIT_MSG -- <paths>`. The clone's hooks push it; a
+  refused push (a company term) is reported, never worked around.

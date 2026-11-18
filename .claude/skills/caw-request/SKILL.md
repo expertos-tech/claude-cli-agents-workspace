@@ -25,8 +25,9 @@ Read that file in full and follow it as the procedure, with the sections below o
 | --- | --- |
 | `custom/requests/<name>` | `maintainers/requests/<name>`, then `tmp/requests/<name>`, then `tmp/<name>` |
 | `custom/requests/qa/<project>/`, `done/<project>/` | `maintainers/requests/qa/`, `maintainers/requests/done/` |
-| `bash scripts/aiwp-cmds.sh open <work> <repo>` | `git clone -q --local . tmp/work/<yyyy-mm-dd>-<slug>/claude-cli-agents-workspace`, then in it `git remote set-url origin "$(git remote get-url origin)"`, `git fetch -q origin`, `git switch -c <type>/<slug> origin/developer`, `git push -u origin HEAD` |
-| the clone's hooks push each commit | push the branch after each commit, by hand |
+| `bash scripts/aiwp-cmds.sh open <work> <repo>` | `bash tests/caw-work.sh open <type>/<slug>`: the clone `tmp/work/<yyyy-mm-dd>-<slug>/claude-cli-agents-workspace`, its branch from `origin/developer`, its hooks, pushed |
+| `bash scripts/aiwp-cmds.sh run <work>/<clone> -- <command>` | `bash tests/caw-work.sh run <work> -- <command>`, from the root |
+| the clone's hooks push each commit | the same: the clone's hooks push after the company-terms scan; never by hand |
 | `/merge` | `/caw-merge` |
 | `rules/models.md`, `rules/git.md` | `.claude/rules/models.md`, `.claude/rules/git.md`, `.claude/rules/process.md` step 4 |
 
@@ -40,6 +41,9 @@ Read that file in full and follow it as the procedure, with the sections below o
   False (a hotfix on `main` not merged into `developer` yet): refuse to start and say that `/caw-merge --hotfix --down`
   comes first (`.claude/skills/caw-merge/SKILL.md` "Blocked").
 - Read the plan the request names too.
+- The session stays at the root (settings and allow rules are read there): files of the clone by their path,
+  commands by `bash tests/caw-work.sh run <work> -- <command>`. A prompt shows one thing (`CLAUDE.md` "The trail and
+  the prompts").
 - Prove each step: `/caw-check`; `/caw-test-install` when the installer, a hook or `setup-claude.sh` changed.
 - The request never moves here: `/caw-merge` moves it to `qa/` with its Execution block.
 - End with the report of `.claude/rules/process.md` step 6.

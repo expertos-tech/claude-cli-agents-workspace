@@ -45,10 +45,10 @@ Detail in `.claude/rules/process.md`.
    approves in a session is recorded at once as a pending request in `maintainers/requests/`.
 3. **Request**, with the owner's answers, in `maintainers/requests/`: objective, BR-n, AC-n, out of scope, stages with
    effort (`/caw-draft-request`).
-4. **Execute** in stages with subagents (`/caw-request`, which works in a clone on a work branch under `tmp/work/`; a
-   session is either on `developer` at the root or in such a clone), always with explicit model and effort (high for
-   hooks, the installer, security and risky actions), in parallel only on disjoint paths, and an independent
-   clean-context review of hooks and security (`.claude/rules/review.md`).
+4. **Execute** in stages with subagents (`/caw-request`, which works in a clone on a work branch under `tmp/work/`,
+   opened by `bash tests/caw-work.sh open`; a session is either on `developer` at the root or in such a clone), always
+   with explicit model and effort (high for hooks, the installer, security and risky actions), in parallel only on
+   disjoint paths, and an independent clean-context review of hooks and security (`.claude/rules/review.md`).
 5. **Prove**: `bash tests/check.sh --base origin/developer --i18n-pending` on every change, only what changed
    (`/caw-check`); the release runs it strict from the last tag; `/caw-test-install` whenever the installer,
    a hook or `setup-claude.sh` changes.
@@ -57,6 +57,14 @@ Detail in `.claude/rules/process.md`.
    `CHANGELOG.md` for every change, `workspace/CHANGELOG.md` for a product change (`workspace/`, `install.sh`). Other
    pushes only when the owner asks, each request covering that push only. Only the product is released, through
    `/caw-merge --main`, with every public step confirmed.
+
+## The trail and the prompts
+
+- In a work clone the agent asks nothing: `Edit(/tmp/work/**)` and `bash tests/caw-work.sh` are allowed, commands run
+  through `bash tests/caw-work.sh run <work> -- <command>` (it refuses a path outside the clone), and the clone's hooks
+  push its branch after the company-terms scan. Leaving the trail falls back to the active permission mode.
+- A prompt shows one thing: run everything allowed first; what needs authorization runs alone, in its own call, after
+  one line saying what it asks. The one prompt of a task is the push of `developer` by `/caw-merge`.
 
 ## Commits
 
