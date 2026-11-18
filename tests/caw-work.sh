@@ -25,27 +25,28 @@ Commands:
         same branch, in any work folder, is reused. Refused: a clone of another branch in the folder, and the branch
         already on the remote with no clone here.
   run <work>[/<clone>] -- <command>...
-        Runs the command (no shell) with the clone as the current folder; the command is the program itself.
-        Refuses, running nothing:
-        - an argument (or the value after = of --opt=value, -o=value or NAME=value) that names a path outside the
-          clone: absolute and not under it (/dev/null is fine), starting with ~, or leaving it through .. or a
-          symbolic link;
-        - an argument holding core.hooksPath, --no-verify (or an abbreviation) or a GIT_*= assignment;
-        - git with -C, -c, --git-dir, --work-tree, --exec-path, --config-env, --namespace or --super-prefix (any
-          spelling, =value included); git push, send-pack and http-push (the hooks push; see push); a git config
-          write (reads stay: --get, --list, a single key); git rebase --exec, submodule foreach, bisect run and
-          filter-branch, which run shell commands;
-        - a wrapper as the command (env, xargs, nohup, timeout, nice, sudo, parallel, command, time, stdbuf,
-          setsid...), find with -exec, -execdir, -ok or -okdir, and eval, source or .;
-        - a shell or an interpreter given code inline or on stdin: bash sh zsh dash ksh fish... with -c, -s or -i
-          (combined short flags too), python with -c or -i, node with -e, -p, -i or --eval, deno and bun with -e,
-          --eval, eval or repl, perl and ruby with -e or -E, php with -r; and any of them with no script file of the
-          clone. A script file of the clone stays allowed (bash tests/check.sh, python3 tools/x.py, python3 -m ...).
-        When AIWP_TERMS_FILE is not set and this repository finds a terms list, exports it as AIWP_TERMS_FILE, so
-        tests/check.sh in the clone scans with the same list. What a script builds at run time is not seen.
+        Runs the command (no shell) with the clone as the current folder, only when it is on run's list; anything else
+        is refused, running nothing, with "not on run's list: run it as a plain command (the permission mode
+        decides)". The list:
+        - git with no global option and one of: add commit status diff log show restore switch checkout branch merge
+          rebase (no -x/--exec, no -i) reset stash mv rm rev-parse ls-files blame cherry-pick revert fetch (a remote
+          by name, no --upload-pack/-u, no URL) grep (no -O) config (only --get, --get-all, --list, -l); an
+          --opt=value whose value reads as a command (; & | ` $( or a leading !) is refused. Never git push: the
+          hooks push, and push below;
+        - a script file of the clone: bash <file> [args], sh <file> [args], python3 <file> [args], with no option
+          before the file; python3 -m pytest|unittest [args];
+        - the tools shellcheck shfmt ruff markdownlint-cli2 sha256sum wc diff cat head tail ls grep sed find mkdir
+          touch cp mv rm chmod; sed with no script file and no e, w, W, r or R command (nor an s flag e or w); find
+          with no -exec, -execdir, -ok, -okdir, -delete or -fprint*; rm, mv and chmod -R never on the clone itself.
+        Every argument, every value of --opt=value and every attached value of a short option (-t<dir>, -at<dir>)
+        that names a path must resolve, symbolic links followed, inside the clone and outside its git dir (.git: its
+        hooks and config); /dev/null is fine, ~ is not. When AIWP_TERMS_FILE is not set and this repository finds a
+        terms list, exports it, so tests/check.sh in the clone scans with the same list. What a script of the clone
+        does at run time is not seen.
   push <work>[/<clone>]
-        Pushes the branch now, exactly as the hooks do (what a failed automatic push left behind): never forced,
-        through the pre-push hook. Exit 1 when it is not pushed.
+        Pushes the branch now, exactly as the hooks do (what a failed automatic push left behind): the terms scan of
+        what leaves runs first, in this script, then git push (never forced) through the clone's pre-push hook, which
+        scans again; a removed hook or another hooks path never lets a term out. Exit 1 when it is not pushed.
   status [<work>]
         Fetches origin (--prune), then one line per clone: branch, commits ahead of origin/developer, commits not on
         the remote, files not committed, and whether the branch is in origin/developer; then one "copy:" line per
@@ -76,8 +77,9 @@ Commands:
 
 Git hooks of a clone (written by open into the clone's .git/hooks, with the clone's core.hooksPath set to it; never
 part of any repository). They call this script by the absolute path it had when it ran open.
-  post-commit, post-merge    push the branch: git push origin HEAD:refs/heads/<branch>, never forced. Nothing on a
-                             detached HEAD, during a rebase, or with another branch checked out.
+  post-commit, post-merge    push the branch as push does: the terms scan, then git push origin HEAD:refs/heads/
+                             <branch>, never forced. Nothing on a detached HEAD, during a rebase, or with another
+                             branch checked out.
   post-rewrite               the same at the end of a rebase; an amend is pushed by post-commit.
                              A failed push says what to do and never fails the commit: the commit stays in the clone.
   pre-push                   reads every ref line first, then refuses the whole push of developer, main, a tag or any
@@ -239,167 +241,248 @@ cmd_open() {
   echo "path: tmp/work/$work/$clone_dir"
 }
 
-# Prints one line per reason run refuses a command, naming the argument; prints nothing when it may run. A command of
-# run is the program itself, run with no shell: it stays in the clone and never pushes but through the hooks.
+# Prints one line per reason run refuses a command; prints nothing when it may run. run is an allowlist: git with the
+# listed subcommands, a script file of the clone through bash, sh or python3, and the listed tools; every path it names
+# stays inside the clone and out of its git dir.
 refused_args() {
-  python3 -I - "$@" <<'PY'
+  local clone="$1"
+  shift
+  python3 -I - "$clone" "$(git -C "$clone" rev-parse --absolute-git-dir)" "$@" <<'PY'
 import os
 import re
 import sys
 
-ASSIGN = re.compile(r"^(--?[A-Za-z0-9][A-Za-z0-9_.-]*|[A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
-GIT_VAR = re.compile(r"(^|[^A-Za-z0-9_])GIT_[A-Za-z0-9_]*=")
-SHORT = re.compile(r"^[-+][A-Za-z]+$")
-WRAPPERS = {
-    "env", "xargs", "nohup", "timeout", "nice", "sudo", "doas", "su", "runuser", "parallel", "command", "exec",
-    "builtin", "time", "stdbuf", "setsid", "watch", "flock", "ionice", "chrt", "taskset", "unbuffer", "script",
-    "busybox", "strace", "chroot",
+NOT_LISTED = "not on run's list: run it as a plain command (the permission mode decides)"
+GIT_SUBCOMMANDS = {
+    "add", "commit", "status", "diff", "log", "show", "restore", "switch", "checkout", "branch", "merge", "rebase",
+    "reset", "stash", "mv", "rm", "rev-parse", "ls-files", "blame", "cherry-pick", "revert", "fetch", "grep", "config",
 }
-BUILTINS = {"eval", "source", "."}
-SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh"}
-GIT_GLOBAL = {"--git-dir", "--work-tree", "--exec-path", "--config-env", "--namespace", "--super-prefix"}
-GIT_PUSH = {"push", "send-pack", "http-push"}
-GIT_CONFIG_READ = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list", "get", "list"}
-# Per interpreter family: the short-option letters that give it code inline or on stdin, the long options that do,
-# the options that take a value, and whether a script file of the clone is required.
-FAMILIES = {
-    "shell": ("csi", {"--command", "--rcfile", "--init-file"}, {"-o", "+o", "-O", "+O"}, True),
-    "python": ("ci", set(), {"-X", "-W"}, True),
-    "node": ("epi", {"--eval", "--print", "--interactive"}, {"-r", "--require", "--import", "--loader"}, True),
-    "perl": ("eE", set(), set(), True),
-    "ruby": ("eE", set(), set(), True),
-    "php": ("rRBEFa", set(), set(), True),
-    "deno": ("ep", {"--eval", "--print"}, set(), False),
+TOOLS = {
+    "shellcheck", "shfmt", "ruff", "markdownlint-cli2", "sha256sum", "wc", "diff", "cat", "head", "tail", "ls", "grep",
+    "sed", "find", "mkdir", "touch", "cp", "mv", "rm", "chmod",
 }
+FIND_ACTIONS = {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"}
+# A value that reads as shell code: a separator, a pipe, a substitution, or a leading ! (a git alias or helper).
+COMMANDISH = re.compile(r"[;&|`]|\$\(|^!")
 
 
-def inside(clone, value):
-    """Return True when a path, relative to the clone or absolute, resolves (symbolic links too) inside the clone."""
-    path = os.path.realpath(value if os.path.isabs(value) else os.path.join(clone, value))
-    return path == clone or path.startswith(clone + os.sep)
+def resolve(clone, value):
+    """Return the real path a value names, relative to the clone when it is not absolute."""
+    return os.path.realpath(value if os.path.isabs(value) else os.path.join(clone, value))
 
 
-def outside(clone, value):
-    """Return why a value names a path outside the clone, or an empty string when it does not."""
+def under(path, folder):
+    """Return True when a real path is the folder or inside it."""
+    return path == folder or path.startswith(folder + os.sep)
+
+
+def path_reason(clone, gitdirs, value):
+    """Return why a value names a path run refuses (outside the clone, or in its git dir), or an empty string."""
     if value in ("", "/dev/null"):
         return ""
     if value.startswith("~"):
         return "a path under ~ is outside the clone"
-    return "" if inside(clone, value) else "a path outside the clone"
-
-
-def argument_reason(clone, arg):
-    """Return why one argument is refused wherever it stands, or an empty string."""
-    if "core.hookspath" in arg.lower():
-        return "core.hooksPath would skip the clone's hooks"
-    if "--no-veri" in arg:
-        return "--no-verify would skip the clone's hooks"
-    if GIT_VAR.search(arg):
-        return "a GIT_* variable would point git at another repository or config"
-    match = ASSIGN.match(arg)
-    for value in [arg] + ([match.group(2)] if match else []):
-        why = outside(clone, value)
-        if why:
-            return why
+    path = resolve(clone, value)
+    if not under(path, clone):
+        return "a path outside the clone"
+    if any(under(path.lower(), g.lower()) for g in gitdirs):
+        return "a path in the clone's git dir (.git, its hooks and config)"
     return ""
 
 
-def family_of(name):
-    """Return the interpreter family of a program name, or None."""
-    if name in SHELLS:
-        return "shell"
-    if re.fullmatch(r"(python|pypy)[0-9.]*", name):
-        return "python"
-    if name in ("node", "nodejs"):
-        return "node"
-    if name in ("deno", "bun"):
-        return "deno"
-    if name in ("perl", "ruby", "php"):
-        return name
-    return None
-
-
-def interpreter_reason(clone, family, args):
-    """Return why an interpreter call is refused (code inline or on stdin, no script file of the clone), or ''."""
-    letters, longs, takes_value, needs_script = FAMILIES[family]
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--":
-            i += 1
-            break
-        if arg == "-":
-            return "- reads the code from stdin"
-        if not arg.startswith("-") and not (family == "shell" and arg.startswith("+")):
-            break
-        if arg.split("=", 1)[0] in longs or (SHORT.match(arg) and any(c in arg[1:] for c in letters)):
-            return f"{arg} gives the interpreter its code on the command line or on stdin"
-        if family == "python" and SHORT.match(arg) and "m" in arg[1:]:
-            return ""
-        if arg in takes_value or (family == "shell" and SHORT.match(arg) and arg[-1] in "oO"):
-            i += 1
-        i += 1
-    if family == "deno":
-        if i >= len(args) or args[i] in ("eval", "repl"):
-            return "eval, repl or no command reads code inline or from stdin"
-        return ""
-    if i >= len(args):
-        return "with no script file it reads the code from stdin"
-    if needs_script and not (inside(clone, args[i]) and os.path.isfile(os.path.join(clone, args[i]))):
-        return f"{args[i]} is not a script file of the clone: run a script of the clone, never inline code"
-    return ""
+def candidates(arg):
+    """Return the values of an argument that may name a path: itself, the value of --opt=value, and every attached
+    value of a short-option cluster (-t<dir>, -at<dir>)."""
+    values = [arg]
+    if arg.startswith("--") and "=" in arg:
+        values.append(arg.split("=", 1)[1])
+    elif arg.startswith("-") and not arg.startswith("--") and len(arg) > 2:
+        values.extend(arg[k:] for k in range(2, len(arg)))
+    return values
 
 
 def git_reason(args):
-    """Return why a git call is refused (another repository or config, a push, a config write, a shell hook), or ''."""
-    i = 0
-    while i < len(args) and args[i].startswith("-"):
-        arg = args[i]
-        if arg.split("=", 1)[0] in GIT_GLOBAL or arg.startswith(("-C", "-c")):
-            return f"git {arg}: run uses the clone itself, with its own config and hooks"
-        i += 1
-    if i == len(args):
-        return ""
-    sub, rest = args[i], args[i + 1 :]
-    if sub in GIT_PUSH:
-        return "the hooks push the branch after each commit; push it again with: bash tests/caw-work.sh push <work>"
+    """Return why a git call is not allowed, or an empty string."""
+    if not args or args[0] not in GIT_SUBCOMMANDS:
+        return f"git {args[0] if args else ''}: {NOT_LISTED}".replace("git : ", "git: ")
+    sub, rest = args[0], args[1:]
+    for arg in rest:
+        if arg.startswith("--") and "=" in arg and COMMANDISH.search(arg.split("=", 1)[1]):
+            return f"git {sub} {arg}: an option value that reads as a command"
+    if sub == "rebase" and any(a.startswith(("-x", "-i", "--exec", "--interactive")) for a in rest):
+        return "git rebase -x/--exec runs commands and -i opens an editor: rebase without them"
+    if sub == "fetch":
+        for a in rest:
+            if a.startswith(("--upload-pack", "-u")) or "::" in a or "://" in a:
+                return f"git fetch {a}: fetch a remote of the clone by name, with no --upload-pack"
+    if sub == "grep" and any(a.startswith(("-O", "--open-files-in-pager")) for a in rest):
+        return "git grep -O opens files in a program"
     if sub == "config":
-        plain = [a for a in rest if not a.startswith("-")]
-        if not (any(a in GIT_CONFIG_READ for a in rest) or (len(plain) == len(rest) == 1)):
-            return "git config writes are refused in a work clone: only reads (--get, --list)"
-    if sub == "rebase" and any(a.startswith(("-x", "--exec")) for a in rest):
-        return "git rebase --exec runs a shell command"
-    if (sub == "submodule" and "foreach" in rest) or (sub == "bisect" and "run" in rest) or sub == "filter-branch":
-        return f"git {sub} runs a shell command"
+        reads = {"--get", "--get-all", "--list", "-l"}
+        if not any(a in reads for a in rest) or any(a.startswith("-") and a not in reads for a in rest):
+            return "git config: only --get, --get-all, --list or -l"
     return ""
 
 
-def command_reason(clone, argv):
-    """Return why the program of the command is refused, or an empty string."""
-    name, rest = os.path.basename(argv[0]), argv[1:]
-    if name in WRAPPERS:
-        return "a wrapper: the command of run is the program itself"
-    if name in BUILTINS:
-        return "shell code: run a script file of the clone"
-    if name == "find" and any(a in ("-exec", "-execdir", "-ok", "-okdir") for a in rest):
-        return "find -exec runs other commands: the command of run is the program itself"
+def sed_script_reason(script):
+    """Return why a sed script is refused (an e, w, W, r or R command, or an s flag e or w), or an empty string."""
+    i, n = 0, len(script)
+
+    def skip_delimited(i, delim):
+        """Return the index after the next unescaped delim from i, or -1."""
+        while i < n:
+            if script[i] == "\\":
+                i += 2
+                continue
+            if script[i] == delim:
+                return i + 1
+            i += 1
+        return -1
+
+    while i < n:
+        c = script[i]
+        if c in " \t\n;{}!,":
+            i += 1
+        elif c.isdigit() or c in "$~+":
+            i += 1
+        elif c == "/":
+            i = skip_delimited(i + 1, "/")
+            if i < 0:
+                return "a sed script run cannot read"
+            while i < n and script[i] in "IM":
+                i += 1
+        elif c == "\\" and i + 1 < n:
+            i = skip_delimited(i + 2, script[i + 1])
+            if i < 0:
+                return "a sed script run cannot read"
+        elif c in "ewWrR":
+            return f"the sed command {c} runs a command or reads or writes a file"
+        elif c in "sy" and i + 1 < n:
+            delim = script[i + 1]
+            i = skip_delimited(i + 2, delim)
+            i = skip_delimited(i, delim) if i >= 0 else -1
+            if i < 0:
+                return "a sed script run cannot read"
+            flags = ""
+            while i < n and script[i] not in ";\n}":
+                flags += script[i]
+                i += 1
+            if c == "s" and ("e" in flags or "w" in flags):
+                return "the s flag e or w runs a command or writes a file"
+        elif c in "aic:btT#":
+            while i < n and script[i] != "\n" and not (c in "btT" and script[i] == ";"):
+                i += 1
+        else:
+            i += 1
+    return ""
+
+
+def sed_scripts(args):
+    """Return the scripts of a sed call as (index of the argument holding it, script), and why it is refused when it
+    reads a script file (an empty string otherwise)."""
+    scripts, positional, i = [], [], 0
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if a == "-" or not a.startswith("-"):
+            positional.append((i - 1, a))
+        elif a.startswith("--"):
+            name, eq, value = a.partition("=")
+            if name.startswith("--f"):
+                return [], "sed --file: give the script with -e, run cannot read a script file"
+            if name.startswith("--e"):
+                if eq:
+                    scripts.append((i - 1, value))
+                elif i < len(args):
+                    scripts.append((i, args[i]))
+                    i += 1
+            elif name.startswith("--l") and not eq:
+                i += 1
+        else:
+            for k, letter in enumerate(a[1:], start=1):
+                attached = a[k + 1 :]
+                if letter == "f":
+                    return [], "sed -f: give the script with -e, run cannot read a script file"
+                if letter == "e":
+                    if attached:
+                        scripts.append((i - 1, attached))
+                    elif i < len(args):
+                        scripts.append((i, args[i]))
+                        i += 1
+                    break
+                if letter == "l":
+                    i += 0 if attached else 1
+                    break
+                if letter == "i":
+                    break
+    if not scripts and positional:
+        scripts.append(positional[0])
+    return scripts, ""
+
+
+def sed_reason(args):
+    """Return why a sed call is refused (a script file, or a script with e, w, W, r or R), or an empty string."""
+    scripts, why = sed_scripts(args)
+    for _, script in scripts:
+        why = why or sed_script_reason(script)
+    return why
+
+
+def script_reason(clone, gitdirs, name, args):
+    """Return why bash/sh/python3 is refused: it runs only a script file of the clone (python3: or -m pytest or
+    unittest), with no interpreter option before it."""
+    if name == "python3" and len(args) >= 2 and args[0] == "-m":
+        return "" if args[1] in ("pytest", "unittest") else "python3 -m: only pytest or unittest"
+    if not args or args[0].startswith("-"):
+        return f"{name} runs a script file of the clone, with no option before it"
+    path = resolve(clone, args[0])
+    if path_reason(clone, gitdirs, args[0]) or not os.path.isfile(path):
+        return f"{args[0]} is not a script file of the clone"
+    return ""
+
+
+def command_reason(clone, gitdirs, argv):
+    """Return why the program of the command, or how it is called, is not on run's list, or an empty string."""
+    name, rest = argv[0], argv[1:]
     if name == "git":
         return git_reason(rest)
-    family = family_of(name)
-    return interpreter_reason(clone, family, rest) if family else ""
+    if name in ("bash", "sh", "python3"):
+        return script_reason(clone, gitdirs, name, rest)
+    if name not in TOOLS:
+        return f"{name}: {NOT_LISTED}"
+    if name == "sed":
+        return sed_reason(rest)
+    if name == "find":
+        hit = [a for a in rest if a in FIND_ACTIONS]
+        return f"find {hit[0]} runs, deletes or writes: {NOT_LISTED}" if hit else ""
+    if name in ("rm", "mv", "chmod"):
+        recursive = any(a == "--recursive" or (a.startswith("-") and not a.startswith("--") and "R" in a) for a in rest)
+        targets = [a for a in rest if not a.startswith("-")]
+        if name == "mv":
+            targets = targets[:-1]
+        if (name != "chmod" or recursive) and any(resolve(clone, a) == clone for a in targets):
+            return f"{name} on the clone itself"
+    return ""
 
 
 def main():
-    """Print each reason the command sys.argv[2:] is refused in the clone sys.argv[1]."""
+    """Print each reason run refuses the command sys.argv[3:] in the clone sys.argv[1] (git dir sys.argv[2])."""
     clone = os.path.realpath(sys.argv[1])
-    argv = sys.argv[2:]
-    for arg in argv:
-        why = argument_reason(clone, arg)
-        if why:
-            print(f"  {arg}: {why}")
-    why = command_reason(clone, argv)
+    gitdirs = {os.path.realpath(sys.argv[2]), os.path.join(clone, ".git")}
+    argv = sys.argv[3:]
+    # A sed script is no path: sed_script_reason judges it.
+    scripts = {i + 1 for i, _ in sed_scripts(argv[1:])[0]} if argv[0] == "sed" else set()
+    for index, arg in enumerate(argv[1:], start=1):
+        if index in scripts:
+            continue
+        for value in candidates(arg):
+            why = path_reason(clone, gitdirs, value)
+            if why:
+                print(f"  {arg}: {why}")
+                break
+    why = command_reason(clone, gitdirs, argv)
     if why:
-        print(f"  {os.path.basename(argv[0])}: {why}")
+        print(f"  {why}")
 
 
 main()
@@ -633,11 +716,12 @@ force_refused() {
   echo "caw-work: to keep the change, commit it on top of what is pushed: git reset --soft ${2:0:12}, then git commit" >&2
 }
 
-# Pushes the recorded branch of a clone, never forced, through its pre-push hook. Returns 0 when it is pushed, 1 when
-# not, with the reason and what to do on stderr.
+# Pushes the recorded branch of a clone, never forced, after its own terms scan of what leaves and through the
+# clone's pre-push hook. Returns 0 when it is pushed, 1 when not, with the reason and what to do on stderr.
 push_branch() {
   local clone="$1" branch current pushed
   branch="$(clone_branch "$clone")" || { echo "caw-work: not a clone made by open: $clone" >&2; return 1; }
+  [[ "$branch" =~ $branch_re ]] || { echo "caw-work: refused: the recorded branch $branch is not a work branch" >&2; return 1; }
   current="$(git -C "$clone" symbolic-ref -q --short HEAD)" || current=""
   if [ "$current" != "$branch" ]; then
     echo "caw-work: HEAD is not on $branch: nothing pushed" >&2
@@ -650,7 +734,14 @@ push_branch() {
     echo "caw-work: NOT pushed: the commit stays only in this clone" >&2
     return 1
   fi
-  if with_timeout 120 git -C "$clone" push -q origin "HEAD:refs/heads/$branch"; then
+  # The scan runs here, before git push, so a pre-push hook removed or bypassed in the clone never lets a term out;
+  # the hook scans again as a second check.
+  if ! scan_leaving "$clone" origin "$(git -C "$clone" rev-parse HEAD)"; then
+    echo "caw-work: NOT pushed: the commit stays only in this clone; fix what the lines above say, then commit again or push: bash tests/caw-work.sh push ${clone#"$work_root"/}" >&2
+    return 1
+  fi
+  if with_timeout 120 git -C "$clone" -c "core.hooksPath=$(git -C "$clone" rev-parse --absolute-git-dir)/hooks" \
+    push -q origin "HEAD:refs/heads/$branch"; then
     echo "caw-work: pushed $branch $(git -C "$clone" rev-parse --short HEAD)"
     return 0
   fi
@@ -701,11 +792,48 @@ scan_commits() {
   return "$found"
 }
 
+# Scans what pushing <sha> to <remote> sends: the commits of <sha> the remote does not have (git ls-remote, never the
+# tracking refs). Returns 0 when it may leave (no match, or no terms list: SKIP), 1 when refused, with the reason.
+scan_leaving() {
+  local clone="$1" remote="$2" local_sha="$3" list patterns remote_list known=() sha rc=0
+  list="$(terms_list "$root")" || {
+    echo "caw-work: refused: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2
+    return 1
+  }
+  if [ -z "$list" ]; then
+    echo "SKIP terms scan: no terms list" >&2
+    return 0
+  fi
+  patterns="$(terms_patterns "$list")"
+  if [ -z "$patterns" ]; then
+    echo "SKIP terms scan: the terms list holds no term" >&2
+    return 0
+  fi
+  remote_list="$(with_timeout 60 git -C "$clone" ls-remote "$remote" 'refs/heads/*' 2>/dev/null)" || {
+    echo "caw-work: refused: the remote cannot be read to know what is already there" >&2
+    return 1
+  }
+  while read -r sha _; do
+    [ -n "$sha" ] && git -C "$clone" cat-file -e "$sha^{commit}" 2>/dev/null && known+=("$sha")
+  done <<<"$remote_list"
+  scan_commits "$clone" "$patterns" "$local_sha" --not ${known[@]+"${known[@]}"} >&2 || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1)
+      echo "caw-work: refused: the lines above hold a company term (<commit>:<path or message>:<line>:<text>); never paste them into an issue, a commit or a pull request. Rewrite the commits not on the remote without it (git commit --amend, or git reset --soft to the pushed commit and commit again), then push." >&2
+      return 1
+      ;;
+    *)
+      echo "caw-work: refused: the terms scan failed" >&2
+      return 1
+      ;;
+  esac
+}
+
 # _prepush: the pre-push hook. Reads every "<local ref> <local sha> <remote ref> <remote sha>" line first, then refuses
 # the whole push for a protected or non-branch target or a force push, and scans what leaves for company terms.
 cmd_prepush() {
-  local clone="$1" remote="${2:-origin}" line lines=() i local_sha remote_ref remote_sha sends=0 list patterns \
-    remote_list known=() sha rc=0
+  local clone="$1" remote="${2:-origin}" line lines=() i local_sha remote_ref remote_sha sends=0
   while IFS= read -r line; do [ -z "$line" ] || lines+=("$line"); done
   for i in ${lines[@]+"${!lines[@]}"}; do
     read -r _ local_sha remote_ref remote_sha <<<"${lines[$i]}"
@@ -734,42 +862,10 @@ cmd_prepush() {
     fi
   done
   [ "$sends" -eq 1 ] || return 0
-  list="$(terms_list "$root")" || {
-    echo "caw-work: refused: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2
-    return 1
-  }
-  if [ -z "$list" ]; then
-    echo "SKIP terms scan: no terms list" >&2
-    return 0
-  fi
-  patterns="$(terms_patterns "$list")"
-  if [ -z "$patterns" ]; then
-    echo "SKIP terms scan: the terms list holds no term" >&2
-    return 0
-  fi
-  remote_list="$(with_timeout 60 git -C "$clone" ls-remote "$remote" 'refs/heads/*' 2>/dev/null)" || {
-    echo "caw-work: refused: the remote cannot be read to know what is already there" >&2
-    return 1
-  }
-  while read -r sha _; do
-    [ -n "$sha" ] && git -C "$clone" cat-file -e "$sha^{commit}" 2>/dev/null && known+=("$sha")
-  done <<<"$remote_list"
   for i in ${lines[@]+"${!lines[@]}"}; do
     read -r _ local_sha _ <<<"${lines[$i]}"
     [[ "$local_sha" =~ $zero_re ]] && continue
-    rc=0
-    scan_commits "$clone" "$patterns" "$local_sha" --not ${known[@]+"${known[@]}"} >&2 || rc=$?
-    case "$rc" in
-      0) ;;
-      1)
-        echo "caw-work: refused: the lines above hold a company term (<commit>:<path or message>:<line>:<text>); never paste them into an issue, a commit or a pull request. Rewrite the commits not on the remote without it (git commit --amend, or git rebase -i on them only), then push." >&2
-        return 1
-        ;;
-      *)
-        echo "caw-work: refused: the terms scan failed" >&2
-        return 1
-        ;;
-    esac
+    scan_leaving "$clone" "$remote" "$local_sha" || return 1
   done
   return 0
 }

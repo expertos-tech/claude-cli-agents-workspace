@@ -364,7 +364,7 @@ test_no_terms_list_skips_the_scan() {
   rm -rf "$AIWP_WORKSPACE"
 }
 
-test_run_refuses_paths_outside_the_clone() {
+test_run_refuses_paths_outside_the_clone_and_its_git_dir() {
   fixture
   run open "$B"
   run run "$W" -- touch marker ../../escape
@@ -379,59 +379,82 @@ test_run_refuses_paths_outside_the_clone() {
   has "under ~"
   run run "$W" -- ls ~/x
   rc_is 1
-  run run "$W" -- git --git-dir=/etc status
-  rc_is 1
-  run run "$W" -- env "HOME=$BASE" true
-  rc_is 1
   ln -s "$BASE" "$C/link"
   run run "$W" -- cat link/x
   rc_is 1
   has "link/x: a path outside the clone"
   rm "$C/link"
-  run run "$W" -- git commit --no-verify -m x
+  # Attached values of short options and --opt=value.
+  run run "$W" -- cp "-t$BASE" README.md
   rc_is 1
-  has "--no-verify would skip"
-  run run "$W" -- git push --no-verif origin
+  run run "$W" -- cp "-at$BASE" README.md
   rc_is 1
-  run run "$W" -- bash -c "git push --no-verify"
+  run run "$W" -- cp "--target-directory=$BASE" README.md
   rc_is 1
-  run run "$W" -- git -c core.hooksPath=/dev/null commit -m x
+  [ ! -e "$BASE/README.md" ]; check "nothing copied outside" $?
+  # The clone's git dir: its hooks and config.
+  run run "$W" -- rm .git/hooks/pre-push
   rc_is 1
-  has "core.hooksPath would skip"
-  run run "$W" -- git config core.hookspath x
+  has "a path in the clone's git dir"
+  [ -f "$C/.git/hooks/pre-push" ]; check "pre-push kept" $?
+  run run "$W" -- cp README.md .git/config
+  rc_is 1
+  run run "$W" -- sed -i s/hooks/x/ .git/config
+  rc_is 1
+  run run "$W" -- chmod -x .git/hooks/pre-push
+  rc_is 1
+  run run "$W" -- mv .git moved
+  rc_is 1
+  run run "$W" -- rm -r sub/../.git
+  rc_is 1
+  run run "$W" -- touch .GIT/x
   rc_is 1
   eq "hooks path unchanged" "$C/.git/hooks" "$(git -C "$C" config core.hooksPath)"
-  run run nope -- true
-  rc_is 2
-  run run 2026-01-01-missing -- true
+  [ -x "$C/.git/hooks/pre-push" ]; check "pre-push still executable" $?
+  run run "$W" -- rm -rf .
   rc_is 1
-  run run "$W" true
+  has "rm on the clone itself"
+  run run "$W" -- chmod -R 777 .
+  rc_is 1
+  [ -d "$C/.git" ]; check "clone kept" $?
+  run run nope -- ls
+  rc_is 2
+  run run 2026-01-01-missing -- ls
+  rc_is 1
+  run run "$W" ls
   rc_is 2
 }
 
-test_run_refuses_ways_around_the_hooks() {
+test_run_refuses_what_is_not_on_its_list() {
   fixture
   run open "$B"
+  printf 'echo ok\n' >"$C/ok.sh"
   local dev main
   dev="$(remote_sha developer)"
   main="$(remote_sha main)"
-  # A repository with no hooks inside the clone.
+  mkdir -p "$BASE/home"
+  # The bypasses the reviews proved.
+  # shellcheck disable=SC2016  # $HOME is for the inner shell, which must never run
+  HOME="$BASE/home" run run "$W" -- git ls-remote '--upload-pack=touch "$HOME/pwned1"; exit 1' .
+  rc_is 1
+  has "not on run's list: run it as a plain command (the permission mode decides)"
+  run run "$W" -- python3 -m timeit -s "__import__('os').system('touch $BASE/home/pwned2')" pass
+  rc_is 1
+  # shellcheck disable=SC2016
+  HOME="$BASE/home" run run "$W" -- bash -c 'touch "$HOME/pwned3"'
+  rc_is 1
+  run run "$W" -- sort "-o$BASE/home/pwned4" README.md
+  rc_is 1
+  run run "$W" -- perl "-Mstrict;system('touch $BASE/home/pwned5')" -e 1
+  rc_is 1
+  run run "$W" -- node --import "data:text/javascript,process.exit(0)" ok.js
+  rc_is 1
+  [ -z "$(ls -A "$BASE/home")" ]; check "nothing ran outside the clone" $?
   git -C "$C" clone -q "$REMOTE" sub
   run run "$W" -- git --git-dir=sub/.git push "$REMOTE" HEAD:refs/heads/developer
   rc_is 1
-  has "run uses the clone itself"
   run run "$W" -- env GIT_DIR=sub/.git git push origin HEAD:refs/heads/main
   rc_is 1
-  has "a GIT_* variable"
-  has "env: a wrapper"
-  run run "$W" -- bash -c 'git push --no-veri origin HEAD:refs/heads/developer'
-  rc_is 1
-  mkdir -p "$BASE/home"
-  # shellcheck disable=SC2016  # $HOME is for the inner shell, which must never run
-  HOME="$BASE/home" run run "$W" -- bash -c 'touch "$HOME/x"'
-  rc_is 1
-  [ ! -e "$BASE/home/x" ]; check "nothing touched outside the clone" $?
-  has "gives the interpreter its code"
   eq "developer unchanged" "$dev" "$(remote_sha developer)"
   eq "main unchanged" "$main" "$(remote_sha main)"
   local args
@@ -440,129 +463,230 @@ test_run_refuses_ways_around_the_hooks() {
     run run "$W" -- $args </dev/null
     [ "$RC" -eq 1 ]; check "refused: $args" $?
   done <<'LIST'
+git
 git push origin
 git push -q origin HEAD:refs/heads/feat/sample-change
-git send-pack origin
-git http-push x
 git -C sub status
-git -Csub status
+git --no-pager log
 git -c user.name=x status
-git -cuser.name=x status
-git --work-tree=sub status
-git --work-tree sub status
-git --exec-path=bin status
-git --config-env=core.editor=EDITOR status
-git --namespace=x log
-git --super-prefix=x status
-git config user.name x
-git config --unset caw.branch
-git config alias.p push
+git ls-remote origin
+git clone sub other
+git fetch --upload-pack=x origin
+git fetch -u x origin
+git fetch ext::sh
+git fetch file:///etc
+git grep -O x
+git grep --open-files-in-pager=vi x
 git rebase -x true HEAD
 git rebase --exec=true HEAD
+git rebase -i HEAD
+git rebase --interactive HEAD
+git config user.name x
+git config --unset caw.branch
+git config caw.branch
+git config --global --list
+git config --file x --list
+git log --format=%H;id
+git difftool
+git mergetool
+git archive --exec=x HEAD
 git submodule foreach true
-git bisect run true
-git filter-branch HEAD
-printf %s GIT_DIR=sub/.git
-printf %s GIT_CONFIG_COUNT=1
+git send-pack origin
 env true
 xargs true
 nohup true
 timeout 5 true
-nice true
-sudo true
-parallel true
-command true
-stdbuf -o0 true
-setsid true
+sort -o out README.md
+awk 1 README.md
+perl -e 1
+ruby -e 1
+node -e 1
+deno eval 1
+python -c pass
+python3 -c pass
+python3 -I ok.sh
+python3 -m timeit pass
+python3 -m pip list
+python3
+python3 missing.py
+python3 .git/hooks/pre-push
+bash
+bash -c true
+bash -x ok.sh
+bash missing.sh
+bash .git/hooks/pre-push
+sh -c true
+zsh ok.sh
+./ok.sh
+/bin/ls
+source ok.sh
+eval true
 find . -exec true ;
 find . -execdir true ;
 find . -ok true ;
-eval true
-source README.md
-. README.md
-bash -c true
-bash -ec true
-bash -lc true
-sh -c true
-zsh -c true
-dash -c true
-ksh -c true
-fish -c true
-fish --command true
-bash
-bash -s
-bash -i README.md
-bash --rcfile README.md
-bash missing.sh
-bash -- missing.sh
-python3 -c pass
-python3 -Ic pass
-python -c pass
-python3.12 -c pass
-python3
-python3 -
-python3 -i s.py
-python3 missing.py
-node -e 1
-node --eval=1
-node --eval 1
-node -p 1
-node
-deno eval 1
-deno repl
-bun -e 1
-perl -e 1
-perl -ne 1
-ruby -E 1
-ruby -e 1
-php -r 1
-php
+find . -delete
+find . -fprint x
+sed -f ok.sh README.md
+sed --file=ok.sh README.md
+sed 1e README.md
+sed -e 1e README.md
+sed -n -e p -e 1e README.md
+sed s/a/b/w README.md
+sed s/a/b/gw README.md
+sed s/a/b/e README.md
+sed 1rREADME.md README.md
+sed 1R/etc/passwd README.md
+sed --expression=W README.md
+sed /x/{w README.md
+sed -ne 1e README.md
+chmod -R 777 .
+rm -rf .
+rm -r sub/..
+mv . other
+ln -s /etc x
+curl example.com
 LIST
 }
 
-test_run_allows_scripts_and_git_in_the_clone() {
+test_run_allows_its_list() {
   fixture
   run open "$B"
-  printf 'echo ok-sh\n' >"$C/ok.sh"
+  printf 'echo "ok-sh $*"\n' >"$C/ok.sh"
   printf 'print("ok-py")\n' >"$C/s.py"
-  run run "$W" -- bash ok.sh
+  # shellcheck disable=SC2016  # the variable is for the script written here
+  printf 'pwd -P\nprintf "%%s\\n" "${AIWP_TERMS_FILE:-}"\n' >"$C/where.sh"
+  run run "$W" -- bash ok.sh one two
   rc_is 0
-  eq "bash script" ok-sh "$OUT"
-  run run "$W" -- bash -euo pipefail ok.sh
-  eq "bash with options" ok-sh "$OUT"
-  run run "$W" -- sh ./ok.sh
-  eq "sh script" ok-sh "$OUT"
+  eq "bash script with arguments" "ok-sh one two" "$OUT"
+  run run "$W/claude-cli-agents-workspace" -- sh ok.sh
+  eq "sh script" "ok-sh " "$OUT"
   run run "$W" -- python3 s.py
   eq "python script" ok-py "$OUT"
-  run run "$W" -- python3 -I s.py
-  eq "python -I script" ok-py "$OUT"
-  run run "$W" -- python3 -m platform
+  run run "$W" -- python3 -m unittest --help
   rc_is 0
+  run run "$W" -- python3 -m pytest --version
+  hasnt "not on run's list"
   run run "$W" -- bash tests/caw-work.sh --help
   rc_is 0
   has "Usage: bash tests/caw-work.sh"
-  run run "$W" -- find . -name ok.sh
+  run run "$W" -- bash where.sh
+  eq "cwd and a set AIWP_TERMS_FILE" "$C"$'\n'"$BASE/terms.$CURRENT.txt" "$OUT"
+  unset AIWP_TERMS_FILE
+  mkdir -p "$AIWP_WORKSPACE/custom"
+  printf 'acmecorp\n' >"$AIWP_WORKSPACE/custom/core-terms.txt"
+  run run "$W" -- bash where.sh
+  eq "the root's terms list exported" "$C"$'\n'"$AIWP_WORKSPACE/custom/core-terms.txt" "$OUT"
+  rm -rf "$AIWP_WORKSPACE"
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  # The tools.
+  local args
+  while IFS= read -r args; do
+    # shellcheck disable=SC2086  # each line is a command, split on purpose
+    run run "$W" -- $args </dev/null
+    [ "$RC" -eq 0 ]; check "allowed: $args" $?
+  done <<'LIST'
+cat README.md
+head -n1 README.md
+tail -n 1 README.md
+wc -l README.md
+sha256sum README.md
+ls -la
+ls
+grep -n sample README.md
+sed -n 1p README.md
+sed -e s/sample/x/g README.md
+sed -n -e /sample/p README.md
+find . -name ok.sh
+mkdir -p sub/dir
+touch sub/dir/f
+cp README.md sub/
+cp -t sub ok.sh
+mv sub/README.md sub/r.md
+rm sub/r.md
+rm -r sub
+chmod +x ok.sh
+diff README.md README.md
+cp /dev/null empty.txt
+sed -i.bak s/sample/changed/ empty.txt
+LIST
+  run run "$W" -- cp /dev/null "$C/abs.txt"
   rc_is 0
-  has "./ok.sh"
+  [ -f "$C/abs.txt" ]; check "absolute path inside the clone" $?
+  # git in the clone.
   run run "$W" -- git status --short
   rc_is 0
   has "ok.sh"
-  run run "$W" -- git add ok.sh s.py
+  run run "$W" -- git add ok.sh s.py where.sh
   rc_is 0
   run run "$W" -- git commit -q -m "add the scripts"
   rc_is 0
   has "caw-work: pushed $B"
   eq "commit through run pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
-  run run "$W" -- git log --oneline -1
-  has "add the scripts"
-  run run "$W" -- git --no-pager log -1 --format=%s
-  eq "git --no-pager" "add the scripts" "$OUT"
-  run run "$W" -- git config --get caw.branch
-  eq "git config read" "$B" "$OUT"
-  run run "$W" -- git config caw.branch
-  eq "git config single key" "$B" "$OUT"
-  run run "$W" -- git commit -c HEAD --allow-empty -q
+  while IFS= read -r args; do
+    # shellcheck disable=SC2086  # each line is a command, split on purpose
+    run run "$W" -- $args </dev/null
+    [ "$RC" -eq 0 ]; check "allowed: $args" $?
+  done <<'LIST'
+git log --oneline -1 --format=%s
+git diff --stat HEAD~1
+git show --stat HEAD
+git rev-parse HEAD
+git ls-files
+git blame README.md
+git config --get caw.branch
+git config --list
+git fetch -q origin
+git grep -n sample
+git branch --list
+git mv ok.sh moved.sh
+git commit -q -m move
+git revert --no-edit HEAD
+git rebase -q origin/developer
+git switch -q -c side
+git switch -q feat/sample-change
+git branch -D side
+git restore --staged README.md
+git reset -q HEAD
+git log --format=%h%x20%s
+LIST
+  run run "$W" -- git log -1 --format=%s
+  has "Revert"
+  eq "the revert pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+}
+
+test_a_missing_pre_push_still_blocks_a_term() {
+  fixture
+  run open "$B"
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  # Removed by hand (an editor, a script): push_branch scans on its own.
+  rm "$C/.git/hooks/pre-push"
+  commit_in notes.txt "acmecorp"
+  has "refused: the lines above hold a company term"
+  has "NOT pushed"
+  eq "not pushed without pre-push" "$pushed" "$(remote_sha "heads/$B")"
+  run push "$W"
+  rc_is 1
+  eq "push refuses it too" "$pushed" "$(remote_sha "heads/$B")"
+  # The hooks path pointed elsewhere: no hook runs, and push still scans.
+  git -C "$C" reset -q --hard "$pushed"
+  git -C "$C" config core.hooksPath "$BASE/no-hooks"
+  commit_in notes.txt "acmecorp again"
+  run push "$W"
+  rc_is 1
+  has "refused: the lines above hold a company term"
+  eq "still not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  # A clean commit still goes.
+  git -C "$C" reset -q --hard "$pushed"
+  commit_in clean.txt clean
+  run push "$W"
   rc_is 0
+  eq "a clean commit is pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  # A recorded branch rewritten to a base is refused.
+  git -C "$C" config caw.branch developer
+  run push "$W"
+  rc_is 1
+  has "is not a work branch"
 }
 
 test_push_command() {
@@ -595,32 +719,6 @@ test_push_command() {
   rc_is 2
   run push 2026-01-01-missing
   rc_is 1
-}
-
-test_run_accepts_paths_inside_the_clone() {
-  fixture
-  run open "$B"
-  run run "$W" -- pwd
-  rc_is 0
-  eq "cwd" "$C" "$OUT"
-  run run "$W/claude-cli-agents-workspace" -- cat ./README.md
-  rc_is 0
-  has "# sample"
-  mkdir -p "$C/sub"
-  run run "$W" -- cp /dev/null "$C/sub/../empty.txt"
-  rc_is 0
-  [ -f "$C/empty.txt" ]; check "absolute path inside" $?
-  run run "$W" -- printf '%s\n' --opt=sub/x NAME=README.md origin/developer..HEAD
-  rc_is 0
-  has "--opt=sub/x"
-  run run "$W" -- printenv AIWP_TERMS_FILE
-  eq "a set AIWP_TERMS_FILE stays" "$BASE/terms.$CURRENT.txt" "$OUT"
-  unset AIWP_TERMS_FILE
-  mkdir -p "$AIWP_WORKSPACE/custom"
-  printf 'acmecorp\n' >"$AIWP_WORKSPACE/custom/core-terms.txt"
-  run run "$W" -- printenv AIWP_TERMS_FILE
-  eq "the root's terms list exported" "$AIWP_WORKSPACE/custom/core-terms.txt" "$OUT"
-  rm -rf "$AIWP_WORKSPACE"
 }
 
 test_status() {
