@@ -72,12 +72,12 @@ counterpart and are complete skills.
 ## Subagents
 
 Every subagent call states its model and its effort; a call that would inherit them is a mistake. Effort `high` for
-hooks, the installer, security, risky actions and every review (`.claude/rules/models.md`).
+hooks, the installer, security and risky actions (`.claude/rules/models.md`); a review follows its content (`xhigh` for code and configuration, `high` for documents).
 
 | Task | Agent | Model | Effort |
 | --- | --- | --- | --- |
 | Gaps of a plan or request | `requirements-analyst` | claude-opus-5-5 | high |
-| Independent review | `reviewer` | claude-opus-5-5 | by risk: high or medium ([review](#reviews)) |
+| Independent review | `reviewer` | claude-opus-5-5 | by content: xhigh or high ([reviews](#reviews)) |
 | Scripts, hooks and their tests | `script-engineer` | claude-opus-5-5 | high for hooks and the installer, else medium |
 | Docs in English | `docs-writer` | claude-sonnet-5-5 | medium |
 | The pt-BR and es translations, once per release | `docs-writer`, one call | claude-sonnet-5-5 | medium |
@@ -89,7 +89,10 @@ The default is no subagent. Subagents never commit or push: the main session doe
 ## Where the work happens
 
 - **In a clone:** `/caw-request` opens a clone of the repository at `tmp/work/<yyyy-mm-dd>-<slug>/`, on a work branch
-  `<type>/<slug>` from `origin/developer`, and works only there. The branch is pushed after each commit.
+  `<type>/<slug>` from `origin/developer`, and works only there, with no prompt: `tests/caw-work.sh` (`open`, `run`,
+  `status`, `publish`, `push`, `close`) is allowed, and the clone's hooks push the branch after each commit, once the
+  company-terms scan passes. A prompt shows one thing: what needs authorization runs alone, in its own call. The one
+  prompt of a task is the push of `developer` by `/caw-merge`.
 - **Directly on `developer`:** a session at the root that opened no clone works on `developer`.
 - **Plans and requests** are shown to the owner in the owner's language and saved in English.
 
@@ -111,10 +114,11 @@ Only when the owner asks. Running it is the owner's order for the pushes it make
 
 A `reviewer` subagent with a clean context, which did not write the change (`.claude/rules/review.md`).
 
-- **Merge into `developer`:** only the difference that enters; what is already on `developer` was reviewed. Effort by
-  risk: `high` for a hook, the installer, `setup-claude.sh`, a gate script, a permission or deny rule or secrets;
-  `medium` for other code or rules; no review for documentation alone.
-- **Merge into `main`** (the release): the final review in two rounds, described in [releases](releases.md).
+- **Three questions:** what was asked against what was done, what went beyond the request, what existed and was lost.
+- **Merge into `developer`:** only the difference that enters; what is already on `developer` was reviewed.
+- **Merge into `main`** (the release, a hotfix): everything since the last tag, widened as needed ([releases](releases.md)).
+- **Effort by content:** `xhigh` for code and configuration, `high` for documents; a merge with both runs two
+  reviewers in parallel, each with its part.
 - **Findings:** a BLOCKER is fixed before the merge and the fix is reviewed. A RECOMMENDED never blocks: at a merge into
   `developer` it becomes a `ready` request, fixed when the owner asks; at the release the owner chooses per finding:
   fix now or a request.

@@ -85,8 +85,8 @@ Without an argument, `/merge` takes the clone of this session. The gate brings `
 ## How it works
 
 1. **A question or reading:** Claude answers; nothing is opened.
-2. **A change to a project or a POC:** a clone in `tmp/work/` (`bash scripts/aiwp-cmds.sh open`). Inside it, commit, rebase, reset and Docker are free, and the branch is always on the remote: a hook does not let the reply end with a commit only on the machine.
-3. **Base:** `/merge` goes through the gate, in two phases (verification, review against the request, merge of the verified commit).
+2. **A change to a project or a POC:** a clone in `tmp/work/` (`bash scripts/aiwp-cmds.sh open`). Inside it Claude works without asking (commit, rebase, reset, the task's own Docker copy), and the branch is always on the remote: a hook does not let the reply end with a commit only on the machine.
+3. **Base:** `/merge`, typed only by you, goes through the gate, in two phases (verification, review against the request, merge of the verified commit). A task ends with its Docker copy published and a closing board: addresses, what to test, and `/merge` or `close --discard`.
 4. **Waves:** in a plan in steps, each step closes with a commit, a resume request in `custom/requests/` and a board of what was done and what is left. The next step starts in a new session.
 
 ## What never happens without you
@@ -94,7 +94,7 @@ Without an argument, `/merge` takes the clone of this session. The gate brings `
 - **`projects/` stays on `developer` and changes only through the gate.** A hook refuses any git write in `projects/` or in the core outside it.
 - **`main` and the cloud only at your request.** `main` moves only by `/merge --main <project>`, a new version with a tag, or by `/merge --hotfix`, a patch fixed from `main`, and Terraform applies only with `bash scripts/aiwp-cmds.sh apply`, from `main` and with the plan confirmed.
 - **Deleting a database asks for your confirmation**: a Docker volume, `DROP`, `dropdb` and the like.
-- **Publishing to the local Docker is free**, and `bash scripts/aiwp-cmds.sh up` always tags the previous publication first; `rollback` goes back to it.
+- **A task's Docker copy is free:** `bash scripts/aiwp-cmds.sh up <work>/<clone>` publishes it in its own `agent_` group, on ports 61000-65535, never over the final stack. The final stack changes only by `/docker-deploy`, which tags the replaced images first; `rollback <repo>` goes back to them.
 - **A secret does not leave the machine:** the scan runs before each push and again at the gate.
 - **The session does not change the workspace:** rules, scripts, hooks and tools are read only and change only with a new release. `guard-bash` refuses a `chmod`, `chown` or `git init` that reaches the core, and `aiwp update`, `rollback`, `repair`, `forget` and the opening inside a session.
 - **The rest follows Claude Code's permission mode.**
@@ -106,8 +106,9 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | Command | Does |
 | --- | --- |
 | `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to the project's `developer`, through the gate, writing the `CHANGELOG.md` |
-| `/merge --main <project> [instructions]` | The release: a release clone, the full check, the final review (what enters and what leaves, then general), the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
+| `/merge --main <project> [instructions]` | The release: a release clone, the full check, the final review (the three questions on everything since the last tag), the dated `CHANGELOG.md`, the gate into `developer`, then `main` and the tag `vX.Y.Z` |
 | `/merge --hotfix <project> <description>` | An error in production: the fix from `main`, the gate and a review against `main`, your OK, the patch version `vX.Y.(Z+1)` (tagged when you say to publish), then `main` merged into `developer` |
+| `/docker-deploy [developer\|main] [<repo>]` | Updates the final local Docker stack from `developer` or `main`, with rollback tags and no volume deleted; only at your request |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |
@@ -119,7 +120,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/run-tools [--down [tool...]]` | Checkboxes with the local tools of this machine (observability, the simulators, the Azurite console, this machine's container console); starts the ones you tick, in one compose group, after saying what each one lacks; `--down` stops |
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lists the state of every project and POC; or analyses one (four analysts, a plan you approve, the language of its docs) and migrates it on a tested branch, with checkpoint tags, into `developer` and `main` |
 
-The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `apply`, and `developer`, `checkpoint`, `bring` for the normalization). Claude Code's own commands still apply: `/rewind`, `/rename`, `/usage`.
+The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `apply`, and `developer`, `checkpoint`, `bring` for the normalization). Claude Code's own commands still apply: `/rewind`, `/rename`, `/usage`.
 
 ## Single-agent mode
 

@@ -126,19 +126,20 @@ What to expect:
 ## Where the work happens
 
 - **A question or reading:** Claude answers; nothing is opened.
-- **A change to a project or a POC:** Claude opens a clone in `tmp/work/<date>-<subject>/<clone>/` (`<clone>`: the repo's path relative to `projects/`, each `/` written as `--`) (`bash scripts/aiwp-cmds.sh open`), says the path and works only there. In the clone everything is allowed: commit, rebase, reset, delete, start Docker. Each commit goes to the remote by itself, after a secret scan of the commits that leave; a commit with a secret or a `.env` stays in the clone.
-- **Taking it to the base:** `/merge [<work>/<clone>]`; with no argument, the clone of this session. `/merge` merges `developer` into the clone and writes the version of the project's `CHANGELOG.md` (`## [X.Y.Z] - Unreleased`; the bump rules are in `rules/docs.md`) before the gate. The gate brings `developer` up to date, runs the full suite and the complete `validate.sh`, scans every incoming commit for secrets, writes the audit of what leaves the base (files deleted or renamed away, tests removed or disabled, destructive SQL, infra, dependencies) and asks for a review against the request. You are asked only about what the request does not explain. Then `developer` moves by fast-forward to exactly the commit that passed, and the clone can be closed (`aiwp-cmds.sh close`).
+- **A change to a project or a POC:** Claude opens a clone in `tmp/work/<date>-<subject>/<clone>/` (`<clone>`: the repo's path relative to `projects/`, each `/` written as `--`) (`bash scripts/aiwp-cmds.sh open`), says the path and works only there. In the clone Claude works without asking: `guard-bash` approves a line when every command of it runs in that clone, every path it names stays in it and nothing acts on a remote system (a push, a publish, a deploy, a cloud CLI, `ssh`); anything it cannot tell follows Claude Code's permission mode. Each commit goes to the remote by itself, after a secret scan of the commits that leave; a commit with a secret or a `.env` stays in the clone.
+- **Taking it to the base:** `/merge [<work>/<clone>]`; with no argument, the clone of this session. `/merge` merges `developer` into the clone and writes the version of the project's `CHANGELOG.md` (`## [X.Y.Z] - Unreleased`; the bump rules are in `rules/docs.md`) before the gate. The gate brings `developer` up to date, runs the full suite and the complete `validate.sh`, scans every incoming commit for secrets, writes the audit of what leaves the base (files deleted or renamed away, tests removed or disabled, destructive SQL, infra, dependencies) and asks for a review against the request. `/merge` is typed only by you: the gate refuses phase 2 otherwise. You are asked only about what the request does not explain. Then `developer` moves by fast-forward to exactly the commit that passed, and the clone can be closed (`aiwp-cmds.sh close`).
+- **The task's copy:** at the end of a task Claude publishes it to the local Docker with `aiwp-cmds.sh up <work>/<clone>`, as a copy in its own compose group `agent_<MMDD>-<slug>` (`--<clone>` added when another clone of the work owns it), with every port moved to a free one in 61000-65535. It never touches the final stack. `aiwp-cmds.sh down <work>/<clone>` stops it; `close` and the gate destroy it. Claude works freely inside that group, volumes included.
 - **`projects/` always stays on `developer`.** Nobody edits there; only the gate moves the base.
 
 ## Waves: checkpoint, merge and resume
 
 A wave is each step of a plan in steps (the request's "Steps and effort" table). A request with one step, or none, is one wave, closed when it ends. A question or reading opens no wave.
 
-- **A mature part goes to the base at once**, through the gate, without waiting for the end of the wave. A base that publishes to production: the gate asks before merging. A migration branch also waits for your order.
+- **A part goes to the base only when you type `/merge`**, whenever you decide. A base that publishes to production: the gate asks before merging. A migration branch also waits for your order.
 - **When the wave closes**, Claude:
   1. makes the checkpoint: a commit in the clone, which goes to the remote by itself (`aiwp-cmds.sh status` shows `not-pushed=0`);
   2. appends to the request that was running, in `custom/requests/`, where it stopped (the work, the clone, the branch and the sha), decisions taken, open items and the next steps with their effort; the request stays pending;
-  3. ends the reply with a highlighted board: what was done, what was verified, what is left and the path of the request to resume. After the board the session stops; the next wave starts in a new session, with `/request <file>`.
+  3. ends the reply with the closing board: what was done and verified, the addresses of the copy, one item to test per acceptance criterion, what is left, the request to resume and the two ways out: `/merge <work>/<clone>` to approve, `aiwp-cmds.sh close <work> --discard` to drop the work. After the board the session stops; the next wave starts in a new session, with `/request <file>`.
 - The session does not end its reply with a commit missing from the remote: a hook makes it try again or say why it could not.
 
 Full rule: `rules/git.md`, sections "Gate" and "Waves".
@@ -150,10 +151,13 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | Situation | What happens |
 | --- | --- |
 | A gate with something the request does not explain, destruction outside the machine, or a base that publishes to production | one question, in one round, before merging |
+| A line that mixes an approved command with commands in the clone | refused with "Run it alone": Claude runs the others first and the asked one alone, so the question shows only it |
 | Deleting a database: `docker volume rm`, `docker compose down -v`, `DROP`/`TRUNCATE`, deleting a `.data/` folder | Claude says what goes, and the hook asks for your confirmation |
 | `aiwp-cmds.sh release` (`main` moves, and the `vX.Y.Z` tag is pushed), run by `/merge --main <project>` | confirmation, and only at your request |
 | `aiwp-cmds.sh hotfix`, `hotfix-tag` and `hotfix-down` (the fix into `main`, its patch tag, `main` merged into `developer`), run by `/merge --hotfix` | confirmation, after your OK to the fix; the question "publish to production with the fix?" comes before the push of a `main` that deploys by itself, after it otherwise |
 | `aiwp-cmds.sh apply --apply` (Terraform in the cloud) | confirmation of the plan shown, and only at your request |
+| Deleting, moving or emptying Grafana's data (`tools/observability/.data`), wherever it runs | confirmation, even in a clone |
+| `aiwp-cmds.sh deploy` (updates the final stack of a project), run by `/docker-deploy` | confirmation, only at your request |
 | `aiwp-cmds.sh close --discard` (deleting work not merged) | confirmation |
 | A git write in `projects/` or in the core, Terraform outside `apply`, `git push --no-verify` | refused by the hook, with the right way |
 | A subagent on Fable | the hook asks for your confirmation |
@@ -164,10 +168,11 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | Command | Does |
 | --- | --- |
 | `/merge [<work>/<clone>]` | Takes the work of a clone (no argument: the one of this session) to `developer`, through the gate, writing the `CHANGELOG.md` and moving the request to `custom/requests/qa/<project>/` with what was done |
-| `/merge --main <project> [instructions]` | The release of the project: every repo in it, each with its own version and tag, then the project version in its root repo; validates every request in `qa/<project>/` against the code (final review: what enters and what leaves, then general), asks per finding (fix now or a request), and warns of any conflict an instruction causes before acting |
+| `/merge --main <project> [instructions]` | The release of the project: every repo in it, each with its own version and tag, then the project version in its root repo; validates every request in `qa/<project>/` against the code (the final review: the three questions on everything since the last tag, widened as needed), asks per finding (fix now or a request), and warns of any conflict an instruction causes before acting |
 | `/merge --hotfix <project> <description>` | An error in production: a clone from `main`, only the fix, the gate against `main` and a review of the fix, your OK, then `main`, the patch version `vX.Y.(Z+1)` and its tag when you say to publish, and right after it `main` merged into `developer` (a conflict goes through a resolution branch and the gate). Until `developer` holds `main`, the repo is blocked: `/merge` into its `developer` and its release are refused |
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
+| `/docker-deploy [developer\|main] [<repo>]` | Updates the final local Docker stack of a repo from `developer` or `main`, tagging the replaced images for rollback and deleting no volume; only at your request |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
 | `/draft-request [ideas \| file]` | Builds a functional request from ideas |
 | `/request [name \| path]` | Runs the request written in a file |
@@ -177,7 +182,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/run-tools [--down [tool...]]` | Starts the local tools you tick (below, "Local tools"); `--down` stops |
 | `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
 
-The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `hotfix`, `hotfix-tag`, `hotfix-down`, `apply`, `developer`, `checkpoint`, `bring`).
+The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `hotfix`, `hotfix-tag`, `hotfix-down`, `apply`, `developer`, `checkpoint`, `bring`).
 
 Claude Code's own commands that help most here:
 
@@ -190,8 +195,9 @@ Claude Code's own commands that help most here:
 
 ## Review
 
-- One round per gate, between the two phases, by the `reviewer` subagent: clean context, read only.
-- It classifies each item of the audit and each acceptance criterion (requested, a consequence of the request, unexplained) and reports only correctness, security or data-loss defects, a criterion not met or not proven, a test removed with no reason and a weaker protection.
+- One round per gate, between the two phases, by the `reviewer` subagent: clean context, read only. Into `developer` it sees only the difference that enters; into `main` (release, hotfix) everything since the last tag, widened to callers, dependents and docs.
+- Effort follows the content: `xhigh` for code and configuration, `high` for documents; a merge with both runs two reviewers in parallel.
+- Three questions: what was asked against what was done (each rule and criterion, proven or not), what went beyond the request (a consequence or unexplained), and what existed and was lost (a behavior, a test or a protection removed or weakened with no request). It reports only defects.
 - A **BLOCKER** is fixed in the clone, and the gate runs again. A **RECOMMENDED** never sends the branch back.
 - If Claude disagrees with a finding, it brings both positions and you decide.
 
@@ -211,7 +217,7 @@ In both modes, unit tests, coverage, lint and the secret scan are Claude's.
 - Each project is an independent git repository in `projects/`, never part of the core. The list is in `custom/projects.md`.
 - **Creating:** ask ("create the project X in projects/client-y"). Claude uses `scripts/init-repo.sh`. The folder of a new project is your decision; if you do not say it, Claude asks.
 - **Branches:** the checkout in `projects/` stays on `developer`; the work happens in a clone under `tmp/work/`, on a branch that leaves it and comes back through the gate. `main` moves only when you ask for the release (`/merge --main <project>`, in a release clone `fix/release-vX-Y-Z`, ending in `aiwp-cmds.sh release <repo> --tag vX.Y.Z`): a fast-forward to `developer` and the version tag. An error in production is fixed from `main` (`/merge --hotfix`), as a patch version, and `main` is then merged into `developer`. Terraform applies only from `main`, with `aiwp-cmds.sh apply`, at your request and with the plan confirmed.
-- **Local Docker:** `aiwp-cmds.sh up` publishes and first tags the images it will replace; `aiwp-cmds.sh rollback` goes back to them.
+- **Local Docker:** `aiwp-cmds.sh up <work>/<clone>` publishes a task's copy in its own `agent_` group and never over the final stack; `aiwp-cmds.sh up <repo>` is refused. The final stack changes only on your order, with `/docker-deploy` (`aiwp-cmds.sh deploy`), which first tags the images it replaces; `aiwp-cmds.sh rollback <repo>` goes back to them. A copy has no rollback tag: run `up` again.
 - **Workspace projects:** the first line of each project's `README.md` (and of each POC folder's) is a marker with the workspace version it was last normalized with: `<!-- AI-WORKSPACE-PROJECT 0.1.0 -->`. `bash scripts/aiwp-project-state.sh` shows the state of each one. When a message names a project without the marker, or one that a newer workspace version asks something of (`migrations/`), Claude says so and asks whether to run `/normalize-projects <project>`. Saying no never blocks the request; the warning comes back the next time you name the project. `aiwp-cmds.sh open` and the gate show the same warning.
 - **Bringing in an existing project:** `/normalize-projects --from <url | folder>` clones it into `projects/` (from a folder, its local branches come along and `origin` points to its real remote; uncommitted changes there are listed, since a clone does not carry them). A project cloned by hand or a POC moved into `custom/pocs/` is normalized the same way: `/normalize-projects <project>`.
 - **How a normalization goes:** first, four analysts read a fresh clone and Claude writes a plan in `custom/migrations/`, one line per finding: what goes to your custom layer (company and environment knowledge), what stays in the project as documentation, what changes in it (marker, "How to test", `.env` ignored, instruction files of other tools removed), and the gaps and security alerts it only reports. You approve, edit or drop each line and choose the language of the documentation. Then, after you confirm each push: `developer` on the remote, checkpoint tags `ai-workspace-migration/<date>/developer` and `.../main` on the old heads, a branch `feat/ai-workspace-migration` with the plan in commits and the complete documentation, a test of the branch with you, `/merge` into `developer` and the release of `main` (a pull request when `main` is protected). It never rewrites code, writes tests or fixes a security gap: the gaps go to `AI-WORKSPACE-MIGRATION.md` at the project root, and the security alerts (file, line and type, never the value) are shown to you at the end. A POC gets the same analysis and approval, with the changes committed in `custom/`.
@@ -266,7 +272,7 @@ The checks live in `docker/compose.yaml`, with a fixed version and digest. A che
 | The hook asks or refuses where it should not | write it in `custom/docs/lessons.md`; the set is in `scripts/guard-bash.py` (`bash scripts/guard-bash.sh --help`) |
 | "NOT pushed" in the clone | the pre-push hook refused (a secret, a `.env`) or the remote did not answer: read the output, rewrite the branch in the clone if needed, and `aiwp-cmds.sh push` |
 | "The secret scan did not run" | Docker did not answer: start Docker and run `aiwp-cmds.sh push`; the commit stays in the clone until then |
-| The publication to Docker went wrong | `bash scripts/aiwp-cmds.sh rollback <work>/<clone>` (or `<repo>`) goes back to the previous image |
+| The publication to Docker went wrong | `bash scripts/aiwp-cmds.sh rollback <repo>` goes back to the previous image of the final stack; a task's copy has no rollback: run `up <work>/<clone>` again |
 | `heavy-run.sh` exited with 75 | nothing ran: the machine did not reach 85 °C in 30 minutes. The output has the last reading; run it again later |
 | The gate refused phase 2 | the base moved, or the clone changed after phase 1: the gate runs again |
 | A rule blocks the simplest solution | Claude stops and shows the options. You can override any rule |

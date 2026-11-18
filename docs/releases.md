@@ -40,12 +40,12 @@ Both follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semant
    requests of `maintainers/requests/qa/` moved to `done/`, and the commit `chore(release): X.Y.Z`, so the checks
    below judge them.
 5. The full suite, strict, from the last tag (translations included), and the test installation.
-6. The final review of everything since the last tag against every request waiting in `qa/`, in two rounds with a
-   clean context: **what enters and what leaves** (effort high: the inventory of what was added, changed and removed,
-   each traced to its request; every acceptance criterion, pending ones included; every Execution block checked
-   against the code; regressions, so nothing that works is removed without a request; whether each change does what
-   was asked; the changelogs), then a **general** reading of the whole tree (effort medium: contradictions, dead
-   references, leftovers).
+6. The final review of everything since the last tag, widened as needed, against every request waiting in `qa/`: a
+   `reviewer` with a clean context asks the three questions (what was asked against what was done, every acceptance
+   criterion and Execution block included; what went beyond the request, each change traced to its request or a
+   consequence; what existed and was lost, so nothing that works is removed without a request), and checks the
+   changelogs. Effort `xhigh` for code and configuration, `high` for documents; a release has both, so two reviewers run
+   in parallel. There is no separate general round.
 7. The findings, once, in one list: per finding, fix now in the release clone or a request; a BLOCKER sent to a
    request stops the release.
 8. The clone enters `developer`, at the commit the suite and the review judged.
@@ -66,7 +66,7 @@ follows the normal flow through `developer`.
 2. The patch version: `workspace/VERSION` to `X.Y.(Z+1)`, a dated section in both changelogs, the commit
    `chore(release): X.Y.Z`.
 3. The strict suite from the last tag and the test installation; no commit that only `developer` has.
-4. A review of the fix against `main` (effort high): every change not linked to the error is a BLOCKER.
+4. A review of the fix against `main` (the three questions; effort by content): every change not linked to the error is a BLOCKER.
 5. The owner's OK, then `main` by fast-forward. Then "publish?": yes, the tag `vX.Y.(Z+1)` and the GitHub release,
    each confirmed; no, no tag.
 6. Right after, `main` is merged into `developer`: a merge commit when it is clean; a conflict is resolved in a

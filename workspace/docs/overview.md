@@ -28,8 +28,8 @@ flowchart TD
 
 | Principle | How it shows |
 | --- | --- |
-| Freedom in the work, rigor at the merge | Work happens in a clone under `tmp/work/`, with no questions; the gate (`/merge`) is the only way into `projects/`, with the heavy checks and the questions to the human |
-| One session per request | The review is a clean-context subagent inside the gate; no session waits for another |
+| Freedom in the work, rigor at the merge | Work happens in a clone under `tmp/work/`, with no questions, and ends with a Docker copy and a closing board; the gate (`/merge`, typed only by you) is the only way into `projects/`, with the heavy checks and the questions to the human |
+| One session per request | The review is a clean-context subagent inside the gate (effort `xhigh` for code, `high` for documents); no session waits for another |
 | Guarantees in mechanisms | What must not happen lives in a hook, a permission or `aiwp-cmds.sh`, not in text; the rest follows Claude Code's permission mode |
 | One record per fact | The commit records the request; a decision record only for what is hard to reverse |
 | Short rules | `AGENTS.md` fits one page; a topic rule loads only when a file of its kind is touched |
@@ -41,7 +41,7 @@ The base design and its reasons: [decision 0001](decisions/0001-base-design.md).
 - **`AGENTS.md`**: role, local environment, where the work happens, the Definition of Done, safety and what to do when a rule gets in the way.
 - **Path rules** (`quality`, `security`, `frontend`, `infra`, `docs`, `scripts`): they carry `paths:` at the top; `setup-claude.sh` copies them to `.claude/rules/`, and Claude Code loads them when a matching file is read or edited.
 - **Reference rules** (`git`, `review`, `models`, `rules`, `machine-load`): read when the task needs them.
-- **`scripts/aiwp-cmds.sh`**: the work area (clones under `tmp/work/`, automatic push with a secret scan, publishing to the local Docker with a rollback) and the gate (`aiwp-gate.sh`: merge, release and Terraform apply).
+- **`scripts/aiwp-cmds.sh`**: the work area (clones under `tmp/work/`, automatic push with a secret scan, a Docker copy per task, and the deploy of the final stack with a rollback) and the gate (`aiwp-gate.sh`: merge, release and Terraform apply).
 - **Hooks**: `guard-bash` (git in `projects/` and in the core, Terraform, databases, secrets in the commits of `custom/`), `guard-subagent-model` (the model of each subagent), the `Stop` hook (commits not on the remote) and the session start hook, which keeps `.claude/` up to date. `deny` rules keep the core and `projects/` read only.
 - **Validation**: `scripts/validate.sh` runs the tools of `docker/compose.yaml`; `scripts/check-workspace.sh` is the gate of the product repository.
 - **Subagents**: eleven, with a fixed model per role (`rules/models.md`). The default is a single agent; `reviewer` joins at the gate.
