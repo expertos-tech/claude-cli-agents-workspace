@@ -294,13 +294,21 @@ class Workspace:
         """custom/my-rules/, or custom/rules/ (its former name) while only that one exists."""
         own, legacy = self.path(OWN), self.path(LEGACY)
         if is_folder(own):
-            if is_folder(legacy) and os.listdir(legacy):
+            if is_folder(legacy) and self._listing(legacy):
                 self.warn(f'{LEGACY}/ is no longer read: move its files to {OWN}/')
             return own
         if is_folder(legacy):
             self.warn(f'{LEGACY}/ read in place of {OWN}/; rename it: git -C custom mv rules my-rules')
             return legacy
         return own
+
+    def _listing(self, folder):
+        """The sorted names in an own folder; [] with a warning when it cannot be listed, so the rest still loads."""
+        try:
+            return sorted(os.listdir(folder))
+        except OSError as error:
+            self.warn(f'{os.path.relpath(folder, self.root)}/ skipped: cannot be listed ({type(error).__name__})')
+            return []
 
     def _own_items(self):
         """The own rules, skills and agents that load; the refused and skipped ones are warned."""
@@ -309,7 +317,7 @@ class Workspace:
         if not is_folder(self.own_dir):
             return rules, skills, agents
         replacements = set(self.replaced.values())
-        for name in sorted(os.listdir(self.own_dir)):
+        for name in self._listing(self.own_dir):
             path = os.path.join(self.own_dir, name)
             if not name.endswith('.md') or name in replacements:
                 continue
@@ -320,11 +328,11 @@ class Workspace:
             else:
                 rules.append(name)
         skills_dir = os.path.join(self.own_dir, 'skills')
-        for name in sorted(os.listdir(skills_dir)) if is_folder(skills_dir) else []:
+        for name in self._listing(skills_dir) if is_folder(skills_dir) else []:
             path = os.path.join(skills_dir, name)
             if not is_folder(path) or not ITEM_NAME.match(name):
                 self.warn(f'{own_rel}/skills/{name} skipped: not a folder with a lowercase name')
-            elif 'SKILL.md' not in os.listdir(path) or not is_regular(os.path.join(path, 'SKILL.md')):
+            elif 'SKILL.md' not in self._listing(path) or not is_regular(os.path.join(path, 'SKILL.md')):
                 # The exact name from the listing: on a file system that ignores case, skill.md would pass an open().
                 self.warn(f'{own_rel}/skills/{name} skipped: no SKILL.md')
             elif self._known('skills', name):
@@ -332,7 +340,7 @@ class Workspace:
             else:
                 skills.append(name)
         agents_dir = os.path.join(self.own_dir, 'agents')
-        for name in sorted(os.listdir(agents_dir)) if is_folder(agents_dir) else []:
+        for name in self._listing(agents_dir) if is_folder(agents_dir) else []:
             path, stem = os.path.join(agents_dir, name), name[:-3]
             if not name.endswith('.md'):
                 continue

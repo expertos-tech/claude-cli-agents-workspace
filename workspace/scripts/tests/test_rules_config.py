@@ -310,6 +310,21 @@ class OwnItemTests(Base):
         self.assertIn('skills/lower skipped: no SKILL.md', text)
         self.assertFalse((out / 'skills' / 'custom-lower').exists())
 
+    @unittest.skipIf(os.geteuid() == 0, 'root lists every folder')
+    def test_an_unlistable_skill_folder_skips_only_itself(self):
+        """RN-7 (review of the fix): a skill folder that cannot be listed is skipped with a warning; the rest loads."""
+        self.root.write('custom/my-rules/company.md', 'c')
+        self.root.write('custom/my-rules/skills/shut/SKILL.md', '---\nname: shut\n---\n')
+        shut = self.root.base / 'custom/my-rules/skills/shut'
+        shut.chmod(0)
+        try:
+            ws, out = self.build()
+        finally:
+            shut.chmod(0o755)
+        self.assertIn('custom/my-rules/skills/shut/ skipped: cannot be listed (PermissionError)', self.warnings(ws))
+        self.assertTrue((out / 'rules' / 'custom-company.md').is_file())
+        self.assertFalse((out / 'skills').exists())
+
     def test_skill_md_is_matched_by_its_exact_name(self):
         """Regression (review of the fix): where the file system ignores case (macOS), skill.md answers to
         SKILL.md; the skill is taken only when the listing holds the exact name, so an unfiltered skill.md never
