@@ -161,3 +161,76 @@ prevails over an allow rule, which the Claude Code documentation does not state.
   round is dropped. Reason: the new `main` review widens as needed.
 - Open: a second clone of the same work. Decided: its group adds `-<clone>`. Reason: two stacks in one compose project
   collide.
+
+---
+
+## Execution — 2026-11-18, merged into developer at this merge
+
+Branch `feat/autonomous-work`, clone `tmp/work/2026-11-18-autonomous-work/claude-cli-agents-workspace`.
+
+### Done, by stage
+
+1. Maintenance trail (BR-2 to BR-6, BR-19): `tests/caw-work.sh` and the clone's hooks with the terms scan (1c6fd09,
+   a84a7ac, 554dc53, ab33cb1), the skills and `CLAUDE.md` (ea2e1aa, 81e7aae), `/commit` staging and the rule on paths
+   in a variable (cf65a75), the allow rules in `.claude/settings.json` (27b466e, edited with the owner's
+   authorization after the auto-mode classifier refused it twice).
+2. Product trail (BR-1, BR-6): `guard-bash` approval in a clone and "Run it alone" (48fc802); `AGENTS.md`.
+3. Docker copy (BR-7 to BR-10, BR-12): `agent-copy.py`, `aiwp-cmds.sh up/down/status/close`, destruction by label
+   (5f697a8, 84122f5, a852885, 98b5dc0, a43e597, 50f2f76, 57fb417); `guard-bash` own group, Grafana, deploy and the
+   /merge bypasses (f823a4e, 9e8819a, 86dd5a2, 303bdfd, 56ff4c0, 395224f, 8774be3, 5014709); `caw-work.sh publish`
+   (11aad50).
+4. End of task and the merge only by the person (BR-11, BR-13, BR-14): the /merge record and the gate (9da6347, with
+   target and 12-hour expiry in 5f697a8), Waves, the board, `/caw-pilot` (1e0764b, 12d88fb).
+5. The merge review (BR-15): three questions, effort by content (6e5df7b); the return review after fixes, at the
+   owner's request during the run (b05b233).
+6. `/docker-deploy`, `/caw-docker-deploy`, the test seed (BR-16, BR-17): 1de1789; `deploy` in the scripts above.
+7. Decision record 0004, docs, pending requests (BR-18): 1de1789, b4d62b0, 08ffbb2, 0323667, aa9f80d, d6c8def,
+   0de2795. Also BR-2 for the product through `setup-claude.sh` (41b9046).
+
+### Decisions taken while running
+
+- The owner: isolation of a copy comes from the Docker network checked by the script (internal networks, isolated
+  gateway, Docker 28+), not from the hook reading command text; `exec` into an isolated container is approved.
+- The owner: a compose file written on purpose to escape the checks is out of scope (decision record 0004); the
+  Docker class was closed after the third return review, with only the rigor regressions fixed.
+- The owner: the allow rules of the product live in `setup-claude.sh`; the maintenance's were edited by hand with
+  the owner's authorization.
+- The owner: the return review (focused `high`, light `medium`) and, for later, the request
+  `validators-warn-not-block` (validators block only real errors; one independent review, at the merge, effort
+  `medium` into `developer`, `high` into `main`). This merge already follows it: one review, effort `medium`.
+- `run` of `caw-work.sh` and the copy's compose check became allowlists after findings came back in new spellings.
+
+### Deviations
+
+- BR-7: the group of a second clone is `agent_<MMDD>-<slug>--<clone>` (double dash), so two works never share a name.
+- BR-2: `close` stays out of the allow rules (a wildcard cannot exclude `--discard`; the hook-over-allow precedence is
+  not proven yet). Recording the allow rules in `rules/manifest.json` is left to the owner.
+- BR-8: inside the own group the hook approves only the compose commands that start nothing new and `exec` into an
+  isolated container; `up`, `build`, `run` of the group go through `aiwp-cmds.sh up` or the permission mode.
+- The stages' independent reviews ran several return rounds (see the commits above); the owner then set the
+  two-roles rule for later requests.
+
+### Acceptance criteria
+
+- AC-1, AC-3, AC-5, AC-10: proven at script level (guard-bash, caw-work, aiwp-gate and session-title suites); the
+  real session of a test installation is pending (the owner runs it after migrating the environment).
+- AC-2, AC-4, AC-6, AC-7, AC-8, AC-9: proven by the suites (guard-bash unit and scenario tests with real Docker,
+  test-caw-work.sh, aiwp-cmds, agent-copy).
+- AC-11: the closing board text is in `rules/git.md`; not proven in a session.
+- AC-12: the rules and skills say it; not proven in a session (this merge used the owner's `medium`).
+- AC-13: `deploy` script part proven (rollback tags, no volume removed); the skills cannot be invoked by the model
+  (`disable-model-invocation`); a real deploy is pending.
+- AC-14: proven by `tests/check.sh` (the suites of guard-bash, aiwp-cmds, aiwp-gate, session-title, caw-work and the
+  caw-layers check of `/caw-pilot` and `/caw-docker-deploy`).
+- AC-15: the rule is in both `git.md`; `/caw-commit` text proven, not run as a skill.
+
+### Checks
+
+- `bash tests/check.sh --base origin/developer --i18n-pending`: settings, validate, suites, caw-layers and caw-work
+  PASS; translations pending; repo-terms SKIP (no terms list on this machine, so no push of this branch was scanned).
+
+### Left
+
+- `/caw-test-install` in a real session (AC-1, AC-3, AC-5, AC-10, the hook-over-allow precedence).
+- A terms list on this machine, so the clone's hooks scan what leaves.
+- `validators-warn-not-block`, which the owner runs next.
