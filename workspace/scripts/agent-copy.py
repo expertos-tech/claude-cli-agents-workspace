@@ -13,9 +13,11 @@ Usage: python3 -I agent-copy.py up <group> <folder> <override> [--fallback <grou
        python3 -I agent-copy.py list [--under <path>]... [--group <group>]...
        python3 -I agent-copy.py deploy-binds <project> <checkout> <repo> <override> [-- <docker compose options>...]
        python3 -I agent-copy.py bound-under <path>
-deploy-binds (aiwp-cmds.sh deploy main): every bind of the stack whose source lies in the checkout of main is mounted
-from the same path under the repo instead (its data stays there, and the checkout can go); a bind of tracked files that
-differ between the two is refused. Prints the compose options to use, one per line.
+deploy-binds (aiwp-cmds.sh deploy main): every bind, secret file and config file of the stack under tmp/deploy/ (the
+checkout of main, or above it through ..) is taken from the same relative path of the repo instead (its data stays
+there, and the checkout can go); under a path either side tracks, a file that differs, or exists on one side only
+(tracked, or not ignored in the repo), is refused. Prints the compose options to use, one per line; the compose files
+are those compose would read (COMPOSE_FILE of the environment, of --env-file or of the checkout's .env).
 bound-under: prints each container with a mount under the path (exit 0), none (exit 1).
 Exit: 0 ok; 1 refused or failed; 2 usage error; 3 (list, bound-under) Docker not reachable.
 """
@@ -37,6 +39,9 @@ PORT_MIN, PORT_MAX = 61000, 65535
 PICK_ATTEMPTS = 400
 DEFAULT_FILES = ('compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml')
 CUSTOM_DIR_VAR = 'AIWP_CUSTOM_DIR'
+# The one network of a copy that reaches outside Docker: only the services that publish a port join it. Every other
+# network of the copy is internal. Its name is <group>_edge, created by compose with the group's labels.
+EDGE_KEY = 'agent-edge'
 HOST_PORT = re.compile(r':(\d+)->')
 
 
@@ -120,21 +125,58 @@ def containers(label):
                 'service': labels.get(SERVICE_LABEL, ''),
                 'running': bool((item.get('State') or {}).get('Running')),
                 'ports': sorted(set(ports)),
+                'networks': sorted(((item.get('NetworkSettings') or {}).get('Networks') or {}).keys()),
             }
         )
     return found
 
 
-def split_compose_options(folder, options, environ):
-    """Returns (compose files, other options) of the options given after --; the default files when none is named.
+def read_dotenv(path):
+    """Reads the KEY=VALUE lines of an env file as docker compose does for its own variables (comments, export and
+    quotes stripped); a missing file is empty. Never prints a value."""
+    values = {}
+    try:
+        with open(path, encoding='utf-8') as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key, value = key.strip().removeprefix('export ').strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in '"\'':
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def compose_environ(folder, env_files, environ):
+    """Returns the variables docker compose reads its own settings from (COMPOSE_FILE, COMPOSE_PATH_SEPARATOR): the
+    --env-file files given, else the folder's .env, under the process environment, which wins."""
+    merged = {}
+    for path in env_files or [os.path.join(folder, '.env')]:
+        merged.update(read_dotenv(path if os.path.isabs(path) else os.path.join(folder, path)))
+    merged.update(environ)
+    return merged
+
+
+def split_compose_options(folder, options, environ, env_files=()):
+    """Returns (compose files, other options) of the options given after --; the default files when none is named,
+    COMPOSE_FILE read as compose reads it (compose_environ, with env_files and the --env-file options).
 
     The project name is this script's: -p and --project-name are refused.
     """
-    files, rest, i = [], [], 0
+    files, rest, i, dotenvs = [], [], 0, list(env_files)
     while i < len(options):
         arg = options[i]
         if arg.startswith(('-p', '--project-name')):
             raise Refused('the group is the project name of a copy: drop -p/--project-name')
+        if arg == '--env-file' and i + 1 < len(options):
+            dotenvs.append(options[i + 1])
+        elif arg.startswith('--env-file='):
+            dotenvs.append(arg.split('=', 1)[1])
         if arg in ('-f', '--file'):
             if i + 1 >= len(options):
                 raise Refused(f'{arg} needs a file')
@@ -147,7 +189,7 @@ def split_compose_options(folder, options, environ):
             rest.append(arg)
         i += 1
     if not files:
-        files = default_files(folder, environ)
+        files = default_files(folder, compose_environ(folder, dotenvs, environ))
     return files, rest
 
 
@@ -311,6 +353,8 @@ def isolation_refusals(config):
                     f'{kind[:-1]} {key} is external ({spec.get("name") or key}): shared with other stacks, a copy '
                     'cannot have its own'
                 )
+    if EDGE_KEY in (config.get('networks') or {}):
+        refusals.append(f"network {EDGE_KEY} is the key of the copy's own edge network: rename it in the project")
     for service, spec in sorted((config.get('services') or {}).items()):
         mode = spec.get('network_mode') or ''
         if mode == 'host' or mode.startswith('container:'):
@@ -369,12 +413,44 @@ def fixed_addresses(config):
     return dropped, notes
 
 
+def service_networks(spec):
+    """Returns the networks a service joins: its networks, else (no network_mode) the implicit default one."""
+    if spec.get('network_mode'):
+        return {}
+    return spec.get('networks') or {'default': None}
+
+
+def edge_services(config, entries):
+    """Returns the services that join <group>_edge: those that publish a port and have their own networks (not a
+    network_mode)."""
+    services = config.get('services') or {}
+    return {e['service'] for e in entries if not (services.get(e['service']) or {}).get('network_mode')}
+
+
+def network_roles(config, entries):
+    """Returns {service: 'edge', 'internal' or 'shares <service>'} of a copy, as up prints it."""
+    edge = edge_services(config, entries)
+    roles = {}
+    for service, spec in sorted((config.get('services') or {}).items()):
+        mode = spec.get('network_mode') or ''
+        if mode.startswith('service:'):
+            roles[service] = f'shares {mode.split(":", 1)[1]}'
+        elif mode:
+            roles[service] = mode
+        else:
+            roles[service] = 'edge' if service in edge else 'internal'
+    return roles
+
+
 def build_override(config, group, entries, ports, custom_root='', custom=''):
     """Returns the text of the override file of a copy: the group's name, the image of each built service (and of a
     service that runs that image) with no extra build tag, no fixed container name, the ports moved, the port
     variables in every service, the configuration binds moved to AIWP_CUSTOM_DIR, no fixed network or volume name, and
-    no fixed address (a service's ipv4_address or ipv6_address, a network's ipam.config subnet)."""
+    no fixed address (a service's ipv4_address or ipv6_address, a network's ipam.config subnet). Every network of the
+    copy is internal (no way out of Docker); a service that publishes a port also joins <group>_edge (edge_services),
+    the one network that is not, so the host reaches its port. Aliases and service names keep resolving."""
     services = config.get('services') or {}
+    edge = edge_services(config, entries)
     renamed = {}
     for service, spec in services.items():
         if 'build' in spec:
@@ -408,17 +484,20 @@ def build_override(config, group, entries, ports, custom_root='', custom=''):
                 lines.append(f'        protocol: {q(entry["protocol"])}')
         lines.append('    environment:')
         lines += [f'      {key}: {q(value)}' for key, value in variables.items()]
-        pinned = [
-            (name, key)
-            for name, attach in sorted((spec.get('networks') or {}).items())
-            for key in ('ipv4_address', 'ipv6_address')
-            if (attach or {}).get(key)
-        ]
-        if pinned:
+        attached = {}
+        for name, attach in sorted(service_networks(spec).items()):
+            resets = [
+                f'        {key}: !reset null' for key in ('ipv4_address', 'ipv6_address') if (attach or {}).get(key)
+            ]
+            if resets or service in edge:
+                attached[name] = resets
+        if service in edge:
+            # Every network of the service is named again: an override that names one replaces the implicit default.
+            attached[EDGE_KEY] = []
+        if attached:
             lines.append('    networks:')
-            for name in dict.fromkeys(name for name, _ in pinned):
-                lines.append(f'      {q(name)}:')
-                lines += [f'        {key}: !reset null' for other, key in pinned if other == name]
+            for name, resets in attached.items():
+                lines += [f'      {q(name)}:', *resets] if resets else [f'      {q(name)}: {{}}']
         moved = remapped_volumes(spec, custom_root, custom)
         if moved:
             lines.append('    volumes:')
@@ -428,14 +507,24 @@ def build_override(config, group, entries, ports, custom_root='', custom=''):
                 lines.append(f'        target: {q(mount["target"])}')
                 if mount.get('read_only'):
                     lines.append('        read_only: true')
+    declared = dict(config.get('networks') or {})
+    if any('default' in service_networks(spec) for spec in services.values()):
+        declared.setdefault('default', {})
     for kind in ('networks', 'volumes'):
         resets = {}
-        for key, spec in sorted((config.get(kind) or {}).items()):
+        for key, spec in sorted((declared if kind == 'networks' else config.get(kind) or {}).items()):
             spec = spec or {}
-            if spec.get('name') and spec['name'] != f'{group}_{key}':
+            if kind == 'networks' and key == 'edge':
+                # Its default name would be the copy's <group>_edge.
+                resets.setdefault(key, []).append(f'    name: {q(f"{group}_edge-net")}')
+            elif spec.get('name') and spec['name'] != f'{group}_{key}':
                 resets.setdefault(key, []).append('    name: !reset null')
             if kind == 'networks' and (spec.get('ipam') or {}).get('config'):
                 resets.setdefault(key, []).append('    ipam: !reset {}')
+            if kind == 'networks':
+                resets.setdefault(key, []).append('    internal: true')
+        if kind == 'networks' and edge:
+            resets[EDGE_KEY] = [f'    name: {q(f"{group}_edge")}', '    internal: false']
         if resets:
             lines.append(f'{kind}:')
             for key, entries_of in resets.items():
@@ -471,7 +560,7 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options):
         found = containers(f'{PROJECT_LABEL}={group}')
     if foreign(found, folder):
         raise Refused(f'{group} belongs to another folder ({foreign(found, folder)[0]})')
-    files, rest = split_compose_options(folder, options, os.environ)
+    files, rest = split_compose_options(folder, options, os.environ, env_files)
     base = ['docker', 'compose', '-p', group]
     for item in files:
         base += ['-f', item]
@@ -512,6 +601,8 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options):
             f'port: {entry["service"]} {entry["target"]}/{entry["protocol"]} -> {port} '
             f'http://localhost:{port} {entry["variable"]}'
         )
+    for service, role in network_roles(config, entries).items():
+        print(f'network: {service} {role}')
     print(f'published: {group} (override {override})')
     return 0
 
@@ -606,58 +697,86 @@ def cmd_destroy(groups, under):
     return 0 if ok else 1
 
 
-def tracked_differences(checkout, repo, rel):
-    """Returns the files git tracks under rel in the checkout whose content is not the same at that path of the repo
-    (missing there included)."""
-    code, out, err = run(['git', '-C', checkout, 'ls-files', '-z', '--', rel])
+def listed(folder, rel, *options):
+    """Returns the paths git ls-files lists in a folder at or under rel (pathspecs read literally)."""
+    code, out, err = run(['git', '--literal-pathspecs', '-C', folder, 'ls-files', '-z', *options, '--', rel])
     if code != 0:
-        raise Refused(f'git ls-files failed in the checkout: {first_line(err)}')
+        raise Refused(f'git ls-files failed in {folder}: {first_line(err)}')
+    return {item.rstrip('/') for item in out.split('\0') if item}
+
+
+def tracked_differences(checkout, repo, rel):
+    """Returns the files under rel that are not the same in the checkout of main and in the repo: every file main
+    tracks there and every file the repo has there (tracked, or untracked and not ignored). When neither tracks
+    anything under rel, it is data, not code: nothing to compare."""
+    mine = listed(checkout, rel)
+    theirs_tracked = listed(repo, rel)
+    if not mine and not theirs_tracked:
+        return []
+    theirs = theirs_tracked | listed(repo, rel, '--others', '--exclude-standard')
     differ = []
-    for path in [item for item in out.split('\0') if item]:
-        other = os.path.join(repo, path)
-        if not os.path.isfile(other) or not filecmp.cmp(os.path.join(checkout, path), other, shallow=False):
+    for path in sorted(mine | theirs):
+        one, other = os.path.join(checkout, path), os.path.join(repo, path)
+        if not (os.path.isfile(one) and os.path.isfile(other) and filecmp.cmp(one, other, shallow=False)):
             differ.append(path)
     return differ
 
 
+def moved_source(source, checkout, repo, root):
+    """Returns (relative path, source in the repo) of a source that lies under root (tmp/deploy/: the checkout, or
+    above it through ..), else (None, None)."""
+    if not source or not inside(source, root):
+        return None, None
+    rel = os.path.relpath(os.path.normpath(source), checkout)
+    return rel, os.path.normpath(os.path.join(repo, rel))
+
+
 def deploy_binds(config, checkout, repo):
-    """Returns ({service: [moved mounts]}, refusals) for a checkout of main: each bind source in the checkout moves to
-    the same relative path in the repo; tracked files that differ there cannot move (main would run with another
-    file), and are refused."""
-    moved, refusals = {}, []
+    """Returns ({service: [moved mounts]}, {('secrets' or 'configs', name): moved file}, refusals) for a checkout of
+    main: every bind source and every secret or config file under tmp/deploy/ (the checkout, or above it through ..)
+    moves to the same relative path from the repo; files that differ between main and the repo there cannot move (main
+    would run with another file), and are refused."""
+    root = os.path.dirname(checkout)
+    moved, files, refusals = {}, {}, []
+
+    def check(what, rel):
+        """Returns True when rel may move; else adds the refusal."""
+        if rel.split(os.sep)[0] == '..':
+            return True
+        differ = tracked_differences(checkout, repo, rel)
+        if differ:
+            refusals.append(f'{what} {rel}, and main differs from the repo checkout in {", ".join(differ[:3])}')
+        return not differ
+
     for service, spec in sorted((config.get('services') or {}).items()):
         for mount in spec.get('volumes') or []:
-            source = mount.get('source') or ''
-            if mount.get('type') != 'bind' or not source or not inside(source, checkout):
+            if mount.get('type') != 'bind':
                 continue
-            rel = os.path.relpath(os.path.normpath(source), checkout)
-            differ = tracked_differences(checkout, repo, rel)
-            if differ:
-                refusals.append(
-                    f'{service} binds {rel}, and main differs from the repo checkout in {", ".join(differ[:3])}'
-                )
-                continue
-            moved.setdefault(service, []).append({**mount, 'source': os.path.normpath(os.path.join(repo, rel))})
-    return moved, refusals
+            rel, new = moved_source(mount.get('source') or '', checkout, repo, root)
+            if rel is not None and check(f'{service} binds', rel):
+                moved.setdefault(service, []).append({**mount, 'source': new})
+    for kind in ('secrets', 'configs'):
+        for name, spec in sorted((config.get(kind) or {}).items()):
+            rel, new = moved_source((spec or {}).get('file') or '', checkout, repo, root)
+            if rel is not None and check(f'{kind[:-1]} {name} reads', rel):
+                files[(kind, name)] = new
+    return moved, files, refusals
 
 
-def binds_override(moved):
-    """Returns the text of an override that mounts the moved binds (compose merges a service's volumes by target)."""
+def binds_override(moved, files=None):
+    """Returns the text of an override that mounts the moved binds, each mount whole with only its source changed
+    (compose merges a service's volumes by target), and points the moved secret and config files at the repo."""
     lines = ['# Written by agent-copy.py deploy-binds: the binds of a checkout of main, mounted from the repo.']
-    lines.append('services:')
+    lines.append('services:' if moved else 'services: {}')
     for service, mounts in moved.items():
         lines += [f'  {q(service)}:', '    volumes:']
-        for mount in mounts:
-            lines += [
-                '      - type: bind',
-                f'        source: {q(mount["source"])}',
-                f'        target: {q(mount["target"])}',
-            ]
-            if mount.get('read_only'):
-                lines.append('        read_only: true')
-            if 'create_host_path' in (mount.get('bind') or {}):
-                flag = 'true' if mount['bind']['create_host_path'] else 'false'
-                lines += ['        bind:', f'          create_host_path: {flag}']
+        lines += [f'      - {json.dumps(mount, sort_keys=True)}' for mount in mounts]
+    for kind in ('secrets', 'configs'):
+        mine = [(name, path) for (other, name), path in sorted((files or {}).items()) if other == kind]
+        if mine:
+            lines.append(f'{kind}:')
+            for name, path in mine:
+                lines += [f'  {q(name)}:', f'    file: {q(path)}']
     return '\n'.join(lines) + '\n'
 
 
@@ -669,12 +788,12 @@ def cmd_deploy_binds(project, checkout, repo, override, options):
     code, out, err = run(['docker', 'compose', '-p', project, *args, *rest, 'config', '--format', 'json'], cwd=checkout)
     if code != 0:
         raise Refused(f'docker compose config failed: {first_line(err or out)}')
-    moved, refusals = deploy_binds(load_json(out, 'docker compose config'), checkout, repo)
+    moved, files, refusals = deploy_binds(load_json(out, 'docker compose config'), checkout, repo)
     if refusals:
         raise Refused('main cannot be deployed from a checkout: ' + '; '.join(refusals))
-    if moved:
+    if moved or files:
         with open(override, 'w', encoding='utf-8') as handle:
-            handle.write(binds_override(moved))
+            handle.write(binds_override(moved, files))
         args += ['-f', override]
     print('\n'.join([*args, *rest]))
     return 0
@@ -697,8 +816,29 @@ def cmd_bound_under(path):
     return 0 if found else 1
 
 
+def internal_networks(names):
+    """Returns {network name: True when internal} of the networks docker network inspect knows."""
+    if not names:
+        return {}
+    code, out, _ = run(['docker', 'network', 'inspect', *sorted(names)])
+    found = load_json(out, 'docker network inspect') if code == 0 and out.strip() else []
+    return {item.get('Name', ''): bool(item.get('Internal')) for item in found}
+
+
+def service_roles(mine, internal):
+    """Returns 'service:edge,service:internal' for the containers of a group: edge when one of its networks is not
+    internal, internal when all are; a container with no known network is left out."""
+    roles = {}
+    for c in mine:
+        known = [internal[name] for name in c.get('networks') or [] if name in internal]
+        if known:
+            roles[c['service']] = 'internal' if all(known) else 'edge'
+    return ','.join(f'{service}:{role}' for service, role in sorted(roles.items()))
+
+
 def cmd_list(under, named):
-    """Prints one line per copy group: name, state, ports. Exit 3 when Docker is not reachable."""
+    """Prints one line per copy group: name, state, ports (and the network role of each service, as
+    networks=<service>:edge|internal,...). Exit 3 when Docker is not reachable."""
     if not docker_ok():
         return 3
     every = containers(PROJECT_LABEL)
@@ -718,7 +858,8 @@ def cmd_list(under, named):
         else:
             state = 'down, volumes kept' if labelled('volume', group, '{{.Name}}') else 'down'
         ports = ','.join(f'{c["service"]}:{key.split("/")[0]}->{port}' for c in mine for key, port in c['ports'])
-        print(f'{group}\t{state}\t{ports or "-"}')
+        roles = service_roles(mine, internal_networks({n for c in mine for n in c.get('networks') or []}))
+        print(f'{group}\t{state}\t{ports or "-"}{" networks=" + roles if roles else ""}')
     return 0
 
 

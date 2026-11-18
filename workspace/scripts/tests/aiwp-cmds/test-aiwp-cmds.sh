@@ -560,6 +560,9 @@ test_deploy_main_binds_the_data_of_projects_and_never_deletes_a_bound_checkout()
   local app="$R/projects/app" co="$R/tmp/deploy/app-main"
   printf 'pgdata/\n' >>"$app/.gitignore"
   printf 'services: {}\n' >"$app/compose.yaml"
+  printf 'services: {}\n' >"$app/compose.prod.yaml"
+  # The repo's .env (git-ignored, copied into the checkout) names the compose files, as compose reads it.
+  printf 'COMPOSE_FILE=compose.yaml:compose.prod.yaml\n' >>"$app/.env"
   printf 'server {}\n' >"$app/nginx.conf"
   git -C "$app" add -A
   git -C "$app" commit -q -m "stack"
@@ -570,10 +573,11 @@ test_deploy_main_binds_the_data_of_projects_and_never_deletes_a_bound_checkout()
     "$co" "$co" >"$STUB/config.json"
   dock deploy app main
   rc_is 0
-  grep -q "^docker compose -p app -f compose.yaml -f $co.binds.compose.yaml up -d --build$" "$DOCKER_LOG"; check "the binds override" $?
-  grep -q "source: \"$app/pgdata\"" "$STUB/binds.yaml"; check "data from projects/app" $?
-  grep -q "source: \"$app/nginx.conf\"" "$STUB/binds.yaml"; check "the same tracked file from projects/app" $?
-  grep -q 'create_host_path: true' "$STUB/binds.yaml" && grep -q 'read_only: true' "$STUB/binds.yaml"; check "bind options kept" $?
+  grep -q "^docker compose -p app -f compose.yaml -f compose.prod.yaml -f $co.binds.compose.yaml up -d --build$" "$DOCKER_LOG"
+  check "the compose files of the repo's .env, then the binds override" $?
+  grep -q "\"source\": \"$app/pgdata\"" "$STUB/binds.yaml"; check "data from projects/app" $?
+  grep -q "\"source\": \"$app/nginx.conf\"" "$STUB/binds.yaml"; check "the same tracked file from projects/app" $?
+  grep -q '"create_host_path": true' "$STUB/binds.yaml" && grep -q '"read_only": true' "$STUB/binds.yaml"; check "bind options kept" $?
   ! grep -q '/srv/acme' "$STUB/binds.yaml"; check "a bind outside the checkout stays" $?
   [ ! -e "$co" ] && [ ! -e "$co.binds.compose.yaml" ]; check "checkout and override removed" $?
   # A tracked file of the bind that differs between main and projects/app: refused, nothing deployed.
@@ -648,7 +652,10 @@ REAL_GROUP=""
 real_cleanup() {
   [ -n "$REAL_FINAL" ] || return 0
   (cd "$R/projects/app" 2>/dev/null && docker compose -p "$REAL_FINAL" down -v >/dev/null 2>&1)
-  docker image ls --format '{{.Repository}}:{{.Tag}}' "$REAL_FINAL-web" | while IFS= read -r ref; do docker image rm "$ref" >/dev/null 2>&1; done
+  local name
+  for name in "$REAL_FINAL-web" "$REAL_FINAL-db"; do
+    docker image ls --format '{{.Repository}}:{{.Tag}}' "$name" | while IFS= read -r ref; do docker image rm "$ref" >/dev/null 2>&1; done
+  done
   python3 -I "$SCRIPT_DIR/agent-copy.py" destroy "$REAL_GROUP" >/dev/null 2>&1
   REAL_FINAL=""
 }
@@ -666,7 +673,12 @@ test_real_docker_copy_beside_the_final_stack() {
   REAL_FINAL="aiwpt$rnd"
   REAL_GROUP="$g"
   port="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-  printf 'FROM %s\nCMD ["sh", "-c", "sleep 600"]\n' "$image" >"$R/projects/app/Dockerfile"
+  # A one-line HTTP answer from busybox nc: the base image has no web server.
+  cat >"$R/projects/app/http.sh" <<'SH'
+#!/bin/sh
+printf 'HTTP/1.0 200 OK\r\nContent-Length: 3\r\n\r\nok\n'
+SH
+  printf 'FROM %s\nCOPY http.sh /http.sh\nRUN chmod 755 /http.sh\nCMD ["sh", "-c", "sleep 600"]\n' "$image" >"$R/projects/app/Dockerfile"
   cat >"$R/projects/app/compose.yaml" <<YAML
 name: $REAL_FINAL
 services:
@@ -674,9 +686,16 @@ services:
     build: .
     image: $REAL_FINAL-web:latest
     container_name: $REAL_FINAL-web
+    command: ["nc", "-lk", "-p", "80", "-e", "/http.sh"]
     ports: ["127.0.0.1:$port:80"]
     volumes: [data:/data]
     networks: [net]
+  db:
+    build: .
+    image: $REAL_FINAL-db:latest
+    networks:
+      net:
+        aliases: [database]
 networks:
   net:
     name: $REAL_FINAL-net
@@ -700,13 +719,33 @@ YAML
   has "group: $g"
   copy_port="$(printf '%s\n' "$OUT" | sed -n 's|^port: web 80/tcp -> \([0-9]*\) .*|\1|p')"
   [ -n "$copy_port" ] && [ "$copy_port" -ge 61000 ] && [ "$copy_port" -le 65535 ]; check "copy port in range [$copy_port]" $?
-  eq "copy publishes its port" "127.0.0.1:$copy_port" "$(docker port "$(docker ps -q --filter "label=com.docker.compose.project=$g")" 80/tcp)"
+  eq "copy publishes its port" "127.0.0.1:$copy_port" "$(docker port "$(docker ps -q --filter "label=com.docker.compose.project=$g" --filter label=com.docker.compose.service=web)" 80/tcp)"
   eq "final container kept" "$final_id" "$(docker ps -q --filter "name=^$REAL_FINAL-web$")"
   eq "final port kept" "127.0.0.1:$port" "$(docker port "$final_id" 80/tcp)"
   eq "final image tag kept" "$final_image" "$(docker image inspect -f '{{.Id}}' "$REAL_FINAL-web:latest")"
   [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$g")" ]; check "the copy has its own volume" $?
+  # The copy reaches outside Docker only from web, through <group>_edge; db is on internal networks only.
+  has "network: db internal"
+  has "network: web edge"
+  local db_id web_id net nets
+  db_id="$(docker ps -q --filter "label=com.docker.compose.project=$g" --filter label=com.docker.compose.service=db)"
+  web_id="$(docker ps -q --filter "label=com.docker.compose.project=$g" --filter label=com.docker.compose.service=web)"
+  nets="$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$db_id")"
+  [ -n "$nets" ]; check "db has networks" $?
+  for net in $nets; do
+    eq "db network $net internal" "true $g" "$(docker network inspect -f '{{.Internal}} {{index .Labels "com.docker.compose.project"}}' "$net")"
+  done
+  eq "db has no route out of Docker" "" "$(docker exec "$db_id" ip route | grep '^default')"
+  docker exec "$web_id" ip route | grep -q '^default'; check "web has its way out, through edge" $?
+  eq "web on edge" "false $g" "$(docker network inspect -f '{{.Internal}} {{index .Labels "com.docker.compose.project"}}' "${g}_edge")"
+  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$web_id" | grep -q "${g}_edge"; check "web joined edge" $?
+  eq "the published port answers" ok "$(python3 -I -c 'import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1], timeout=10).read().decode().strip())' "http://127.0.0.1:$copy_port/" 2>&1)"
+  eq "db reaches web by its name" ok "$(docker exec "$db_id" wget -q -T 5 -O- http://web/ 2>&1)"
+  eq "web reaches db by its alias" 0 "$(docker exec "$web_id" sh -c 'ping -c 1 -W 3 database >/dev/null 2>&1; echo $?')"
+  eq "final network unchanged" false "$(docker network inspect -f '{{.Internal}}' "$REAL_FINAL-net")"
+  eq "final web on its network only" "$REAL_FINAL-net " "$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$final_id")"
   run status "$w2"
-  has "copy: $g running 1/1 ports=web:80->$copy_port"
+  has "copy: $g running 2/2 ports=web:80->$copy_port networks=db:internal,web:edge"
   # A second deploy of the final stack: rollback tags, no volume deleted.
   OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh deploy app developer 2>&1)"
   RC=$?

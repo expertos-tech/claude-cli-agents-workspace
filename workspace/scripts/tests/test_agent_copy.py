@@ -30,7 +30,7 @@ REAL_RUN = subprocess.run
 LOGIN_SIMULATOR = MODULE_PATH.parent.parent / 'tools' / 'login-simulator' / 'compose.yaml'
 
 
-def container(project, folder, service='web', running=True, ports=None):
+def container(project, folder, service='web', running=True, ports=None, networks=()):
     """Returns the docker inspect data of one compose container."""
     return {
         'Id': f'c-{project}-{service}',
@@ -39,7 +39,8 @@ def container(project, folder, service='web', running=True, ports=None):
         },
         'State': {'Running': running},
         'NetworkSettings': {
-            'Ports': {key: [{'HostIp': '0.0.0.0', 'HostPort': str(port)}] for key, port in (ports or {}).items()}
+            'Ports': {key: [{'HostIp': '0.0.0.0', 'HostPort': str(port)}] for key, port in (ports or {}).items()},
+            'Networks': {name: {} for name in networks},
         },
     }
 
@@ -85,7 +86,9 @@ class FakeDocker:
         self.config = config()
         self.config_text = None
         self.ports_text = ''
-        self.tracked = set()
+        self.git_files = {}
+        self.networks = []
+        self.git_fails = set()
 
     def joined(self):
         """Returns every recorded call as one line of text each."""
@@ -125,6 +128,8 @@ class FakeDocker:
             return self.ps(args)
         if sub == 'inspect':
             return 0, json.dumps([item for item in self.items if item['Id'] in args[2:]]), ''
+        if sub == 'network' and args[2] == 'inspect':
+            return 0, json.dumps([n for n in self.networks if n['Name'] in args[3:]]), ''
         if sub in ('network', 'volume', 'image') and args[2] == 'ls':
             group = args[4].rsplit('=', 1)[1]
             return 0, ''.join(f'{entry}\n' for entry in self.res.get((sub, group), [])), ''
@@ -133,9 +138,13 @@ class FakeDocker:
         return 0, '', ''
 
     def git(self, args):
-        """Answers git -C <checkout> ls-files -z -- <path>: the tracked files (self.tracked) at or under the path."""
-        rel = args[-1]
-        found = [path for path in sorted(self.tracked) if path == rel or path.startswith(rel.rstrip('/') + '/')]
+        """Answers git --literal-pathspecs -C <folder> ls-files -z [--others ...] -- <path>: the files of
+        git_files[(folder, 'tracked' or 'others')] at or under the path; a folder named in git_fails fails."""
+        folder, rel = args[args.index('-C') + 1], args[-1]
+        if folder in self.git_fails or '--literal-pathspecs' not in args:
+            return 128, '', 'fatal: not a git repository'
+        files = self.git_files.get((folder, 'others' if '--others' in args else 'tracked'), set())
+        found = [path for path in sorted(files) if path == rel or path.startswith(rel.rstrip('/') + '/')]
         return 0, ''.join(f'{path}\0' for path in found), ''
 
     def __call__(self, args, **kwargs):
@@ -320,9 +329,13 @@ class HelperTests(unittest.TestCase):
         self.assertIn('published: "61003"\n        host_ip: "127.0.0.1"\n        protocol: "tcp"', text)
         self.assertIn('published: "61002"\n        protocol: "udp"', text)
         self.assertIn(
-            'networks:\n  "default":\n    name: !reset null\nvolumes:\n  "data":\n    name: !reset null', text
+            'networks:\n  "default":\n    name: !reset null\n    internal: true\n  "plain":\n    internal: true\n'
+            f'  "agent-edge":\n    name: "{GROUP}_edge"\n    internal: false\n'
+            'volumes:\n  "data":\n    name: !reset null',
+            text,
         )
-        self.assertNotIn('"plain"', text)
+        # A service that publishes joins the edge network too, with every network it had; the others do not.
+        self.assertEqual(text.count('    networks:\n      "default": {}\n      "agent-edge": {}\n'), 2)
         self.assertNotIn('"cache"', text)
         self.assertEqual(text.count('AGENT_PORT_WEB_80: "61003"'), 3)
         self.assertNotIn('postgres', text)
@@ -379,8 +392,11 @@ class ReviewFindingTests(unittest.TestCase):
         self.assertIn(
             '    networks:\n      "login":\n        ipv4_address: !reset null\n        ipv6_address: !reset null', text
         )
-        self.assertIn('networks:\n  "login":\n    name: !reset null\n    ipam: !reset {}', text)
-        self.assertNotIn('"plain"', text)
+        self.assertIn(
+            'networks:\n  "default":\n    internal: true\n  "login":\n    name: !reset null\n    ipam: !reset {}', text
+        )
+        self.assertIn('  "plain":\n    internal: true', text)
+        self.assertNotIn('agent-edge', text)
         dropped, notes = ac.fixed_addresses(data)
         self.assertEqual(dropped, {'172.31.250.10', 'fd00::10', '172.31.250.0/24'})
         self.assertEqual(
@@ -415,6 +431,10 @@ class ReviewFindingTests(unittest.TestCase):
         merged = json.loads(done.stdout)
         network = merged['networks']['login-simulator']
         self.assertEqual(network['name'], f'{GROUP}_login-simulator')
+        self.assertTrue(network['internal'])
+        self.assertEqual(merged['networks']['agent-edge']['name'], f'{GROUP}_edge')
+        self.assertFalse(merged['networks']['agent-edge'].get('internal'))
+        self.assertEqual(sorted(merged['services']['login-simulator']['networks']), ['agent-edge', 'login-simulator'])
         self.assertFalse((network.get('ipam') or {}).get('config'))
         service = merged['services']['login-simulator']
         self.assertNotIn('ipv4_address', service['networks']['login-simulator'] or {})
@@ -431,18 +451,67 @@ class ReviewFindingTests(unittest.TestCase):
         )
 
 
+class InternalNetworkTests(CopyTestCase):
+    """A copy reaches outside Docker only through <group>_edge, and only from a service that publishes a port."""
+
+    def test_roles_and_the_edge_network(self):
+        data = config(networks={'edge': {'name': 'proxy-edge'}, 'back': {}})
+        data['services']['db']['networks'] = {'back': {'aliases': ['database']}}
+        data['services']['proxy'] = {'network_mode': 'service:web'}
+        data['services']['tool'] = {'network_mode': 'none'}
+        entries = ac.port_entries(data)
+        self.assertEqual(
+            ac.network_roles(data, entries),
+            {'db': 'edge', 'proxy': 'shares web', 'tool': 'none', 'web': 'edge', 'worker': 'internal'},
+        )
+        data['services']['db'].pop('ports')
+        entries = ac.port_entries(data)
+        self.assertEqual(ac.network_roles(data, entries)['db'], 'internal')
+        text = ac.build_override(data, GROUP, entries, {'AGENT_PORT_WEB_80': 61003})
+        self.assertIn(f'  "edge":\n    name: "{GROUP}_edge-net"\n    internal: true', text)
+        self.assertIn('  "back":\n    internal: true', text)
+        self.assertIn(f'  "agent-edge":\n    name: "{GROUP}_edge"\n    internal: false', text)
+        self.assertNotIn('"database"', text)
+        self.assertNotIn('"db":\n    networks', text)
+        self.assertEqual(
+            ac.isolation_refusals(config(networks={'agent-edge': {}}))[0][:26], 'network agent-edge is the '
+        )
+
+    def test_up_prints_each_service_s_role(self):
+        code, out, _ = self.up()
+        self.assertEqual(code, 0)
+        self.assertIn('network: web edge\nnetwork: worker internal\n', out.replace('network: db edge\n', ''))
+
+    def test_list_shows_edge_and_internal(self):
+        self.fake.items = [
+            container(GROUP, self.clone, ports={'80/tcp': 61500}, networks=(f'{GROUP}_default', f'{GROUP}_edge')),
+            container(GROUP, self.clone, service='db', networks=(f'{GROUP}_default',)),
+            container(GROUP, self.clone, service='gone', networks=('unknown',)),
+        ]
+        self.fake.networks = [
+            {'Name': f'{GROUP}_default', 'Internal': True},
+            {'Name': f'{GROUP}_edge', 'Internal': False},
+        ]
+        code, out, _ = self.quiet(ac.main, ['list'])
+        self.assertEqual(out, f'{GROUP}\trunning 3/3\tweb:80->61500 networks=db:internal,web:edge\n')
+        self.fake.fail['network inspect'] = 1
+        self.assertEqual(self.quiet(ac.main, ['list'])[1], f'{GROUP}\trunning 3/3\tweb:80->61500\n')
+        self.assertEqual(ac.internal_networks(set()), {})
+
+
 class DeployBindsTests(CopyTestCase):
-    """deploy main: the binds of the checkout come from the repo; a bound checkout is never deleted."""
+    """deploy main: the binds, secrets and configs of the checkout come from the repo; a bound checkout is never
+    deleted."""
 
     def setUp(self):
         super().setUp()
         self.repo = os.path.join(self.root, 'projects', 'billing-api')
         self.checkout = os.path.join(self.root, 'tmp', 'deploy', 'billing-api-main')
         for folder in (self.repo, self.checkout):
-            os.makedirs(folder)
-            Path(folder, 'compose.yaml').write_text('services: {}\n', encoding='utf-8')
-            Path(folder, 'nginx.conf').write_text('server {}\n', encoding='utf-8')
-        self.fake.tracked = {'compose.yaml', 'nginx.conf'}
+            os.makedirs(os.path.join(folder, 'conf'))
+            for name, text in (('compose.yaml', 'services: {}\n'), ('conf/nginx.conf', 'server {}\n'), ('pw', 's\n')):
+                Path(folder, name).write_text(text, encoding='utf-8')
+            self.fake.git_files[(folder, 'tracked')] = {'compose.yaml', 'conf/nginx.conf', 'pw'}
         self.override = self.checkout + '.binds.compose.yaml'
         self.fake.config = {
             'name': 'billing-api',
@@ -453,33 +522,56 @@ class DeployBindsTests(CopyTestCase):
                             'type': 'bind',
                             'source': f'{self.checkout}/pgdata',
                             'target': '/data',
-                            'bind': {'create_host_path': True},
+                            'bind': {'create_host_path': True, 'selinux': 'Z', 'propagation': 'rprivate'},
+                            'consistency': 'cached',
                         },
-                        {'type': 'bind', 'source': f'{self.checkout}/nginx.conf', 'target': '/n', 'read_only': True},
-                        {'type': 'bind', 'source': '/srv/acme', 'target': '/srv', 'bind': {'create_host_path': False}},
+                        {'type': 'bind', 'source': f'{self.checkout}/conf', 'target': '/n', 'read_only': True},
+                        {'type': 'bind', 'source': f'{self.root}/tmp/deploy/shared', 'target': '/shared'},
+                        {'type': 'bind', 'source': '/srv/acme', 'target': '/srv'},
                         {'type': 'volume', 'source': 'data', 'target': '/v'},
                     ]
                 },
                 'web': {},
             },
+            'secrets': {'pw': {'file': f'{self.checkout}/pw'}, 'ext': {'external': True}},
+            'configs': {'site': {'file': f'{self.checkout}/conf/nginx.conf'}, 'far': {'file': '/srv/acme.conf'}},
         }
 
     def deploy(self, *options):
         """Runs main deploy-binds; returns (exit code, stdout, stderr)."""
         return self.quiet(ac.main, ['deploy-binds', 'billing-api', self.checkout, self.repo, self.override, *options])
 
-    def test_binds_move_to_the_repo(self):
+    def mounts(self):
+        """Returns the volumes lines of the override, parsed (each is a JSON flow mapping)."""
+        text = Path(self.override).read_text(encoding='utf-8')
+        return [json.loads(line.split('- ', 1)[1]) for line in text.splitlines() if line.startswith('      - ')]
+
+    def test_binds_secrets_and_configs_move_to_the_repo_whole(self):
         code, out, err = self.deploy('--', '--profile', 'full')
         self.assertEqual(code, 0, err)
         self.assertEqual(out.splitlines(), ['-f', 'compose.yaml', '-f', self.override, '--profile', 'full'])
-        text = Path(self.override).read_text(encoding='utf-8')
-        self.assertIn(
-            f'source: "{self.repo}/pgdata"\n        target: "/data"\n        bind:\n          create_host_path: true',
-            text,
+        mounts = self.mounts()
+        self.assertEqual(
+            mounts[0],
+            {**self.fake.config['services']['db']['volumes'][0], 'source': f'{self.repo}/pgdata'},
         )
-        self.assertIn(f'source: "{self.repo}/nginx.conf"\n        target: "/n"\n        read_only: true', text)
+        self.assertEqual(mounts[1]['source'], f'{self.repo}/conf')
+        self.assertTrue(mounts[1]['read_only'])
+        # ../shared of the checkout: the same relative path from the repo.
+        self.assertEqual(mounts[2]['source'], os.path.normpath(f'{self.repo}/../shared'))
+        self.assertEqual(len(mounts), 3)
+        text = Path(self.override).read_text(encoding='utf-8')
+        self.assertIn(f'secrets:\n  "pw":\n    file: "{self.repo}/pw"', text)
+        self.assertIn(f'configs:\n  "site":\n    file: "{self.repo}/conf/nginx.conf"', text)
         self.assertNotIn('/srv/acme', text)
+        self.assertNotIn('"ext"', text)
         self.assertTrue(self.fake.called(r'^docker compose -p billing-api -f compose.yaml --profile full config'))
+
+    def test_only_a_secret_still_writes_the_override(self):
+        self.fake.config = {'services': {}, 'secrets': {'pw': {'file': f'{self.checkout}/pw'}}}
+        code, out, _ = self.deploy()
+        self.assertEqual((code, out.splitlines()), (0, ['-f', 'compose.yaml', '-f', self.override]))
+        self.assertIn('services: {}', Path(self.override).read_text(encoding='utf-8'))
 
     def test_no_bind_in_the_checkout_needs_no_override(self):
         self.fake.config = {'services': {'web': {'volumes': [{'type': 'bind', 'source': '/srv', 'target': '/s'}]}}}
@@ -487,24 +579,63 @@ class DeployBindsTests(CopyTestCase):
         self.assertEqual((code, out.splitlines()), (0, ['-f', 'compose.yaml']))
         self.assertFalse(os.path.exists(self.override))
 
-    def test_a_tracked_file_that_differs_is_refused(self):
-        Path(self.repo, 'nginx.conf').write_text('server { listen 81; }\n', encoding='utf-8')
+    def test_a_file_that_differs_or_exists_only_in_the_repo_is_refused(self):
+        Path(self.repo, 'conf/nginx.conf').write_text('server { listen 81; }\n', encoding='utf-8')
         code, _, err = self.deploy()
         self.assertEqual(code, 1)
-        self.assertIn('db binds nginx.conf, and main differs from the repo checkout in nginx.conf', err)
-        os.remove(os.path.join(self.repo, 'nginx.conf'))
-        self.assertIn('differs', self.deploy()[2])
+        self.assertIn('db binds conf, and main differs from the repo checkout in conf/nginx.conf', err)
+        self.assertIn('config site reads conf/nginx.conf, and main differs', err)
         self.assertFalse(os.path.exists(self.override))
+        Path(self.repo, 'conf/nginx.conf').write_text('server {}\n', encoding='utf-8')
+        # A file developer added under the bound folder, tracked or not ignored: main would run without it.
+        Path(self.repo, 'conf/extra.conf').write_text('x\n', encoding='utf-8')
+        self.fake.git_files[(self.repo, 'others')] = {'conf/extra.conf'}
+        self.assertIn('main differs from the repo checkout in conf/extra.conf', self.deploy()[2])
+        del self.fake.git_files[(self.repo, 'others')]
+        self.fake.git_files[(self.repo, 'tracked')].add('conf/extra.conf')
+        self.assertIn('in conf/extra.conf', self.deploy()[2])
+        # A secret main tracks and the repo lacks.
+        self.fake.git_files[(self.repo, 'tracked')] = {'compose.yaml', 'conf/nginx.conf'}
+        os.remove(os.path.join(self.repo, 'conf/extra.conf'))
+        os.remove(os.path.join(self.repo, 'pw'))
+        self.assertIn('secret pw reads pw, and main differs from the repo checkout in pw', self.deploy()[2])
+
+    def test_data_neither_side_tracks_is_not_compared(self):
+        Path(self.repo, 'pgdata').mkdir()
+        Path(self.repo, 'pgdata', 'base').write_text('rows\n', encoding='utf-8')
+        self.fake.git_files[(self.repo, 'others')] = {'pgdata/base'}
+        self.assertEqual(ac.tracked_differences(self.checkout, self.repo, 'pgdata'), [])
+        self.assertEqual(self.deploy()[0], 0)
 
     def test_failures(self):
         self.fake.fail['config --format json'] = 1
         self.assertIn('docker compose config failed', self.deploy()[2])
         self.fake.fail = {}
-        with mock.patch.object(ac, 'run', return_value=(128, '', 'not a git repository')):
-            with self.assertRaisesRegex(ac.Refused, 'git ls-files failed'):
-                ac.tracked_differences(self.checkout, self.repo, 'x')
+        self.fake.git_fails.add(self.checkout)
+        with self.assertRaisesRegex(ac.Refused, 'git ls-files failed in'):
+            ac.tracked_differences(self.checkout, self.repo, 'conf')
         self.assertEqual(self.quiet(ac.main, ['deploy-binds', 'a', 'b', 'c'])[0], 2)
         self.assertEqual(self.quiet(ac.main, ['deploy-binds', 'a', 'b', 'c', 'd', 'e'])[0], 2)
+
+    def test_compose_file_from_the_checkout_env(self):
+        Path(self.checkout, 'compose.prod.yaml').write_text('services: {}\n', encoding='utf-8')
+        Path(self.checkout, '.env').write_text(
+            '# repo env\nexport COMPOSE_FILE="compose.yaml;compose.prod.yaml"\nCOMPOSE_PATH_SEPARATOR=;\nSECRET=x\n',
+            encoding='utf-8',
+        )
+        code, out, _ = self.deploy()
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[:4], ['-f', 'compose.yaml', '-f', 'compose.prod.yaml'])
+        # An --env-file replaces the folder's .env; the process environment wins over both.
+        Path(self.checkout, 'other.env').write_text('COMPOSE_FILE=compose.prod.yaml\n', encoding='utf-8')
+        code, out, _ = self.deploy('--', '--env-file', 'other.env')
+        self.assertEqual(out.splitlines()[:2], ['-f', 'compose.prod.yaml'])
+        self.assertIn('--env-file', out.splitlines())
+        code, out, _ = self.deploy('--', '--env-file=other.env')
+        self.assertEqual(out.splitlines()[:2], ['-f', 'compose.prod.yaml'])
+        with mock.patch.dict(os.environ, {'COMPOSE_FILE': 'compose.yaml'}):
+            self.assertEqual(self.deploy()[1].splitlines()[:3], ['-f', 'compose.yaml', '-f'])
+        self.assertEqual(ac.read_dotenv(os.path.join(self.checkout, 'none.env')), {})
 
     def test_bound_under(self):
         bound = container('billing-api', self.repo)

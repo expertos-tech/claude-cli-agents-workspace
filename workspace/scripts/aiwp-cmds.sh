@@ -39,7 +39,7 @@ Commands:
   status [<work>]
         Per clone: branch, base, commits ahead of the base, commits not on the remote, files changed not committed;
         then one "copy:" line per Docker group of the clone (its agent_ group, by the compose folder label or its
-        override file): state and host ports. Docker not reachable: one line "Docker: not reachable", same exit code.
+        override file): state, host ports and networks=<service>:edge|internal. Docker not reachable: one line "Docker: not reachable", same exit code.
   push <work>/<clone>
         Pushes the branch now (what a failed automatic push left behind), with the pre-push checks.
   close <work> [--discard]
@@ -50,14 +50,18 @@ Commands:
   up <work>/<clone> [-- <docker compose options>...]
         Publishes the task's copy to the local Docker, never over the final stack: compose project agent_<MMDD>-<slug>
         (the date and slug of <work>: 2026-11-18-add-export -> agent_1118-add-export); when another clone of the same
-        work already owns that group, agent_<MMDD>-<slug>--<clone> (a work slug never holds --, so it never collides with
-        the group of another work). The compose files of the clone never change: an
+        work already owns that group, agent_<MMDD>-<slug>--<clone> (a work slug never holds --, so it never collides
+        with the group of another work). The compose files of the clone never change: an
         override file outside the clone, tmp/work/<work>/agent-<clone>.compose.yaml (never committed), gives every
         built service the group's own image (<group>-<service>), drops a fixed container_name and a fixed network or
         volume name (compose !reset), and moves every published port to a random free host port in 61000-65535 (on
         Linux free in /proc/net, in docker ps and by a bind test; elsewhere by docker ps and the bind test); the port
         of the last up is kept while it is free. An external network or volume, or network_mode host or container:,
-        cannot be isolated: refused, nothing started. Then docker compose up -d --build in the group. Prints
+        cannot be isolated: refused, nothing started. Every network of the copy is internal (internal: true, no way
+        out of Docker); a service that publishes a port also joins <group>_edge (compose key agent-edge, labeled
+        com.docker.compose.project=<group> like the others), the copy's only network that is not internal, so its
+        port answers on the host; service names and aliases keep resolving. Prints "network: <service> edge",
+        "internal" or "shares <service>" per service. Then docker compose up -d --build in the group. Prints
         "port: <service> <port>/<protocol> -> <host port> http://localhost:<host port> <variable>" per port. The
         variables AGENT_GROUP and AGENT_PORT_<SERVICE>_<PORT> (_UDP for udp; service upper-case, other characters
         as _) reach the compose files (interpolation) and every service's environment, and are kept in
@@ -70,11 +74,15 @@ Commands:
         its own files give (their name:, else the folder name), never an agent_ group. developer (default): from
         projects/<repo>, which must be on developer with no change. main: from a fresh checkout of main (the remote's
         main when it can be fetched, else the local one) in tmp/deploy/<clone name>-main/, with the repo's .env and
-        local.settings.json files and -p forced to the final stack's name. Every bind whose source lies in the
-        checkout is mounted from the same path of projects/<repo> instead (an override next to the checkout), so the
-        stack keeps the data developer uses; a bind of tracked files that differ between main and projects/<repo> is
-        refused, nothing deployed. The checkout is removed afterwards, and never while a container binds a path in it
-        (then the deploy is refused before anything changes). Before the build, tags each image of the stack's
+        local.settings.json files and -p forced to the final stack's name; the compose files are those compose would
+        read there (-f given, else COMPOSE_FILE of the environment, of --env-file or of the repo's .env, else the
+        default names). Every bind, secret file and config file whose source lies under tmp/deploy/ (in the checkout,
+        or above it through ..) is taken from the same relative path of projects/<repo> instead (an override next to
+        the checkout; each mount whole, only its source changed), so the stack keeps the data developer uses. When main
+        or projects/<repo> tracks a file under such a path, every file there (tracked by main, or by projects/<repo>,
+        or not ignored there) must be the same on both sides, else the deploy is refused, nothing deployed. The
+        checkout is removed afterwards, and never while a container binds a path in it (then the deploy is refused
+        before anything changes). Before the build, tags each image of the stack's
         containers as <name>:rollback-latest and <name>:rollback-<yyyymmdd-hhmmss>, keeping the last 3 (an image with
         no container: its newest published tag); then docker compose up -d --build (never down -v, never a volume
         removed); then tags each image as <name>:published-<yyyymmdd-hhmmss>-<sha>.
