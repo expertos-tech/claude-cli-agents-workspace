@@ -85,6 +85,11 @@ maintenance of this repository.
   pending requests `work-branch-push-before-scan`, `review-docs-only-scope`, `review-effort-wording` and
   `work-status-docker-stacks` are delivered by this one and leave `maintainers/requests/`; `os-sandbox-trial` is
   removed (D-4).
+- BR-19: `/caw-commit` stages before it commits by path: `git add -- <paths>`, then `git commit -F <file> -- <paths>`.
+  Today its text gives only the commit form, which fails for a file git does not track yet; the product's `/commit`
+  already stages first. And the rule that keeps the second failure from coming back, in "Commits" of
+  `.claude/rules/git.md` and of the product's `rules/git.md`: the paths of a command are written out in it, never held
+  in a shell variable, because the session's shell may be zsh, which passes an unquoted variable as one word.
 
 ## 4. Acceptance criteria
 
@@ -119,6 +124,8 @@ maintenance of this repository.
 - AC-14: Given `tests/check.sh --all`, then the suites of `guard-bash`, `aiwp-cmds.sh`, `aiwp-gate.sh`,
   `session-title.py` and `caw-work.sh` cover BR-1 to BR-13 with passing and failing cases, and the `caw-layers` check
   passes `/caw-pilot` and `/caw-docker-deploy`.
+- AC-15: Given a new file and a changed file pending at the root, when `/caw-commit` runs, then both enter one commit
+  at the first attempt, with no pathspec error; both `git.md` files carry the rule about paths in a variable.
 
 ## 7. Out of scope
 
@@ -130,7 +137,7 @@ maintenance of this repository.
 
 | Stage | Effort | Why |
 | --- | --- | --- |
-| 1. Maintenance trail: `caw-work.sh`, the clone's git hooks with the terms scan, the allow rules, `/caw-request` and `/caw-merge` without hand pushes, a prompt shows one thing (BR-2 to BR-6) | high | Pushes to a public repository |
+| 1. Maintenance trail: `caw-work.sh`, the clone's git hooks with the terms scan, the allow rules, `/caw-request` and `/caw-merge` without hand pushes, a prompt shows one thing, the `/caw-commit` staging (BR-2 to BR-6, BR-19) | high | Pushes to a public repository |
 | 2. Product trail: `guard-bash` approval of lines in a clone and the "run it alone" refusal, the allow rules (BR-1, BR-2, BR-6) | high | A hook of the mandatory core; weakens nothing it guards today |
 | 3. The Docker copy: `agent_` groups, ports, destruction by label, Grafana, `status`, `publish` (BR-7 to BR-10, BR-12) | high | Destructive steps on the machine's Docker |
 | 4. End of task and merge only by the person: the closing board, `/merge` record and gate, `/caw-pilot` (BR-11, BR-13, BR-14) | high | Changes the gate |
