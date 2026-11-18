@@ -50,6 +50,15 @@ function groupRows<Row>(rows: Row[], key: (row: Row) => string): [string, Row[]]
   return [...groups]
 }
 
+/** The content of a cell of a group, wrapped so it can shrink to no height. */
+function Collapsible({ children }: { children: ReactNode }) {
+  return (
+    <div className={styles.collapse}>
+      <div className={styles.collapseInner}>{children}</div>
+    </div>
+  )
+}
+
 /**
  * A real table whose identification, status and actions never leave the screen. It adapts to its
  * own width, so the side menu counts. The explicit roles keep the table semantics on phones,
@@ -70,45 +79,63 @@ export function DataTable<Row>({
   const captionId = useId()
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
-  const toggle = (key: string) =>
+  // Groups the viewer toggled since the filter last changed: only they animate.
+  const [clicked, setClicked] = useState<ReadonlySet<string>>(new Set())
+  const toggle = (key: string) => {
+    setClicked(current => (current.has(key) ? current : new Set(current).add(key)))
     setCollapsed(current => {
       const next = new Set(current)
       if (!next.delete(key)) next.add(key)
       return next
     })
+  }
   const needle = query.trim().toLowerCase()
   const visible = searchText && needle ? rows.filter(row => searchText(row).toLowerCase().includes(needle)) : rows
   const columnCount = 1 + (status ? 1 : 0) + columns.length + (actions ? 1 : 0)
 
-  function renderRow(row: Row) {
+  /**
+   * One data row. A member of a closed group keeps its place with no height, out of sight, of the
+   * tab order and of the accessibility tree; its cells can collapse.
+   */
+  function renderRow(row: Row, member?: { open: boolean }) {
+    const cell = (content: ReactNode) => (member ? <Collapsible>{content}</Collapsible> : content)
     return (
-      <tr key={rowKey(row)} role="row" className={styles.row}>
+      <tr
+        key={rowKey(row)}
+        role="row"
+        className={member ? `${styles.row} ${styles.memberRow}` : styles.row}
+        inert={member ? !member.open : undefined}
+      >
         <th role="rowheader" scope="row" className={styles.identity}>
-          <div className={styles.identityValue}>{identity.cell(row)}</div>
-          {columns.length > 0 && (
-            <dl className={styles.stacked}>
-              {columns.map(column => (
-                <div key={column.id} className={styles.stackedItem}>
-                  <dt>{column.header}</dt>
-                  <dd>{column.cell(row)}</dd>
-                </div>
-              ))}
-            </dl>
+          {cell(
+            <>
+              <div className={styles.identityValue}>{identity.cell(row)}</div>
+              {columns.length > 0 && (
+                <dl className={styles.stacked}>
+                  {columns.map(column => (
+                    <div key={column.id} className={styles.stackedItem}>
+                      <dt>{column.header}</dt>
+                      <dd>{column.cell(row)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </>,
           )}
         </th>
         {status && (
           <td role="cell" className={styles.status}>
-            {status.cell(row)}
+            {cell(status.cell(row))}
           </td>
         )}
         {columns.map(column => (
           <td key={column.id} role="cell" className={styles.secondary}>
-            {column.cell(row)}
+            {cell(column.cell(row))}
           </td>
         ))}
         {actions && (
           <td role="cell" className={styles.actions}>
-            <div className={styles.actionList}>{actions(row)}</div>
+            {cell(<div className={styles.actionList}>{actions(row)}</div>)}
           </td>
         )}
       </tr>
@@ -125,7 +152,11 @@ export function DataTable<Row>({
               type="search"
               autoComplete="off"
               value={query}
-              onChange={event => setQuery(event.target.value)}
+              onChange={event => {
+                // The rows a filter adds or removes change at once; only a click on a toggle animates.
+                setClicked(new Set())
+                setQuery(event.target.value)
+              }}
             />
           )}
         </Field>
@@ -171,7 +202,13 @@ export function DataTable<Row>({
             ? groupRows(visible, group.key).map(([key, members]) => {
                 const open = !collapsed.has(key)
                 return (
-                  <tbody key={key} role="rowgroup" className={styles.group}>
+                  <tbody
+                    key={key}
+                    role="rowgroup"
+                    className={styles.group}
+                    data-open={open}
+                    data-animate={clicked.has(key) || undefined}
+                  >
                     <tr role="row" className={styles.groupRow}>
                       <th role="rowheader" scope="rowgroup" colSpan={columnCount} className={styles.groupHeader}>
                         <button
@@ -180,16 +217,18 @@ export function DataTable<Row>({
                           aria-expanded={open}
                           onClick={() => toggle(key)}
                         >
-                          <Icon name={open ? 'chevronUp' : 'chevronDown'} />
+                          <span className={styles.chevron}>
+                            <Icon name="chevronDown" />
+                          </span>
                           {group.header(key, members)}
                         </button>
                       </th>
                     </tr>
-                    {open && members.map(renderRow)}
+                    {members.map(row => renderRow(row, { open }))}
                   </tbody>
                 )
               })
-            : visible.length > 0 && <tbody role="rowgroup">{visible.map(renderRow)}</tbody>}
+            : visible.length > 0 && <tbody role="rowgroup">{visible.map(row => renderRow(row))}</tbody>}
         </table>
       </div>
     </div>

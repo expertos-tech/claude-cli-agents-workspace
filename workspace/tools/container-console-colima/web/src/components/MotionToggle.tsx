@@ -13,7 +13,7 @@ function readMotionEnabled(): boolean {
   }
 }
 
-/** Writes the choice to the attribute the motion token depends on. */
+/** Writes the choice to the attribute the motion tokens depend on. */
 function applyMotion(enabled: boolean): void {
   if (enabled) {
     delete document.documentElement.dataset.motion
@@ -27,7 +27,7 @@ export function applyStoredMotion(): void {
   applyMotion(readMotionEnabled())
 }
 
-/** The user toggle of data motion. */
+/** The user toggle of every animation: data changes and the interface. */
 export function MotionToggle() {
   const [enabled, setEnabled] = useState(readMotionEnabled)
 

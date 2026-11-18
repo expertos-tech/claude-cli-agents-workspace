@@ -78,9 +78,77 @@
   cursor: pointer;
 }
 
-.groupToggle > svg {
+.chevron {
+  display: inline-flex;
   flex: none;
   margin-top: 0.125rem;
+}
+
+/* One chevron: pointing right while closed, down while open. */
+.groupToggle[aria-expanded="false"] .chevron {
+  transform: rotate(-90deg);
+}
+
+.group[data-animate] .chevron {
+  transition: transform var(--motion-ui) ease-out;
+}
+
+/*
+ * The rows of a closed group keep their place with no height: the content of each cell sits in a
+ * grid row that goes from 1fr to 0fr, and the cell loses its vertical padding and its border.
+ * Hidden only once collapsed, so they leave the accessibility tree; `inert` keeps them out of the
+ * tab order meanwhile.
+ */
+.group[data-open="false"] > .memberRow {
+  visibility: hidden;
+}
+
+.group[data-open="false"] > .memberRow > * {
+  padding-block: 0;
+  border-bottom-width: 0;
+}
+
+.collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.group[data-open="false"] .collapse {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+/*
+ * Clipped only vertically: `clip` is not a scroll container, so the cell keeps the minimum width of
+ * its content and the table columns stay as wide as before. The 4 px above and below keep the focus
+ * ring (2 px plus 2 px of offset) from being cut.
+ */
+.collapseInner {
+  min-height: 0;
+  margin-block: -0.25rem;
+  padding-block: 0.25rem;
+  overflow: visible clip;
+}
+
+/* Only a click animates: the first render, the filter and the live rows change at once. */
+.group[data-animate] > .memberRow {
+  transition: visibility 0s linear var(--motion-ui);
+}
+
+.group[data-animate][data-open="true"] > .memberRow {
+  transition-delay: 0s;
+}
+
+.group[data-animate] > .memberRow > * {
+  transition-duration: var(--motion-ui);
+  transition-property: padding-block, border-bottom-width;
+  transition-timing-function: ease-out;
+}
+
+.group[data-animate] .collapse {
+  transition-duration: var(--motion-ui);
+  transition-property: grid-template-rows, opacity;
+  transition-timing-function: ease-out;
 }
 
 .groupToggle:hover {
@@ -173,6 +241,22 @@
   .row {
     padding: var(--space-3) 0;
     border-bottom: 1px solid var(--table-border);
+  }
+
+  .group[data-open="false"] > .memberRow {
+    padding-block: 0;
+    border-bottom-width: 0;
+  }
+
+  .group[data-animate] > .memberRow {
+    transition:
+      visibility 0s linear var(--motion-ui),
+      padding-block var(--motion-ui) ease-out,
+      border-bottom-width var(--motion-ui) ease-out;
+  }
+
+  .group[data-animate][data-open="true"] > .memberRow {
+    transition-delay: 0s;
   }
 
   .row:last-child {

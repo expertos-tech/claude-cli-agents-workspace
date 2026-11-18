@@ -5,9 +5,9 @@ import { Icon, type IconName } from './Icon'
 type Variant = 'primary' | 'secondary'
 type Size = 'regular' | 'compact'
 
-/** Joins the classes of a button. */
-function classesOf(variant: Variant, size: Size): string {
-  return `${styles.button} ${styles[variant]} ${styles[size]}`
+/** Joins the classes of a button, plus one from the caller. */
+function classesOf(variant: Variant, size: Size, extra?: string): string {
+  return [styles.button, styles[variant], styles[size], extra].filter(Boolean).join(' ')
 }
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -27,6 +27,7 @@ export function Button({
   icon,
   busy = false,
   type = 'button',
+  className,
   onClick,
   children,
   ...rest
@@ -44,7 +45,7 @@ export function Button({
     <button
       {...rest}
       type={type}
-      className={classesOf(variant, size)}
+      className={classesOf(variant, size, className)}
       aria-disabled={busy || undefined}
       onClick={handleClick}
     >
