@@ -35,7 +35,7 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - `/caw-request` works in a clone on a work branch under `tmp/work/<yyyy-mm-dd>-<slug>/` (`claudeMdExcludes` covers
   `tmp/**`), so several requests run in separate sessions, each in its own clone. Respect the order in
   `maintainers/requests/README.md`: a request starts only after the ones it depends on are merged. `/caw-merge` takes
-  each into `developer`, one at a time, with `bash tests/check.sh --all` green.
+  each into `developer`, one at a time, with `bash tests/check.sh --base origin/developer --i18n-pending` green.
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
 - Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
