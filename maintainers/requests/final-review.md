@@ -113,7 +113,7 @@ and hooks to work safely across several projects.
 
 ## 7. Out of scope
 
-- New features that are not the fix of a finding. Ideas go to `maintainers/backlog/`.
+- New features that are not the fix of a finding. An idea becomes a pending request in `maintainers/requests/`, in state `idea`.
 - Old lint of the tools in `tools/`, which does not go through the gate.
 - Changes to the user's projects.
 
