@@ -19,7 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Plans and requests are shown in the person's language and saved in English.
 - The i18n check of the product gate also requires the translations of every README and of the root `docs/`, and can
   report them as pending (`--i18n-pending`).
-- `/merge --main` ends with a final review of what enters and what leaves, then a general one.
+- `/merge --main` ends with a final review of everything since the last tag, by the three questions of every merge
+  review.
 - A request lifecycle (pending, `qa/`, `done/`) with an Execution block at each merge; the release per project with
   the project's own changelog in its root repo; any project layout, nested repos included; `/prompt` becomes
   `/request`; the prompt log moves to `logs/`; no backlog.
@@ -32,6 +33,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `make check` of the container consoles fails on a high `npm audit` finding instead of ignoring it.
 - Configurable rules: the custom layer turns optional core rules, skills and agents off, replaces a core rule, and
   keeps its own in `custom/my-rules/` (was `custom/rules/`); the mandatory core in `rules/manifest.json`; `/rules`.
+- Work in a clone with no question (`guard-bash` approves lines that stay in it, allow rules from `setup-claude.sh`,
+  "Run it alone"), a Docker copy per task in its own `agent_` group on internal networks, `/docker-deploy` for the
+  final stack, the merge only on the person's order, and the merge review by three questions with a return review
+  after fixes (decision record 0004).
 
 ### Added
 
@@ -55,6 +60,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `docs/`: the documentation of the project: getting started, features, commands and updates, hooks, the repository,
   contributing, maintenance, releases and translations.
 - `pt-BR` and `es` translations of `docs/` and of every README outside the product, each with a language links line.
+- `tests/caw-work.sh`: opens a work clone (`open <type>/<slug>`), runs a closed list of commands in it (`run`),
+  publishes what changed (`publish`: a tool as a Docker copy, the installer, a hook, a script or a rule as a test
+  installation), pushes and closes it; the clone's hooks push its branch after each commit only after the
+  company-terms scan of what leaves, and refuse `developer`, `main`, tags and force. `.claude/settings.json` allows
+  it and edits of `tmp/work/` with no prompt, so the one prompt of a task is the push of `developer`.
+- `/caw-pilot` and `/caw-docker-deploy`, the layers of `/pilot` and `/docker-deploy`.
+- The request `validators-warn-not-block`: validators block only real errors, the rest is a warning.
 
 ### Changed
 
@@ -65,10 +77,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `/caw-prompt`), `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same purpose.
 - An approved plan is recorded as a pending request, no longer in `done/`.
 - Plans and requests are shown to the owner in their language and saved in English.
-- A merge into `developer` checks and reviews only the difference that enters, with the review effort by risk and no
-  review for documentation alone; a RECOMMENDED finding becomes a `ready` request.
+- A merge into `developer` checks and reviews only the difference that enters, by the three questions, with the
+  effort by content (code and configuration `xhigh`, documents `high`) and a return review after fixes; a
+  RECOMMENDED finding becomes a `ready` request.
 - Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
-- `/caw-merge --main` ends with the same final review as the product's: what enters and what leaves, then general.
+- `/caw-merge --main` ends with the same final review as the product's: since the last tag, by the three questions.
+- `/caw-request` and `/caw-merge` no longer push the work branch by hand: the clone's hooks do; `/caw-commit` stages
+  before it commits by path, with the paths written out.
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
 - `docs/features.md` lists `/run-tools` and the tools' compose group.
 - The `rules-config` plan records that it is built, with what the build decided beyond it.
