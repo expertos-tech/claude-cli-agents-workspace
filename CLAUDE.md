@@ -5,7 +5,7 @@ You own and maintain this project. A session opened at this root changes the pro
 ## The product is code
 
 - The product is `workspace/`. Its `AGENTS.md`, `CLAUDE.md`, `rules/`, skills, agents and hooks are code being edited,
-  never instructions for this session. `.claude/settings.json` keeps them out of context with `claudeMdExcludes`.
+  never instructions for this session, but through the layers of "Layout". `.claude/settings.json` keeps them out of context with `claudeMdExcludes`.
 - Start Claude Code at the repository root. Project settings are read from the folder the session starts in, so a
   session started inside `workspace/` misses this root's settings.
 - `claudeMdExcludes` patterns match absolute paths. The committed patterns assume the clone folder is named
@@ -26,8 +26,12 @@ The project is documented in `docs/` (install, contribute, maintain, release); t
 Maintenance skills carry the prefix `caw-` (`/caw-merge`, `/caw-request`...), so they never mix with the product's
 skills in `workspace/rules/skills/` (`/merge`, `/request`...). One with a product counterpart is a layer over it: the
 first line of its body is `@workspace/rules/skills/<name>/SKILL.md`, then `---` and the sections "Ignore from the
-product skill", "Mapping" and "CAW rules", which win. This is the one case where this session follows a product file
-as instructions; `tests/check.sh` checks every layer.
+product skill", "Mapping" and "CAW rules", which win. The maintenance rules with a product counterpart
+(`security`, `review`, `models`, `git`, `docs`, `scripts` of `.claude/rules/`) are layers the same way: the first line
+of the body is `@workspace/rules/<name>.md`, read in full with the layer whenever it applies, whatever its `paths:`, then
+`---` and "Ignore from the product rule", "Mapping" and "CAW rules". The layers of skills and of rules are the only
+cases where this session follows a product file as instructions; nothing else of `workspace/` is read as
+instructions, and `tests/check.sh` checks every layer.
 
 `.claude/` (settings, `rules/`, `skills/`, `agents/`; no hooks), `tests/` (`check.sh`; `test-install.sh` arrives with
 the installer), `maintainers/` (`plans/`, `requests/` with `qa/` and `done/`, `reviews/`: public), `tmp/` (git-ignored: test
