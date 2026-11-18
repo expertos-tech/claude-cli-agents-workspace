@@ -81,12 +81,16 @@ tbody:last-child > .row:last-child > * {
   opacity: 0;
 }
 
-/* The 4 px around the content keep the focus ring (2 px plus 2 px of offset) from being cut. */
+/*
+ * Clipped only vertically: `clip` is not a scroll container, so the cell keeps the minimum width of
+ * its content and the table columns stay as wide as before. The 4 px above and below keep the focus
+ * ring (2 px plus 2 px of offset) from being cut.
+ */
 .collapseInner {
   min-height: 0;
-  margin: -0.25rem;
-  padding: 0.25rem;
-  overflow: hidden;
+  margin-block: -0.25rem;
+  padding-block: 0.25rem;
+  overflow: visible clip;
 }
 
 /* Only a click animates: the first render, the filter and the live rows change at once. */
