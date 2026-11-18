@@ -1849,15 +1849,20 @@ LABEL = 'com.docker.compose.project'
 # Services of the group whose container reaches the host past its networks.
 HOST_REACHING = (
     'priv', 'caps', 'pid', 'ipc', 'uts', 'sock', 'run', 'varrun', 'root', 'badmount', 'nomounts', 'notype', 'tmpfs',
-    'dockercfg', 'colima', 'ssh', 'devices', 'seccomp', 'cloneroot', 'clonegit', 'gw',
+    'dockercfg', 'colima', 'ssh', 'devices', 'seccomp', 'cloneroot', 'clonegit', 'gw', 'pidpeer', 'ipcpeer', 'utsc',
+    'cgrouphost', 'cgroupc', 'otherpeer', 'nopeer', 'foreignvol', 'novolname', 'missingvol', 'nomode', 'oddmode',
+    'nnpmix',
 )  # fmt: skip
+# Services of the group whose container keeps to the group: a volume and a namespace of the group, no-new-privileges.
+KEEPS_TO_GROUP = ('data', 'grouppeer', 'nnp', 'nnptrue', 'shareable')
 HOME = os.path.expanduser('~')
 
 
-def box(*networks, privileged=False, capadd=None, pid='', ipc='private', uts='', mounts=(), devices=(), opts=None):
+def box(*networks, privileged=False, capadd=None, pid='', ipc='private', uts='', cgroupns='private', mounts=(),
+        devices=(), opts=None):  # fmt: skip
     """Returns what docker container inspect prints of a container (guard.CONTAINER_FORMAT) on those networks."""
     found = {'networks': {name: {} for name in networks}, 'privileged': privileged, 'capadd': capadd, 'pid': pid}
-    found.update({'ipc': ipc, 'uts': uts, 'mounts': list(mounts) if mounts is not None else None})
+    found.update({'ipc': ipc, 'uts': uts, 'cgroupns': cgroupns, 'mounts': list(mounts) if mounts is not None else None})
     found.update({'devices': list(devices), 'securityopt': opts})
     return found
 
@@ -1884,7 +1889,7 @@ class TrailTestCase(unittest.TestCase):
         'ps:' + GROUP + '/web': ['c-web'], 'ps:' + GROUP + '/foreign': ['c-foreign'],
         'ps:' + GROUP + '/nonet': ['c-nonet'], 'ps:' + GROUP + '/broken': ['c-missing'],
         'ps:' + GROUP + '/links': ['c-links'],
-        **{'ps:' + GROUP + '/' + name: ['c-' + name] for name in HOST_REACHING + ('data', 'flat')},
+        **{'ps:' + GROUP + '/' + name: ['c-' + name] for name in HOST_REACHING + KEEPS_TO_GROUP + ('flat',)},
         'c-db': box(GROUP + '_internal'), 'c-app1': box(GROUP + '_internal'), 'c-app2': box(GROUP + '_internal'),
         'c-web': box(GROUP + '_internal', GROUP + '_edge'), 'c-foreign': box('other_internal'), 'c-nonet': box(),
         'c-links': box('host'), 'c-priv': box(GROUP + '_internal', privileged=True),
@@ -1903,7 +1908,23 @@ class TrailTestCase(unittest.TestCase):
         'c-seccomp': box(GROUP + '_internal', opts=['seccomp:unconfined']),
         'c-gw': box(GROUP + '_gw'),
         'c-badmount': box(GROUP + '_internal', mounts=['x']), 'c-nomounts': box(GROUP + '_internal', mounts=None),
-        'c-data': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Source': '/var/lib/docker/volumes/x/_data'}]),
+        'c-data': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Name': GROUP + '_db', 'Source': '/v'}]),
+        'c-foreignvol': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Name': 'other_db', 'Source': '/v'}]),
+        'c-novolname': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Source': '/v'}]),
+        'c-missingvol': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Name': 'missing_db', 'Source': '/v'}]),
+        'c-grouppeer': box(GROUP + '_internal', pid='container:peer1', ipc='container:peer1'),
+        'c-pidpeer': box(GROUP + '_internal', pid='container:peer2'),
+        'c-ipcpeer': box(GROUP + '_internal', ipc='container:peer2'),
+        'c-otherpeer': box(GROUP + '_internal', cgroupns='container:peer2'),
+        'c-nopeer': box(GROUP + '_internal', pid='container:gone'), 'c-utsc': box(GROUP + '_internal', uts='private'),
+        'c-cgrouphost': box(GROUP + '_internal', cgroupns='host'), 'c-cgroupc': box(GROUP + '_internal', uts='host'),
+        'c-nomode': {**box(GROUP + '_internal'), 'pid': None},
+        'c-oddmode': box(GROUP + '_internal', pid='container:-x'),
+        'c-shareable': box(GROUP + '_internal', ipc='shareable'),
+        'c-nnp': box(GROUP + '_internal', opts=['no-new-privileges']),
+        'c-nnptrue': box(GROUP + '_internal', opts=['no-new-privileges:true']),
+        'c-nnpmix': box(GROUP + '_internal', opts=['no-new-privileges', 'apparmor=unconfined']),
+        'peer1': {LABEL: GROUP}, 'peer2': {LABEL: 'agent_1118-other'},
         'c-flat': 'null',
         GROUP + '_internal': {'internal': True, 'labels': {LABEL: GROUP}, 'options': ISOLATED},
         GROUP + '_gw': {'internal': True, 'labels': {LABEL: GROUP}, 'options': {}},
@@ -1965,7 +1986,7 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' exec app python3 -c "import os; print(os.environ)"',
             'docker compose -p ' + GROUP + ' exec app curl https://example.com',
             'docker compose -p ' + GROUP + ' exec app npm publish',
-            'docker compose -p ' + GROUP + ' exec data psql -c "DROP DATABASE x"',
+            *('docker compose -p ' + GROUP + ' exec ' + name + ' psql -c "DROP DATABASE x"' for name in KEEPS_TO_GROUP),
             'docker compose -p ' + GROUP + ' exec db psql -h prod.example.com -c "DROP DATABASE x"',
             'docker compose -p ' + GROUP + ' exec db psql postgresql://u@prod.example.com/app -c "DROP DATABASE x"',
             'docker compose -p ' + GROUP + ' exec db dropdb -h prod.example.com app',
@@ -2049,6 +2070,7 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' run -v billing-api_pgdata:/d app ls',
             'docker compose -p ' + GROUP + ' run --rm -v ./src:/app/src app pytest',
             'docker compose -p ' + GROUP + ' create', 'docker compose -p ' + GROUP + ' attach app',
+            'docker compose -p ' + GROUP + ' config', 'docker compose -p ' + GROUP + ' config --environment',
             'docker compose --project-name ' + GROUP + ' up -d --build', 'docker compose -p ' + GROUP + ' up -d',
             'docker compose -p ' + GROUP + ' build --no-cache app', 'docker compose -p ' + GROUP + ' start app',
             'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' up -d',

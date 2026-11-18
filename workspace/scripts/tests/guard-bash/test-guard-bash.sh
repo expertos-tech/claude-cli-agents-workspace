@@ -198,16 +198,17 @@ if [ "$1" = ps ]; then
   exit 0
 fi
 shift 4
+# What docker container inspect prints of a container that keeps to itself, after its networks.
+plain='"privileged":false,"capadd":null,"pid":"","ipc":"private","uts":"","cgroupns":"private","mounts":[]}'
 for name in "$@"; do
   case "$name" in
     agent_1118-add-export_db) echo '{"com.docker.compose.project":"agent_1118-add-export"}' ;;
     other_db) echo '{"com.docker.compose.project":"agent_1118-other"}' ;;
-    c-gw) echo '{"networks":{"agent_1118-add-export_gw":{}},"privileged":false,"capadd":null,"mounts":[]}' ;;
-    c-db) echo '{"networks":{"agent_1118-add-export_internal":{}},"privileged":false,"capadd":null,"mounts":[]}' ;;
-    c-sock) echo '{"networks":{"agent_1118-add-export_internal":{}},"privileged":false,"capadd":null,'\
-'"mounts":[{"Source":"/var/run/docker.sock"}]}' ;;
-    c-web) echo '{"networks":{"agent_1118-add-export_internal":{},"agent_1118-add-export_edge":{}},'\
-'"privileged":false,"capadd":null,"mounts":[]}' ;;
+    c-gw) echo "{\"networks\":{\"agent_1118-add-export_gw\":{}},$plain" ;;
+    c-db) echo "{\"networks\":{\"agent_1118-add-export_internal\":{}},$plain" ;;
+    c-sock) echo "{\"networks\":{\"agent_1118-add-export_internal\":{}},${plain%\"mounts\":[]\}}"\
+'"mounts":[{"Type":"bind","Source":"/var/run/docker.sock"}]}' ;;
+    c-web) echo "{\"networks\":{\"agent_1118-add-export_internal\":{},\"agent_1118-add-export_edge\":{}},$plain" ;;
     agent_1118-add-export_internal)
       echo '{"internal":true,"labels":{"com.docker.compose.project":"agent_1118-add-export"},"options":'\
 '{"com.docker.network.bridge.gateway_mode_ipv4":"isolated","com.docker.network.bridge.gateway_mode_ipv6":"isolated"}}' ;;

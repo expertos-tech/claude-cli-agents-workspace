@@ -105,16 +105,18 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
           clone folder), run from the clone with no docker global option and no DOCKER_* or COMPOSE_* variable on the
           line: docker compose -p <group> (or --project-name), -f naming only files of the clone or the copy's
           override tmp/work/<work>/agent-<clone>.compose.yaml, with down (-v, --volumes, --remove-orphans, -t, service
-          names), ps, logs, stop, restart, config, top, images, port, pause, unpause, or exec with only -T -i -t -d
-          -e -w -u --index (grouped short options read as docker does) into a service whose running containers, by
-          docker ps and docker inspect, are attached only to networks that are internal (no route out), carry the
-          label of the group and keep the host's gateway out (gateway_mode_ipv4 and _ipv6 isolated, Docker 28+).
+          names), ps, logs, stop, restart, top, images, port, pause, unpause (not config: it prints env files), or
+          exec with only -T -i -t -d -e -w -u --index (grouped short options read as docker does) into a service
+          whose running containers, by docker ps and docker inspect, are attached only to networks that are
+          internal (no route out), carry the label of the group and keep the host's gateway out (gateway_mode_ipv4
+          and _ipv6 isolated, Docker 28+).
           Then anything runs there with no question (a shell, an interpreter, a database tool and its DROP): it
           cannot reach another machine. A service that publishes ports is also on the non-internal <group>_edge
           network, so exec there, Docker that does not answer, no container, host or none networking keep today's
-          rules; so does a container that is not, by allowlist: not privileged, no added capabilities, no pid, ipc
-          or uts "host", no devices, no security options, and every mount a volume or a bind of a folder inside the
-          clone (not the clone itself, not its .git);
+          rules; so does a container that is not, by allowlist: not privileged, no added capabilities, its own pid,
+          ipc, uts and cgroup namespaces (or those of a container of the group), no devices, no security option but
+          no-new-privileges, and every mount a volume of the group or a bind of a folder inside the clone (not the
+          clone itself, not its .git);
           docker rm, rmi, image rm, volume rm or inspect, network rm of resources that all carry the label
           com.docker.compose.project=<group> (docker inspect, 5 s; Docker that does not answer, a resource with no
           label or of another group: today's rules).

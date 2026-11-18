@@ -2566,8 +2566,9 @@ COMPOSE_FLAGS = {'--dry-run', '--compatibility', '--all-resources', '--verbose'}
 # The docker compose subcommands allowed on the own group: they act on the containers the copy already has. up, build,
 # start, create, run, cp, attach, watch and the rest are left to the permission mode: a container starts only through
 # scripts/aiwp-cmds.sh up <work>/<clone>, which writes the copy's override and refuses a service that is not safe.
+# config is left out too: it prints the values of the env files, secrets among them.
 COMPOSE_SUBCOMMANDS = {
-    'down', 'ps', 'logs', 'stop', 'restart', 'config', 'top', 'images', 'port', 'pause', 'unpause', 'exec',
+    'down', 'ps', 'logs', 'stop', 'restart', 'top', 'images', 'port', 'pause', 'unpause', 'exec',
 }  # fmt: skip
 # The options of docker compose down and exec it knows, without and with a value; any other is not approved.
 DOWN_OPTIONS = ({'-v', '--volumes', '--remove-orphans'}, {'-t', '--timeout'})
@@ -2658,34 +2659,47 @@ ISOLATED_GATEWAY = ('com.docker.network.bridge.gateway_mode_ipv4', 'com.docker.n
 CONTAINER_FORMAT = (
     '{"networks":{{json .NetworkSettings.Networks}},"privileged":{{json .HostConfig.Privileged}},'
     '"capadd":{{json .HostConfig.CapAdd}},"pid":{{json .HostConfig.PidMode}},"ipc":{{json .HostConfig.IpcMode}},'
-    '"uts":{{json .HostConfig.UTSMode}},"devices":{{json .HostConfig.Devices}},'
-    '"securityopt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}}}'
+    '"uts":{{json .HostConfig.UTSMode}},"cgroupns":{{json .HostConfig.CgroupnsMode}},'
+    '"devices":{{json .HostConfig.Devices}},"securityopt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}}}'
 )
+# The namespace modes of a container that keep it to itself; container:<x> is judged by the group of <x>.
+PRIVATE_MODES = {
+    'pid': {'', 'private'}, 'ipc': {'', 'private', 'shareable', 'none'}, 'uts': {''}, 'cgroupns': {'', 'private'},
+}  # fmt: skip
+# The security options a container may carry: they only take privileges away.
+SAFE_SECURITY_OPTIONS = {'no-new-privileges', 'no-new-privileges:true', 'no-new-privileges=true'}
 
 
 def reaches_host(container, clone):
-    """True when a container (what CONTAINER_FORMAT prints) may reach the host past its networks, read as an
-    allowlist: it must not be privileged, add capabilities, share the host's pid, ipc or uts namespace, have devices
-    or security options, and every mount must be a volume or a bind of a folder inside the clone, out of its .git
-    (stays_in) and not the clone itself. Anything else, or what cannot be read, reaches the host."""
-    if container.get('privileged') is not False or container.get('capadd'):
-        return True
-    if any(container.get(key) == 'host' for key in ('pid', 'ipc', 'uts')):
-        return True
-    if container.get('devices') or container.get('securityopt'):
-        return True
+    """Returns None when a container (what CONTAINER_FORMAT prints) may reach the host past its networks, read as an
+    allowlist; else (the volumes it mounts, the containers whose namespaces it shares), both to be checked against
+    the group. It must not be privileged or add capabilities, its pid, ipc, uts and cgroup namespaces must be its
+    own (PRIVATE_MODES) or container:<x>, it must have no devices and only no-new-privileges as security options, and
+    every mount must be a named volume or a bind of a folder inside the clone, out of its .git (stays_in) and not the
+    clone itself. Anything else, or what cannot be read, may reach the host."""
+    if container.get('privileged') is not False or container.get('capadd') or container.get('devices'):
+        return None
+    if not set(container.get('securityopt') or []) <= SAFE_SECURITY_OPTIONS:
+        return None
+    volumes, peers = [], []
+    for key, private in PRIVATE_MODES.items():
+        mode = container.get(key)
+        if isinstance(mode, str) and mode.startswith('container:') and RESOURCE_NAME.match(mode[10:]):
+            peers.append(mode[10:])
+        elif mode not in private:
+            return None
     mounts = container.get('mounts')
-    if not isinstance(mounts, list):
-        return True
+    if not isinstance(mounts, list) or not all(isinstance(mount, dict) for mount in mounts):
+        return None
     for mount in mounts:
-        kind = mount.get('Type') if isinstance(mount, dict) else None
-        source = str(mount.get('Source') or '') if isinstance(mount, dict) else ''
-        if kind == 'volume':
+        kind, source, name = mount.get('Type'), str(mount.get('Source') or ''), str(mount.get('Name') or '')
+        if kind == 'volume' and RESOURCE_NAME.match(name):
+            volumes.append(name)
             continue
         inside = os.path.isabs(source) and stays_in(source, clone) and os.path.realpath(source) != clone
         if kind != 'bind' or not inside:
-            return True
-    return False
+            return None
+    return volumes, peers
 
 
 class DockerGroups:
@@ -2805,7 +2819,8 @@ class DockerGroups:
         (gateway_mode_ipv4 and _ipv6 isolated), as docker inspect says. A service that publishes ports is also on a
         non-internal network (<group>_edge): not isolated. No container, Docker that does not answer, a container
         with no network, host or none networking, or one that may reach the host past its networks (reaches_host,
-        against the clone): not isolated."""
+        against the clone; the volumes it mounts and the containers whose namespaces it shares must carry the label
+        of the group): not isolated."""
         if not RESOURCE_NAME.match(service):
             return False
         labels = ('label=' + GROUP_LABEL + '=' + group, 'label=' + SERVICE_LABEL + '=' + service)
@@ -2816,8 +2831,15 @@ class DockerGroups:
         if containers is None or not all(isinstance(found, dict) for found in containers):
             return False
         attached = [found.get('networks') for found in containers]
-        if any(reaches_host(found, clone) for found in containers):
+        shared = [reaches_host(found, clone) for found in containers]
+        if any(found is None for found in shared):
             return False
+        volumes = {volume for found, _ in shared for volume in found}
+        peers = {peer for _, found in shared for peer in found}
+        for kind, names in (('volume', volumes), ('container', peers)):
+            found = self.labels(kind, sorted(names)) if names else []
+            if found is None or any(item.get(GROUP_LABEL) != group for item in found):
+                return False
         if not all(isinstance(nets, dict) and nets for nets in attached):
             return False
         names = sorted({name for nets in attached for name in nets})
