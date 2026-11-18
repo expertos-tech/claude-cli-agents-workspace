@@ -24,6 +24,9 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
+0. First, before round 2: `autonomous-work` (work in the branch with no prompt, a Docker copy per task, the merge
+   only by the person); it delivers `work-branch-push-before-scan`, `review-docs-only-scope`, `review-effort-wording`
+   and `work-status-docker-stacks`, and removes `os-sandbox-trial`.
 1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
    (except `measure-quality-indicators`, which waits for `import-from-fork`).
 2. Round 2: `normalize-rules` first (the owner needs it to migrate the final project), then `fork-my-rules`,
@@ -39,6 +42,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 | Round | Request | Notes |
 | --- | --- | --- |
+| 0 | `autonomous-work.md` | Design: `plans/autonomous-work.md`; before round 2 |
 | 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
 | 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
