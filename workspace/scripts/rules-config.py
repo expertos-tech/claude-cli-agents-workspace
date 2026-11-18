@@ -324,7 +324,8 @@ class Workspace:
             path = os.path.join(skills_dir, name)
             if not is_folder(path) or not ITEM_NAME.match(name):
                 self.warn(f'{own_rel}/skills/{name} skipped: not a folder with a lowercase name')
-            elif not is_regular(os.path.join(path, 'SKILL.md')):
+            elif 'SKILL.md' not in os.listdir(path) or not is_regular(os.path.join(path, 'SKILL.md')):
+                # The exact name from the listing: on a file system that ignores case, skill.md would pass an open().
                 self.warn(f'{own_rel}/skills/{name} skipped: no SKILL.md')
             elif self._known('skills', name):
                 self.warn(f'{own_rel}/skills/{name} refused: a core skill has that name')
@@ -454,8 +455,8 @@ class Workspace:
                     self.warn(f'{shown} skipped: hidden')
                 elif not is_regular(path):
                     self.warn(f'{shown} skipped: not a regular file')
-                elif file == 'SKILL.md' and rel != 'SKILL.md':
-                    self.warn(f'{shown} skipped: a skill holds one SKILL.md, at its top')
+                elif file.lower() == 'skill.md' and rel != 'SKILL.md':
+                    self.warn(f'{shown} skipped: a skill holds one SKILL.md, at its top, with that exact name')
                 elif rel == 'SKILL.md':
                     text = read_text(path).lstrip('\ufeff')
                     filtered = self._filtered(f'skills/{name}/SKILL.md', text, f'custom-{name}', SKILL_KEYS)

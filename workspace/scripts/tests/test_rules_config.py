@@ -13,6 +13,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 PRODUCT = SCRIPTS.parent
@@ -294,6 +295,9 @@ class OwnItemTests(Base):
         self.root.write('custom/my-rules/skills/x/.claude/skills/evil/SKILL.md', '---\nhooks: x\n---\n')
         self.root.write('custom/my-rules/skills/x/.mcp.json', '{}')
         self.root.write('custom/my-rules/skills/x/sub/SKILL.md', '---\nallowed-tools: Bash(*)\n---\n')
+        self.root.write('custom/my-rules/skills/x/sub/.claude/skills/deep/SKILL.md', '---\nhooks: x\n---\n')
+        self.root.write('custom/my-rules/skills/x/sub/Skill.md', '---\nhooks: x\n---\n')
+        self.root.write('custom/my-rules/skills/lower/skill.md', '---\nhooks: x\n---\n')
         ws, out = self.build()
         copied = sorted(str(p.relative_to(out)) for p in out.rglob('*') if p.is_file() and 'skills' in p.parts)
         self.assertEqual(copied, ['skills/custom-x/SKILL.md', 'skills/custom-x/ref.md'])
@@ -301,6 +305,28 @@ class OwnItemTests(Base):
         self.assertIn('skills/x/.claude skipped: hidden', text)
         self.assertIn('skills/x/.mcp.json skipped: hidden', text)
         self.assertIn('skills/x/sub/SKILL.md skipped: a skill holds one SKILL.md, at its top', text)
+        self.assertIn('skills/x/sub/.claude skipped: hidden', text)
+        self.assertIn('skills/x/sub/Skill.md skipped', text)
+        self.assertIn('skills/lower skipped: no SKILL.md', text)
+        self.assertFalse((out / 'skills' / 'custom-lower').exists())
+
+    def test_skill_md_is_matched_by_its_exact_name(self):
+        """Regression (review of the fix): where the file system ignores case (macOS), skill.md answers to
+        SKILL.md; the skill is taken only when the listing holds the exact name, so an unfiltered skill.md never
+        reaches .claude/."""
+        self.root.write('custom/my-rules/skills/lower/skill.md', '---\nhooks: x\n---\n')
+        real = rc.is_regular
+
+        def ignoring_case(path):
+            """is_regular as on a file system that ignores case."""
+            head, tail = os.path.split(path)
+            match = [n for n in os.listdir(head) if n.lower() == tail.lower()] if os.path.isdir(head) else []
+            return real(os.path.join(head, match[0])) if match else False
+
+        with mock.patch.object(rc, 'is_regular', ignoring_case):
+            ws, out = self.build()
+        self.assertFalse((out / 'skills').exists())
+        self.assertIn('skills/lower skipped: no SKILL.md', self.warnings(ws))
 
     def test_byte_order_mark_and_unreadable_front_matter(self):
         """Regression (review of the fix): a BOM cannot hide the front matter; an unclosed one skips the skill."""
@@ -308,11 +334,13 @@ class OwnItemTests(Base):
         (self.root.base / 'custom/my-rules/skills/bom/SKILL.md').write_text('\ufeff---\nname: b\nhooks: x\n---\nbody\n')
         self.root.write('custom/my-rules/skills/open/SKILL.md', '\n---\nallowed-tools: Bash(*)\nbody\n')
         self.root.write('custom/my-rules/skills/plain/SKILL.md', 'no front matter\n')
+        self.root.write('custom/my-rules/skills/blank/SKILL.md', '\n---\nhooks: x\n---\nbody\n')
         ws, out = self.build()
         bom = (out / 'skills' / 'custom-bom' / 'SKILL.md').read_text()
         self.assertEqual(bom, '---\nname: custom-bom\n---\nbody\n')
         self.assertFalse((out / 'skills' / 'custom-open').exists())
         self.assertIn('skills/open/SKILL.md: its front matter cannot be read; the skill is skipped', self.warnings(ws))
+        self.assertFalse((out / 'skills' / 'custom-blank').exists())
         self.assertEqual((out / 'skills' / 'custom-plain' / 'SKILL.md').read_text(), 'no front matter\n')
 
     def test_yaml_forms_never_bring_a_key(self):
