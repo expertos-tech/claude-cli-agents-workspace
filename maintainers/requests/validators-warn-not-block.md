@@ -58,6 +58,10 @@ this repository.
   an error: it is never reported as a BLOCKER of the delivery.
 - BR-10: the review of a change to an existing script (an installer, a hook) covers only the difference, not the whole
   script again.
+- BR-12: the effort of the merge review goes by the base, not by content: a merge into `developer` effort `medium`, a
+  merge into `main` (release, hotfix) effort `high`. It replaces the split by content of `autonomous-work` (BR-15:
+  `xhigh` for code and configuration, `high` for documents), and `xhigh` leaves the rules. The return review after
+  fixes (BR-8) keeps its focused part at `high` and its light part at `medium`.
 - BR-11: the warnings have one format in the product and in the maintenance, short, each with what was seen, why it
   may be a problem, and what the person can do; the closing board and the merge summary list them under
   "Warnings".
@@ -76,6 +80,8 @@ this repository.
 - AC-5: Given a merge into `developer`, then its summary lists every warning of the delivery once, for the person to
   decide; the implementation itself did not stop for any of them.
 - AC-6: Given the change of an existing installer or hook, then its review covers only the difference.
+- AC-8: Given a merge into `developer`, then its review runs with effort `medium`; given a merge into `main` (release or
+  hotfix), with effort `high`; no rule or skill of the product or the maintenance names `xhigh`.
 - AC-7: Given `tests/check.sh --all`, then the hooks' suites prove BR-2 refusals still hold, and the texts of
   `rules/review.md`, `.claude/rules/review.md`, `/merge`, `/caw-merge`, the `reviewer` agents and `AGENTS.md` /
   `CLAUDE.md` say the same rules.
@@ -89,7 +95,7 @@ this repository.
 
 | Step | Effort | Why |
 | --- | --- | --- |
-| 1. The rule: BR-2's closed list, the BLOCKER/WARNING criteria, the authorizations in the brief, the warning format (product `rules/review.md`, `rules/security.md`, `AGENTS.md`; maintenance `.claude/rules/review.md`, `security.md`, `CLAUDE.md`; the `reviewer` agents) | high | It decides what stops a delivery |
+| 1. The rule: BR-2's closed list, the BLOCKER/WARNING criteria, the authorizations in the brief, the warning format, the review effort by base (BR-12; also `rules/models.md`, `.claude/rules/models.md`, `/merge`, `/caw-merge`) (product `rules/review.md`, `rules/security.md`, `AGENTS.md`; maintenance `.claude/rules/review.md`, `security.md`, `CLAUDE.md`; the `reviewer` agents) | high | It decides what stops a delivery |
 | 2. The hooks and scripts: each deny or ask of `guard-bash`, the gate, `caw-work.sh` and the copy's checks classified as BR-2 (kept) or warning (an ask becomes a printed warning, or nothing), with tests | high | Hooks of the mandatory core |
 | 3. The merge skills and `/draft-request`: warnings gathered once at the merge summary and at the writing of the request (BR-7, BR-11) | medium | Rules and skills with a clear scope |
 | 4. Docs and the decision record that changes (0004, or a new one) | medium | Documentation |
