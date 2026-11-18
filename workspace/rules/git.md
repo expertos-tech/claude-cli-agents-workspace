@@ -45,8 +45,9 @@ The base of a project receives only what the gate checked: `/merge [<work>/<clon
 
 A wave is one step of a plan in steps ("Steps and effort" of a request); a request with one step or none is one wave, closed when it ends. A question or read-only work opens none, and neither does `/draft-request`: its own commit and push are its checkpoint.
 
-- Mature part: its tests pass. It goes through the gate at once, without waiting for the wave to close.
-- A base that publishes to production (a pipeline of the repo deploys from it, or its docs say so): the gate asks the human before phase 2; without the human's order the part stays on its branch, and the closing board lists that merge as pending.
+- A part never goes through the gate on its own: the merge happens only when the human types `/merge` (the gate refuses phase 2 otherwise).
+- End of a task: the tests of what changed pass; publish the task's Docker copy (`bash scripts/aiwp-cmds.sh up <work>/<clone>`; a project with no compose stack: nothing to publish); the closing board gives the copy's addresses, what to test (one item per acceptance criterion) and the two ways out. `/pilot` decides who runs the detailed check of the copy (`rules/quality.md` "Verification mode").
+- A base that publishes to production (a pipeline of the repo deploys from it, or its docs say so): the gate asks the human before phase 2.
 
 Closing a wave, in this order:
 
@@ -60,9 +61,12 @@ Closing a wave, in this order:
 WAVE CLOSED: <step>
 Done:       <what changed; repo, branch and sha pushed>
 Verified:   <check and result>
+Copy:       <group agent_<MMDD>-<slug>: each address with its port | none: no compose stack>
+Test:       <one item per acceptance criterion: what to do on the copy and what to see>
 Left:       <next steps, with effort | nothing: the plan is over>
-Pending:    <merge into a production base, refused push | none>
+Pending:    <refused push | none>
 Request:    custom/requests/<file>.md | none
+➜ Approved: /merge <work>/<clone>   Not approved: bash scripts/aiwp-cmds.sh close <work> --discard
 ➜ You can clear the context and start a new session[: /request <file>.md]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

@@ -1,12 +1,13 @@
 ---
 name: merge
-description: "Take the work of a clone in tmp/work/ into the base of its project (developer) through the gate, writing the versioned CHANGELOG and moving its request to qa; with --main, validate everything in qa and release the project (every repo, the root changelog, the tags); with --hotfix, fix an error of production from main as a patch version, then merge main down into developer. No argument: the clone of this session. Use when a delivery is ready, or when the user asks to merge, release or fix production."
+description: "Take the work of a clone in tmp/work/ into the base of its project (developer) through the gate, writing the versioned CHANGELOG and moving its request to qa; with --main, validate everything in qa and release the project (every repo, the root changelog, the tags); with --hotfix, fix an error of production from main as a patch version, then merge main down into developer. No argument: the clone of this session. Only the person runs it: the model never invokes it, and the gate refuses its phase 2 unless the person typed /merge in this session."
 argument-hint: "[<work>/<clone> [request file] | --main <project> [instructions] | --hotfix <project> <description>]"
+disable-model-invocation: true
 model: claude-opus-5-5
 effort: high
 ---
 
-Arguments: `$ARGUMENTS`. Reply in the language of the conversation. This is the only way into `projects/` (`rules/git.md` "Gate"). The request lifecycle is `rules/git.md` "Requests".
+Arguments: `$ARGUMENTS`. Reply in the language of the conversation. This is the only way into `projects/` (`rules/git.md` "Gate"), and it runs only on the person's order: the `UserPromptSubmit` hook records each `/merge` the person types, and `gate --merge` refuses with no record from this session. Never ask the person to let you run it; at the end of a task, offer it as a way out (`rules/git.md` "Waves"). The request lifecycle is `rules/git.md` "Requests".
 
 ## Which work
 

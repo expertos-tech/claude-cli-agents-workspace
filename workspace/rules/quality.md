@@ -76,6 +76,7 @@ Who runs a check a human could do by hand (running the app, a browser, a screens
 - `manual`: once the automatic checks pass, give the human a numbered list, one item per change: what changed, where to see it, short steps with the command ready to copy, the expected result and what to send back. Then wait.
 - `manual`, a return that asks for a change: change only what it asks. The delivery closes when every item is ok, when the human asks to finish (switch to `auto` for the rest), or when the human waives an item (list it as not verified).
 - The delivery summary names the mode and, per check, who ran it and the result.
+- The checks of a delivery run on the task's Docker copy (`bash scripts/aiwp-cmds.sh up <work>/<clone>`, its own group and ports), never on the final stack; the closing board gives its addresses and one test item per acceptance criterion (`rules/git.md` "Waves").
 
 ## Readability
 
