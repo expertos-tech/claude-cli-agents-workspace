@@ -1069,6 +1069,7 @@ test_check_repo_terms_skips_accepted_terms() {
   cp "$HERE/check.sh" "$k/tests/check.sh"
   cp "$HERE/lib/terms.sh" "$k/tests/lib/terms.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-work.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-review-fixtures.sh"
   cat >"$k/workspace/scripts/check-workspace.sh" <<'STUB'
 #!/usr/bin/env bash
 cp "$AIWP_TERMS_FILE" "$GATE_TERMS_OUT"
