@@ -39,7 +39,7 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - Release once per batch of requests, after the final review, not once per request; installed workspaces then get one
   reviewed update.
 - Hooks, the installer, security and risky actions: effort high, and an independent review (`review.md`) before the
-  stage closes. A review covers only the difference it is given; a RECOMMENDED finding becomes a `ready` request.
+  stage closes; after its fixes, the return review (`review.md`). A review covers only the difference it is given; a RECOMMENDED finding becomes a `ready` request.
 - A stage that cannot finish: write where it stopped and the next steps into the request, or into `tmp/request.md`.
 
 ## 5. Prove

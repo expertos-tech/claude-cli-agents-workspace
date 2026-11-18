@@ -33,9 +33,25 @@
   are BLOCKERs; at a hotfix, so is every change beyond the error.
 - A security finding counts only when a second clean-context review confirms it from the code.
 
+## The return review
+
+After the fixes of a review's findings, at a merge into `developer` or `main` and at the review of a stage
+(`process.md` step 4), the same as the product (`workspace/rules/review.md` "The return review"): two `reviewer`
+subagents (claude-opus-5-5) in parallel, never the one that found them.
+
+- **Focused**, effort `high`: each finding of the round before and its fix: fixed or not, the same class of defect in
+  another spelling or case, a test that proves it, what the fix broke. Brief: the findings as reported, the commits of
+  the fixes, what the suite proved.
+- **Light**, effort `medium`: the whole range again, only for a BLOCKER the fixes caused; anything else becomes a
+  `ready` request. Brief: the range and the commits of the fixes, with no finding.
+- A class that comes back after a fix: the next fix changes approach (an allowlist instead of a blocklist, a narrower
+  scope, a refusal instead of an approval), never one more spelling.
+- A third return review with a BLOCKER still open: stop and give the owner the open findings and the options: narrow
+  the change, merge without that part with a `ready` request, or keep fixing.
+
 ## Findings
 
-- BLOCKER: fix it, rerun the suite, and review the fix (the same review, only the fix).
+- BLOCKER: fix it, rerun the suite, then the return review below.
 - RECOMMENDED: never blocks a merge. At a merge into `developer` each becomes a `ready` request
   (`maintainers/requests/<kebab-title>.md`, adjustment size, source: the review), listed in the summary and fixed
   when the owner asks. At the release the owner chooses per finding: fix now, or a request.

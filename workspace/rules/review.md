@@ -2,7 +2,7 @@
 
 ## When
 
-Once per merge, between the two phases of the gate (`rules/git.md` "Gate", `/merge`), on every change to a project. A further round only when the human asks, or on the fix of a BLOCKER (the same review, only the fix).
+Once per merge, between the two phases of the gate (`rules/git.md` "Gate", `/merge`), on every change to a project. A further round only when the human asks, or after the fixes of its findings ("The return review").
 
 | Merge | Scope |
 | --- | --- |
@@ -33,9 +33,22 @@ Once per merge, between the two phases of the gate (`rules/git.md` "Gate", `/mer
 - The reviewer never edits, and never re-runs a check that passed on the tree it reviews.
 - A release also checks the CHANGELOG against question 1 (an entry with no change behind it, a change a user would notice with no entry). A hotfix goes to production: every change beyond the error described is a BLOCKER, even when it is right, and so is a cherry-picked commit that depends on anything not on `main`.
 
+## The return review
+
+After the fixes of a review's findings, the same at a merge into `developer` and into `main`: two `reviewer` subagents in parallel, clean context, never the reviewer that found them.
+
+| Part | Scope | Effort | Reports |
+| --- | --- | --- | --- |
+| Focused | Each finding of the round before and its fix | `high` | Per finding: fixed or not; the same class of defect in another spelling or case; a test that proves the fix; what the fix itself broke |
+| Light | The whole range again | `medium` | Only a BLOCKER that the fixes caused (a regression); anything else becomes a `ready` request |
+
+- Brief of the focused part: each finding as reported, the commits of its fix, and what the suite proved. Brief of the light part: the range and the commits of the fixes, with no finding.
+- A finding whose class comes back after a fix: the next fix changes approach (a list of what is allowed instead of what is refused, a narrower scope, a refusal instead of an approval), never one more spelling.
+- A third return review with a BLOCKER still open: stop, and give the human the open findings and the options: narrow the change, merge without that part with a `ready` request for it, or keep fixing.
+
 ## Findings
 
-- BLOCKER: correctness, security, data loss, a broken or unproven acceptance criterion, an UNEXPLAINED change or loss, a failing test, a weaker gate or hook. Fix it in the clone and run the gate again from phase 1.
+- BLOCKER: correctness, security, data loss, a broken or unproven acceptance criterion, an UNEXPLAINED change or loss, a failing test, a weaker gate or hook. Fix it in the clone, run the gate again from phase 1, then the return review.
 - RECOMMENDED: everything else. It never returns the branch and never opens a round. At a merge into `developer` it becomes a `ready` request in `custom/requests/`; at a release the human chooses per finding: fix now, or a request (`rules/skills/merge/SKILL.md` "Release" step 5).
 - A finding is not accepted only because it came. Check why the code is that way. Still disagree: give the human both positions and let the human decide.
 - Never report style the formatter fixes. Never praise.

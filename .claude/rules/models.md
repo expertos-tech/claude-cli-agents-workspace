@@ -10,6 +10,7 @@
 | --- | --- | --- | --- |
 | Gaps of a plan or request | `requirements-analyst` | claude-opus-5-5 | high |
 | Merge review | `reviewer` | claude-opus-5-5 | by content (`review.md`): xhigh or high |
+| Return review after fixes | `reviewer`, two in parallel | claude-opus-5-5 | high focused on the findings, medium light on the whole range |
 | Independent review of a stage | `reviewer` | claude-opus-5-5 | high |
 | Scripts, hooks and their tests | `script-engineer` | claude-opus-5-5 | high for hooks and the installer, else medium |
 | Docs in English | `docs-writer` | claude-sonnet-5-5 | medium |

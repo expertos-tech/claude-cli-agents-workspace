@@ -116,7 +116,7 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    clone, against every request of `maintainers/requests/qa/`.
 7. **The findings, once** (the product's step 5): per finding, (1) fix now in the release clone or (2) a request in
    `maintainers/requests/`; a BLOCKER sent to a request stops the release. Fixes or requests written in the clone: rerun step 5 (which
-   records and pushes again) and review the fixes. The sha is the one step 5 recorded last, equal to the pushed
+   records and pushes again) and the return review of the fixes (`.claude/rules/review.md`). The sha is the one step 5 recorded last, equal to the pushed
    `fix/release-vX-Y-Z` and to HEAD.
 8. **Into `developer`:** phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone
    moved after the sha was recorded: back to step 5.
@@ -161,7 +161,7 @@ names in `maintainers/requests/`, else the description.
    `git -C <clone> rev-list origin/main..origin/developer` is empty). Passed: record `git -C <clone> rev-parse HEAD`
    and push `fix/<slug>` with upstream.
 6. **Review against `main`** (the product's step 7, `.claude/rules/review.md`) on `<last tag>..<sha>`, widened as
-   needed, with the error described. A BLOCKER: fix in the clone and back to step 5. A RECOMMENDED: a
+   needed, with the error described. A BLOCKER: fix in the clone, back to step 5, then the return review (`.claude/rules/review.md`). A RECOMMENDED: a
    `ready` request in `maintainers/requests/`, written in the down step (step 9), never on `main`.
 7. **Into `main`:** `main` here does not publish by itself (the installers take only tags), so: the owner's OK, with no
    BLOCKER open and HEAD still the recorded sha; then `git -C <clone> push origin <sha>:refs/heads/main` (a
