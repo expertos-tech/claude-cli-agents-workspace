@@ -9,12 +9,49 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BASE="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$BASE"' EXIT
+trap 'real_cleanup; rm -rf "$BASE"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE AIWP_TERMS_FILE
 # No terms list of this machine reaches the tests: each scenario sets its own.
 export AIWP_WORKSPACE="$BASE/no-workspace"
+# A fake docker first on PATH for every test (REAL_PATH keeps the machine's): it records each call in DOCKER_LOG and
+# answers from $DSTUB: containers/<project> (the compose folder; the container is c-<project>, web 80/tcp on host port
+# 61500), res/<kind>.<project> (the lines of docker <kind> ls for that label), config.json (docker compose config).
+REAL_PATH="$PATH"
+mkdir -p "$BASE/bin"
+export DOCKER_LOG="$BASE/docker.log" DSTUB="$BASE/dstub"
+cat >"$BASE/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >>"$DOCKER_LOG"
+label="com.docker.compose.project"
+case "$*" in
+  "version "*) [ -z "${DOCKER_DOWN:-}" ] || exit 1; echo 28.0 ;;
+  "ps -aq --filter label=$label="*) p="${4##*=}"; [ ! -f "$DSTUB/containers/$p" ] || echo "c-$p" ;;
+  "ps -aq --filter label=$label") for f in "$DSTUB"/containers/*; do [ -f "$f" ] && echo "c-${f##*/}"; done ;;
+  "inspect "*)
+    shift
+    sep=""
+    printf '['
+    for id in "$@"; do
+      p="${id#c-}"
+      printf '%s{"Id":"%s","Config":{"Labels":{"%s":"%s","%s.working_dir":"%s","com.docker.compose.service":"web"}},"State":{"Running":true},"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"61500"}]}}}' \
+        "$sep" "$id" "$label" "$p" "$label" "$(cat "$DSTUB/containers/$p")"
+      sep=","
+    done
+    printf ']\n'
+    ;;
+  "network ls --filter label=$label="* | "volume ls --filter label=$label="* | "image ls --filter label=$label="*)
+    p="${4#label="$label"=}"
+    [ ! -f "$DSTUB/res/$1.$p" ] || cat "$DSTUB/res/$1.$p"
+    ;;
+  compose*" config --format json"*) cat "$DSTUB/config.json" ;;
+  compose*" up -d --build"*) echo "cwd $PWD" >>"$DOCKER_LOG" ;;
+esac
+exit 0
+STUB
+chmod +x "$BASE/bin/docker"
+export PATH="$BASE/bin:$PATH"
 TODAY="$(date +%Y-%m-%d)"
 B="feat/sample-change"
 W="$TODAY-sample-change"
@@ -50,6 +87,12 @@ fixture() {
   mkdir -p "$R/tests/lib"
   cp "$HERE/caw-work.sh" "$R/tests/caw-work.sh"
   cp "$HERE/lib/terms.sh" "$R/tests/lib/terms.sh"
+  mkdir -p "$R/workspace/scripts"
+  cp "$HERE/../workspace/scripts/agent-copy.py" "$R/workspace/scripts/agent-copy.py"
+  rm -rf "$DSTUB" "$AIWP_WORKSPACE"
+  mkdir -p "$DSTUB/containers" "$DSTUB/res"
+  : >"$DOCKER_LOG"
+  unset DOCKER_DOWN CAW_TEST_INSTALL INSTALL_RESULT
   printf 'tmp/\n' >"$R/.gitignore"
   printf '# sample\n' >"$R/README.md"
   git -C "$R" add -A
@@ -655,6 +698,173 @@ test_close_discard() {
   has "discarded: tmp/work/$W"
   [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
   eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+}
+
+# Writes a tool of the clone: workspace/tools/<id>/compose.yaml (with $2 as its text) and an app file.
+tool_in_clone() {
+  mkdir -p "$C/workspace/tools/$1"
+  printf '%s\n' "$2" >"$C/workspace/tools/$1/compose.yaml"
+  printf 'print(1)\n' >"$C/workspace/tools/$1/app.py"
+}
+
+test_publish_routes_by_what_changed() {
+  fixture
+  run open "$B"
+  run publish "$W"
+  rc_is 0
+  has "nothing to publish"
+  mkdir -p "$C/docs" "$C/workspace/tools/acme-tool"
+  printf '# doc\n' >"$C/docs/guide.md"
+  printf '# tool\n' >"$C/workspace/tools/acme-tool/README.md"
+  run publish "$W"
+  rc_is 0
+  has "nothing to publish"
+  hasnt "test installation"
+  # A tool: its copy in its own group, with the installed workspace's configuration.
+  mkdir -p "$AIWP_WORKSPACE/custom/env" "$AIWP_WORKSPACE/custom/config/acme-tool"
+  printf 'ACME_KEY=k\n' >"$AIWP_WORKSPACE/custom/env/acme-tool.env"
+  tool_in_clone acme-tool 'services: {}'
+  printf '{"name":"acme-tool","services":{"web":{"build":{"context":"."},"container_name":"acme-tool","ports":[{"target":80,"published":"8080","protocol":"tcp"}],"volumes":[{"type":"bind","source":"%s/workspace/custom/config/acme-tool/users.json","target":"/c","read_only":true}]}}}\n' "$C" >"$DSTUB/config.json"
+  local g ov
+  g="$(printf 'agent_%s-sample-change--acme-tool' "$(date +%m%d)")"
+  ov="$R/tmp/work/$W/agent-acme-tool.compose.yaml"
+  run publish "$W"
+  rc_is 0
+  has "copy: workspace/tools/acme-tool"
+  has "group: $g"
+  has "published: $g"
+  has "port: web 80/tcp -> 6"
+  hasnt "test installation"
+  grep -q "^docker compose -p $g -f compose.yaml -f $ov --env-file $AIWP_WORKSPACE/custom/env/acme-tool.env up -d --build$" "$DOCKER_LOG"
+  check "the tool's copy in its group, with the installed env file" $?
+  grep -qx "cwd $C/workspace/tools/acme-tool" "$DOCKER_LOG"; check "from the clone's tool" $?
+  grep -q "source: \"$AIWP_WORKSPACE/custom/config/acme-tool/users.json\"" "$ov"; check "configuration bind from the installed custom/" $?
+  grep -q 'container_name: !reset null' "$ov"; check "fixed name dropped" $?
+  # A machine tool with no compose file: nothing to publish for it.
+  mkdir -p "$C/workspace/tools/acme-console"
+  printf 'x\n' >"$C/workspace/tools/acme-console/main.go"
+  run publish "$W"
+  has "nothing to publish for workspace/tools/acme-console: it has no compose.yaml"
+  # A script, a rule or the installer: a test installation.
+  rm -rf "$C/workspace/tools"
+  mkdir -p "$C/workspace/scripts"
+  printf 'echo\n' >"$C/workspace/scripts/x.sh"
+  cat >"$BASE/test-install.$CURRENT" <<'STUB'
+#!/usr/bin/env bash
+echo "test installation: $1/tmp/test-install/1"
+echo "PASS manifest"
+echo "workspace: $1/tmp/test-install/1/workspace"
+echo "result: ${INSTALL_RESULT:-PASS}"
+[ "${INSTALL_RESULT:-PASS}" = PASS ]
+STUB
+  chmod +x "$BASE/test-install.$CURRENT"
+  export CAW_TEST_INSTALL="$BASE/test-install.$CURRENT"
+  run publish "$W"
+  rc_is 0
+  has "  workspace: $C/tmp/test-install/1/workspace"
+  has "  result: PASS"
+  hasnt "PASS manifest"
+  has "published: test installation"
+  [ -f "$R/tmp/work/$W/agent-test-install.log" ]; check "log kept beside the clone" $?
+  INSTALL_RESULT=FAIL run publish "$W"
+  rc_is 1
+  has "error: the test installation failed"
+  rm -rf "$C/workspace/scripts"
+  mkdir -p "$C/.claude/rules"
+  printf 'x\n' >"$C/.claude/rules/x.md"
+  run publish "$W"
+  has "published: test installation"
+  unset CAW_TEST_INSTALL
+  run publish
+  rc_is 2
+  run publish 2026-01-01-missing
+  rc_is 1
+}
+
+test_status_and_close_with_copy_groups() {
+  fixture
+  run open "$B"
+  local g
+  g="$(printf 'agent_%s-sample-change--acme-tool' "$(date +%m%d)")"
+  echo "$C/workspace/tools/acme-tool" >"$DSTUB/containers/$g"
+  echo "/elsewhere" >"$DSTUB/containers/agent_0101-other"
+  echo "$C" >"$DSTUB/containers/claude-cli-agents-workspace"
+  printf 'name: "%s"\n' "${g%-acme-tool}-down" >"$R/tmp/work/$W/agent-down.compose.yaml"
+  run status "$W"
+  rc_is 0
+  has "copy: $g running 1/1 ports=web:80->61500"
+  has "copy: ${g%-acme-tool}-down down ports=-"
+  hasnt "agent_0101-other"
+  DOCKER_DOWN=1 run status
+  rc_is 0
+  has "Docker: not reachable"
+  # A refused close destroys nothing.
+  printf 'x\n' >"$C/dirty.txt"
+  run close "$W"
+  rc_is 1
+  hasnt "agent-down.compose.yaml"
+  ! grep -q '^docker \(rm\|network rm\|volume rm\|image rm\)' "$DOCKER_LOG"; check "nothing destroyed" $?
+  printf 'sha256:b %s-web:latest\n' "$g" >"$DSTUB/res/image.$g"
+  run close "$W" --discard
+  rc_is 0
+  has "destroyed: $g (1 containers, 0 networks, 0 volumes, 1 images)"
+  has "nothing to destroy: ${g%-acme-tool}-down"
+  has "kept: claude-cli-agents-workspace (not a copy group)"
+  ! grep -q 'rm.*\(c-claude-cli-agents-workspace\|agent_0101\)' "$DOCKER_LOG"; check "another project removed" $?
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
+}
+
+# Real Docker, only names this test generates (the tool acme-t<random> and its agent_ group): a tool of the clone
+# published as a copy, its configuration bound from the installed workspace, then destroyed by close. Skipped when
+# Docker is not reachable or the base image is not on this machine (a test never downloads one).
+REAL_GROUP=""
+real_cleanup() {
+  [ -n "$REAL_GROUP" ] || return 0
+  PATH="$REAL_PATH" python3 -I "$HERE/../workspace/scripts/agent-copy.py" destroy "$REAL_GROUP" >/dev/null 2>&1
+  REAL_GROUP=""
+}
+
+test_real_docker_publish_of_a_tool() {
+  local image="${AIWP_TEST_BASE_IMAGE:-alpine:3.20}" rnd tool g id
+  if ! PATH="$REAL_PATH" docker version >/dev/null 2>&1 || ! PATH="$REAL_PATH" docker image inspect "$image" >/dev/null 2>&1; then
+    echo "SKIP $CURRENT: Docker not reachable or $image not on this machine"
+    return 0
+  fi
+  fixture
+  run open "$B"
+  rnd="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+  tool="acme-t$rnd"
+  g="agent_$(date +%m%d)-sample-change--$tool"
+  REAL_GROUP="$g"
+  tool_in_clone "$tool" "name: acmet$rnd
+services:
+  web:
+    build: .
+    image: acmet$rnd-web:latest
+    container_name: acmet$rnd-web
+    ports: [\"127.0.0.1:8080:80\"]
+    volumes:
+      - \${ACME_CFG:-../../custom/config/$tool/cfg.txt}:/cfg.txt:ro"
+  printf 'FROM %s\nCMD ["sh", "-c", "sleep 600"]\n' "$image" >"$C/workspace/tools/$tool/Dockerfile"
+  mkdir -p "$AIWP_WORKSPACE/custom/config/$tool"
+  printf 'from-installed\n' >"$AIWP_WORKSPACE/custom/config/$tool/cfg.txt"
+  OUT="$(cd "$R" && PATH="$REAL_PATH" bash "$R/tests/caw-work.sh" publish "$W" 2>&1)"
+  RC=$?
+  rc_is 0
+  has "published: $g"
+  id="$(PATH="$REAL_PATH" docker ps -q --filter "label=com.docker.compose.project=$g")"
+  [ -n "$id" ]; check "the copy runs" $?
+  eq "configuration from the installed workspace" from-installed "$(PATH="$REAL_PATH" docker exec "$id" cat /cfg.txt 2>&1)"
+  PATH="$REAL_PATH" docker exec "$id" env | grep -q '^AGENT_PORT_WEB_80=6'; check "port variable in the container" $?
+  OUT="$(cd "$R" && PATH="$REAL_PATH" bash "$R/tests/caw-work.sh" status "$W" 2>&1)"
+  has "copy: $g running 1/1 ports=web:80->6"
+  OUT="$(cd "$R" && PATH="$REAL_PATH" bash "$R/tests/caw-work.sh" close "$W" --discard 2>&1)"
+  RC=$?
+  rc_is 0
+  has "destroyed: $g"
+  eq "group gone" "" "$(PATH="$REAL_PATH" docker ps -aq --filter "label=com.docker.compose.project=$g")$(PATH="$REAL_PATH" docker image ls -q --filter "label=com.docker.compose.project=$g")$(PATH="$REAL_PATH" docker network ls -q --filter "label=com.docker.compose.project=$g")"
+  eq "no image of the tool's own name" "" "$(PATH="$REAL_PATH" docker image ls -q "acmet$rnd-web")"
+  real_cleanup
 }
 
 test_usage() {

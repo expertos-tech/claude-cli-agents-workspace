@@ -48,12 +48,31 @@ Commands:
         through the pre-push hook. Exit 1 when it is not pushed.
   status [<work>]
         Fetches origin (--prune), then one line per clone: branch, commits ahead of origin/developer, commits not on
-        the remote, files not committed, and whether the branch is in origin/developer.
+        the remote, files not committed, and whether the branch is in origin/developer; then one "copy:" line per
+        Docker copy group of the clone (state, host ports). Docker not reachable: one line "Docker: not reachable".
+  publish <work>[/<clone>]
+        Publishes what the clone changed against origin/developer (committed or not, new files included), so the
+        owner can test it:
+        - a tool (workspace/tools/<tool>/, other than its *.md and docs/): that tool as a copy, from the clone, in
+          its own Docker group agent_<MMDD>-<slug>--<tool> (-- never collides with another work's group), through an override file
+          tmp/work/<work>/agent-<tool>.compose.yaml (the group's own images, no fixed names, every published port
+          moved to a random free port in 61000-65535, the variables AGENT_PORT_<SERVICE>_<PORT> in its environment;
+          workspace/scripts/agent-copy.py, as aiwp-cmds.sh up). Its configuration is read from the
+          installed workspace: AIWP_WORKSPACE (default $HOME/Development/ai-workspace), its custom/env/<tool>.env and,
+          through AIWP_CUSTOM_DIR, its custom/config/. A tool with no compose.yaml has nothing to publish.
+        - the installer, a hook, a script or a rule (install.sh, tests/test-install.sh, workspace/scripts/,
+          workspace/rules/, workspace/AGENTS.md, workspace/CLAUDE.md, .claude/): a test installation,
+          bash tests/test-install.sh in the clone (its output in tmp/work/<work>/agent-test-install.log).
+        - anything else alone (documentation, translations, maintainers/, tests/check.sh): "nothing to publish".
+        Prints each copy's ports and addresses and where the test installation is. Exit 1 when one failed.
   close <work> [--discard]
         Fetches origin and refuses, listing what would be lost, when the work folder holds something that is not a
         clone made by open, or a clone with files not committed, a stash, commits not on the remote, or its branch
         not in origin/developer. Otherwise deletes the remote work branch (git push origin --delete, through the
-        pre-push hook) and tmp/work/<work>/. --discard deletes the folder anyway and leaves the remote branch.
+        pre-push hook) and tmp/work/<work>/. --discard deletes the folder anyway and leaves the remote branch. Before
+        the folder goes, the work's Docker copy groups are destroyed: the groups of its agent-*.compose.yaml files
+        and the agent_ projects whose compose folder lies in a clone, by the label com.docker.compose.project and only
+        when the name matches ^agent_[0-9]{4}-[a-z0-9][a-z0-9-]*$; a refused close destroys nothing.
 
 Git hooks of a clone (written by open into the clone's .git/hooks, with the clone's core.hooksPath set to it; never
 part of any repository). They call this script by the absolute path it had when it ran open.
@@ -73,6 +92,9 @@ part of any repository). They call this script by the absolute path it had when 
 
 Internal: _autopush <clone> [<post-rewrite kind>], _prepush <clone> <remote> (the ref lines on stdin).
 
+Environment: AIWP_WORKSPACE (publish: the installed workspace the tools' configuration comes from); CAW_TEST_INSTALL
+replaces bash tests/test-install.sh in publish (tests; it gets the clone as its argument).
+
 Exit codes: 0 ok; 1 refused or failed; 2 usage error.
 
 Examples:
@@ -81,6 +103,7 @@ Examples:
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- bash tests/check.sh --base origin/developer --i18n-pending
   bash tests/caw-work.sh push 2026-11-18-autonomous-work
   bash tests/caw-work.sh status
+  bash tests/caw-work.sh publish 2026-11-18-autonomous-work
   bash tests/caw-work.sh close 2026-11-18-autonomous-work
 USAGE
 }
@@ -414,7 +437,129 @@ clone_status() {
   git -C "$clone" merge-base --is-ancestor "refs/heads/$branch" refs/remotes/origin/developer 2>/dev/null && indev=yes
   printf '%s  branch=%s ahead=%s not-pushed=%s uncommitted=%s in-developer=%s%s\n' "${clone#"$root"/}" "$branch" \
     "$ahead" "$off" "$dirty" "$indev" "$note"
-  # Stage 3 (the Docker copy): the Docker groups of the clone (agent_<MMDD>-<slug>) are listed here, one line each.
+  copies_status "$clone"
+}
+
+# Runs the product's agent-copy.py of this repository (the Docker copy of a task: up, list, destroy).
+agent_copy() {
+  python3 -I "$root/workspace/scripts/agent-copy.py" "$@"
+}
+
+# Prints the groups the override files of a work folder record (agent-*.compose.yaml, their name: line).
+work_groups() {
+  local file
+  for file in "$1"/agent-*.compose.yaml; do
+    [ -f "$file" ] && sed -n 's/^name: "\(agent_[0-9a-z_-]*\)"$/\1/p' "$file" | head -n 1
+  done
+  return 0
+}
+
+# Prints the "copy:" lines of one clone, or "Docker: not reachable" once per run (docker_down records it).
+docker_down=0
+copies_status() {
+  local clone="$1" args group state ports out rc=0
+  [ "$docker_down" -eq 0 ] || return 0
+  args=(--under "$clone")
+  while IFS= read -r group; do [ -z "$group" ] || args+=(--group "$group"); done < <(work_groups "$(dirname "$clone")")
+  { command -v docker >/dev/null 2>&1 && [ -f "$root/workspace/scripts/agent-copy.py" ]; } || rc=3
+  [ "$rc" -ne 0 ] || out="$(agent_copy list "${args[@]}" 2>/dev/null)" || rc=$?
+  case "$rc" in
+    0) ;;
+    3) docker_down=1; echo "Docker: not reachable"; return 0 ;;
+    *) echo "  copy: the groups could not be listed"; return 0 ;;
+  esac
+  while IFS=$'\t' read -r group state ports; do
+    [ -z "$group" ] || echo "  copy: $group $state ports=$ports"
+  done <<<"$out"
+}
+
+# Destroys the Docker copy groups of a work folder (its override files' groups and the agent_ projects whose compose
+# folder lies in one of its clones), by label and agent_ name only. Returns non-zero when one was not destroyed.
+destroy_copies() {
+  local folder="$1" args=() group entry
+  while IFS= read -r group; do [ -z "$group" ] || args+=("$group"); done < <(work_groups "$folder")
+  for entry in "$folder"/*/; do [ -e "${entry}.git" ] && args+=(--under "${entry%/}"); done
+  [ "${#args[@]}" -gt 0 ] || return 0
+  { command -v docker >/dev/null 2>&1 && [ -f "$root/workspace/scripts/agent-copy.py" ]; } ||
+    { echo "Docker: not reachable: no copy destroyed"; return 1; }
+  agent_copy destroy "${args[@]}" 2>&1
+}
+
+# Prints the group of a work: agent_<MMDD>-<slug>.
+work_group() {
+  echo "agent_${1:5:2}${1:8:2}-${1:11}"
+}
+
+# Publishes one tool of the clone as a copy in its own group, with the installed workspace's configuration.
+publish_tool() {
+  local clone="$1" work="$2" tool="$3" dir ws custom args=() rc=0
+  dir="$clone/workspace/tools/$tool"
+  if [ ! -f "$dir/compose.yaml" ]; then
+    echo "nothing to publish for workspace/tools/$tool: it has no compose.yaml"
+    return 0
+  fi
+  ws="${AIWP_WORKSPACE:-$HOME/Development/ai-workspace}"
+  custom="$ws/custom"
+  [ ! -f "$custom/env/$tool.env" ] || args+=(--env-file "$custom/env/$tool.env")
+  echo "copy: workspace/tools/$tool"
+  if [ -d "$custom" ]; then
+    AIWP_CUSTOM_DIR="$custom" agent_copy up "$(work_group "$work")--$tool" "$dir" "$work_root/$work/agent-$tool.compose.yaml" \
+      ${args[@]+"${args[@]}"} --custom-root "$clone/workspace/custom" || rc=$?
+  else
+    echo "attention: $custom not found (AIWP_WORKSPACE): the copy runs without the installed configuration"
+    agent_copy up "$(work_group "$work")--$tool" "$dir" "$work_root/$work/agent-$tool.compose.yaml" || rc=$?
+  fi
+  return "$rc"
+}
+
+# Builds a test installation from the clone (tests/test-install.sh) and prints where it is.
+publish_install() {
+  local clone="$1" work="$2" log rc=0
+  log="$work_root/$work/agent-test-install.log"
+  echo "test installation: from tmp/work/$work/$clone_dir (log: ${log#"$root"/})"
+  if [ -n "${CAW_TEST_INSTALL:-}" ]; then
+    "$CAW_TEST_INSTALL" "$clone" >"$log" 2>&1 || rc=$?
+  else
+    (cd "$clone" && bash tests/test-install.sh) >"$log" 2>&1 || rc=$?
+  fi
+  grep -E '^(test installation:|workspace:|open a session:|result:|FAIL )' "$log" | sed 's/^/  /' || true
+  if [ "$rc" -eq 0 ]; then echo "published: test installation (above)"; else echo "error: the test installation failed (exit $rc): ${log#"$root"/}"; fi
+  return "$rc"
+}
+
+# publish: by what the clone changed against origin/developer, a tool copy, a test installation, or nothing.
+cmd_publish() {
+  [ $# -eq 1 ] || die 2 "usage: publish <work>[/<clone>]"
+  local clone work path install=0 tools=() tool seen=" " rc=0
+  case "$1" in --help | -h) usage; return 0 ;; esac
+  clone="$(clone_path "$1")"
+  work="$(basename "$(dirname "$clone")")"
+  fetch_origin "$clone" || echo "attention: origin not fetched: compared with origin/developer as of the last fetch"
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    case "$path" in
+      install.sh | tests/test-install.sh | workspace/scripts/* | workspace/rules/* | workspace/AGENTS.md | workspace/CLAUDE.md | .claude/*)
+        install=1 ;;
+      workspace/tools/*/*.md | workspace/tools/*/docs/*) ;;
+      workspace/tools/*/*)
+        tool="${path#workspace/tools/}"
+        tool="${tool%%/*}"
+        case "$seen" in *" $tool "*) ;; *) seen+="$tool "; tools+=("$tool") ;; esac
+        ;;
+    esac
+  done < <(
+    git -C "$clone" diff --name-only refs/remotes/origin/developer --
+    git -C "$clone" ls-files --others --exclude-standard
+  )
+  if [ "${#tools[@]}" -eq 0 ] && [ "$install" -eq 0 ]; then
+    echo "nothing to publish: no tool, installer, hook, script or rule changed"
+    return 0
+  fi
+  for tool in ${tools[@]+"${tools[@]}"}; do
+    publish_tool "$clone" "$work" "$tool" || rc=1
+  done
+  [ "$install" -eq 0 ] || publish_install "$clone" "$work" || rc=1
+  return "$rc"
 }
 
 # status: every clone, or the clones of one work.
@@ -448,6 +593,7 @@ cmd_close() {
     for entry in "$work_root/$work"/* "$work_root/$work"/.[!.]*; do
       [ -e "$entry" ] || continue
       name="${entry##*/}"
+      case "$name" in agent-*.compose.yaml | agent-*.ports.env | agent-test-install.log) continue ;; esac
       branch="$(clone_branch "$entry")" || { problems+="  $name: not a clone made by open"$'\n'; continue; }
       if ! fetch_origin "$entry"; then
         problems+="  $name: origin could not be fetched: what the remote has is unknown"$'\n'
@@ -476,7 +622,7 @@ cmd_close() {
       fi
     done
   fi
-  # Stage 3 (the Docker copy): the Docker groups of the work (agent_<MMDD>-<slug>) are destroyed here, before the folder.
+  destroy_copies "$work_root/$work" || echo "attention: a Docker copy group of tmp/work/$work was not destroyed (above); the folder goes anyway"
   rm -rf "${work_root:?}/$work"
   if [ "$discard" -eq 1 ]; then echo "discarded: tmp/work/$work (the remote branch stays)"; else echo "closed: tmp/work/$work"; fi
 }
@@ -636,6 +782,7 @@ case "$command" in
   open) cmd_open "$@" ;;
   run) cmd_run "$@" ;;
   status) cmd_status "$@" ;;
+  publish) cmd_publish "$@" ;;
   close) cmd_close "$@" ;;
   push)
     [ $# -eq 1 ] || die 2 "usage: push <work>[/<clone>]"
