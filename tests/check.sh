@@ -15,6 +15,9 @@ Runs the gate of the repository, from any cwd:
   2. repo-terms: no file of the repository, tracked or untracked, outside or inside workspace/, matches a line of
      the terms list (extended regex, any case; blank and # lines ignored). Nothing is exempt here: no history, no
      changelog. No terms list prints SKIP.
+  3. caw-layers: every maintenance skill with a product counterpart is a layer over it (CLAUDE.md "Layout").
+  4. caw-work: tests/test-caw-work.sh, the scenarios of tests/caw-work.sh (work clones under tmp/work/ and their
+     git hooks), in a throwaway repository with a local remote; it never touches this repository.
 
 Terms list (company terms that must never reach the public repository), the first that exists:
   1. $AIWP_TERMS_FILE (set but missing: the gate fails);
@@ -39,19 +42,9 @@ done
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 gate="$repo/workspace/scripts/check-workspace.sh"
 [ -f "$gate" ] || { echo "error: product gate not found: $gate" >&2; exit 2; }
-
-# Prints the terms list to use, or nothing; returns 1 when AIWP_TERMS_FILE names no file.
-terms_list() {
-  local ws
-  if [ -n "${AIWP_TERMS_FILE:-}" ]; then
-    [ -f "$AIWP_TERMS_FILE" ] || return 1
-    echo "$AIWP_TERMS_FILE"
-    return 0
-  fi
-  ws="${AIWP_WORKSPACE:-${HOME:-}/Development/ai-workspace}"
-  if [ -f "$ws/custom/core-terms.txt" ]; then echo "$ws/custom/core-terms.txt"; return 0; fi
-  if [ -f "$repo/workspace/custom/core-terms.txt" ]; then echo "$repo/workspace/custom/core-terms.txt"; fi
-}
+[ -r "$repo/tests/lib/terms.sh" ] || { echo "error: tests/lib/terms.sh not found" >&2; exit 2; }
+# shellcheck source=lib/terms.sh
+. "$repo/tests/lib/terms.sh"
 
 # Checks every maintenance skill with a product counterpart (.claude/skills/caw-<name>/ next to
 # workspace/rules/skills/<name>/) is a layer over it: the first line of its body is "@<path of the product skill>",
@@ -78,7 +71,7 @@ check_caw_layers() {
   return "$bad"
 }
 
-list="$(terms_list)" || { echo "error: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2; exit 1; }
+list="$(terms_list "$repo")" || { echo "error: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2; exit 1; }
 failed=0
 
 echo "== product gate (workspace/)"
@@ -98,12 +91,19 @@ else
   echo "FAIL caw-layers: a maintenance skill with a product counterpart must be a layer over it (CLAUDE.md)"
   failed=1
 fi
+if caw_out="$(bash "$repo/tests/test-caw-work.sh" 2>&1)"; then
+  echo "PASS caw-work"
+else
+  printf '%s\n' "$caw_out"
+  echo "FAIL caw-work: the scenarios of tests/caw-work.sh above failed (bash tests/test-caw-work.sh)"
+  failed=1
+fi
 if [ -z "$list" ]; then
   echo "SKIP repo-terms: no terms list (set AIWP_TERMS_FILE or AIWP_WORKSPACE)"
 else
   patterns="$(mktemp)"
   trap 'rm -f "$patterns"' EXIT
-  sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$list" | grep -vE '^(#|$)' >"$patterns" || true
+  terms_patterns "$list" >"$patterns"
   if [ ! -s "$patterns" ]; then
     echo "SKIP repo-terms: the terms list holds no term"
   else
