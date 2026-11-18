@@ -98,7 +98,11 @@ part of any repository). They call this script by the absolute path it had when 
                              the commit: the commit stays in the clone.
   pre-push                   reads every ref line first, then refuses the whole push of developer, main, a tag or any
                              ref outside refs/heads/, and a push that is not a fast-forward (a force push: an amend or
-                             a rebase of pushed commits). A deletion of another branch passes. Then it scans what
+                             a rebase of pushed commits). A deletion of another branch passes. To a scratch
+                             destination, an absolute path (no named remote, no URL) to a folder inside the clone's
+                             own tmp/, links resolved (the throwaway repository of tests/test-install.sh), any
+                             branch passes, developer and main included; a tag, a ref outside refs/heads/ and a force
+                             push stay refused there too, and the scan below still runs. Then it scans what
                              leaves, the commits the remote does not have (git ls-remote): every version of a file
                              they add or change, the paths of those files, their messages, and their author and
                              committer names and e-mails, against the terms list (tests/lib/terms.sh, the
@@ -869,17 +873,35 @@ scan_leaving() {
   accept_terms "$list" "$matched"
 }
 
+# Returns 0 when <remote>, as git gives it to the pre-push hook, is a scratch destination of <clone>: an absolute path
+# (never a named remote, never a URL) to a folder strictly inside the clone's own tmp/, symbolic links resolved. The
+# throwaway repository of tests/test-install.sh lives there; nothing pushed there leaves the machine.
+scratch_destination() {
+  local clone="$1" remote="$2" top real
+  case "$remote" in /*) ;; *) return 1 ;; esac
+  ! git -C "$clone" remote | grep -qxF -e "$remote" || return 1
+  top="$(cd -P -- "$clone" 2>/dev/null && pwd -P)" || return 1
+  real="$(cd -P -- "$remote" 2>/dev/null && pwd -P)" || return 1
+  case "$real" in "$top"/tmp/?*) return 0 ;; esac
+  return 1
+}
+
 # _prepush: the pre-push hook. Reads every "<local ref> <local sha> <remote ref> <remote sha>" line first, then refuses
-# the whole push for a protected or non-branch target or a force push, and scans what leaves for company terms.
+# the whole push for a protected or non-branch target or a force push, and scans what leaves for company terms. To a
+# scratch destination (scratch_destination: the throwaway repository of tests/test-install.sh) any branch passes,
+# developer and main included; a tag, a ref outside refs/heads/ and a force push stay refused, and the scan still runs.
 cmd_prepush() {
-  local clone="$1" remote="${2:-origin}" line lines=() i local_sha remote_ref remote_sha sends=0
+  local clone="$1" remote="${2:-origin}" line lines=() i local_sha remote_ref remote_sha sends=0 scratch=0
   while IFS= read -r line; do [ -z "$line" ] || lines+=("$line"); done
+  ! scratch_destination "$clone" "$remote" || scratch=1
   for i in ${lines[@]+"${!lines[@]}"}; do
     read -r _ local_sha remote_ref remote_sha <<<"${lines[$i]}"
     case "$remote_ref" in
       refs/heads/developer | refs/heads/main)
-        echo "caw-work: refused: a work clone never pushes ${remote_ref#refs/heads/}; /caw-merge moves it" >&2
-        return 1
+        if [ "$scratch" -eq 0 ]; then
+          echo "caw-work: refused: a work clone never pushes ${remote_ref#refs/heads/}; /caw-merge moves it" >&2
+          return 1
+        fi
         ;;
       refs/tags/*)
         echo "caw-work: refused: a work clone never pushes a tag ($remote_ref); tags come only from /caw-merge --main" >&2
