@@ -61,7 +61,8 @@ export function JobDock() {
               )}
               <Button
                 size="compact"
-                icon={collapsed ? 'chevronUp' : 'chevronDown'}
+                icon="chevronDown"
+                className={styles.toggle}
                 aria-expanded={!collapsed}
                 onClick={toggleDock}
               >

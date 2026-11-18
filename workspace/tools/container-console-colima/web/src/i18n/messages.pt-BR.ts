@@ -18,7 +18,7 @@ export const messages: Translation<typeof en> = {
   'nav.group.main': 'Início',
   'nav.group.docker': 'Docker',
   'nav.group.cluster': 'Cluster',
-  'nav.motion': 'Animar mudanças nos dados',
+  'nav.motion': 'Animações',
   'nav.theme': 'Tema',
   'nav.theme.system': 'Seguir o sistema',
   'nav.theme.dark': 'Escuro',

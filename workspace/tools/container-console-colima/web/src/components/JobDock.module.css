@@ -34,6 +34,15 @@
   gap: var(--space-2);
 }
 
+/* One chevron: pointing down while open, up while collapsed. */
+.toggle svg {
+  transition: transform var(--motion-ui) ease-out;
+}
+
+.toggle[aria-expanded="false"] svg {
+  transform: rotate(180deg);
+}
+
 .list {
   display: flex;
   flex-direction: column;

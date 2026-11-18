@@ -88,6 +88,7 @@
   --sidebar-width: 15rem;
 
   --motion-data: 200ms;
+  --motion-ui: 200ms;
 }
 
 /* An explicit choice of the user wins over the operating system. */
@@ -118,12 +119,14 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-data: 0ms;
+    --motion-ui: 0ms;
   }
 }
 
 /* The user toggle of the side menu writes this attribute. */
 :root[data-motion="off"] {
   --motion-data: 0ms;
+  --motion-ui: 0ms;
 }
 
 /* Elements on brand-ink rebind what depends on the surface below them. */

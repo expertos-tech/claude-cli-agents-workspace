@@ -38,6 +38,7 @@ The requirements of the screen and of the installation:
 | Daemon state and data, read-only | [Read-only environment](#read-only-environment) |
 | The console does not control the daemon | [Daemon control outside the API](#daemon-control-outside-the-api) |
 | Containers, live logs and terminal | [Containers](#containers) |
+| Compose groups open and close with motion; the chevron of the jobs panel rotates | [Compose groups](#compose-groups) |
 | Images, volumes, networks and Compose | [Images, volumes, networks and Compose](#images-volumes-networks-and-compose) |
 | Kubernetes, logs and terminal in the pod | [Kubernetes](#kubernetes) |
 | Invalid YAML changes nothing | [Invalid YAML](#invalid-yaml) |
@@ -150,6 +151,24 @@ Stop Docker with `sudo systemctl stop docker.socket docker.service`. Only `docke
 | 11 | On "Remove", read the dialog and confirm | The dialog mentions `docker rm --force`. The container leaves the list |
 | 12 | Run `docker tag busybox example.local/a/very/long/image/name/for/testing:1` and `docker run -d --name cc-long example.local/a/very/long/image/name/for/testing:1 sleep 600`; in `#/containers`, hover over the Image column | The name ends in `...` on a single line, and the browser shows the whole name next to the pointer. In the container details the name shows in full |
 
+## Compose groups
+
+With `docker run -d --name cc-a1 --label com.docker.compose.project=cc-group busybox sleep 600` and the same for `cc-a2`, in `#/containers`:
+
+| # | Steps | Expected result |
+| --- | --- | --- |
+| 1 | Click the `cc-group` toggle | In about 200 ms the chevron turns from pointing right to pointing down, and the two rows grow in height while they fade in. The rows below the group slide down without a jump |
+| 2 | Click it again | The chevron turns back, the rows shrink to no height while they fade out, and the rows below slide up without a jump |
+| 3 | With the group closed, press Tab through the table; open the accessibility tree (DevTools) | The focus never lands on `cc-a1` or `cc-a2`, and the tree shows neither. With the group open, their links and buttons take the focus |
+| 4 | Open the group and reload the page | The group shows open at once, with no animation |
+| 5 | Close the group and type `cc-a1` in the filter, then clear it | The group opens at once with the toggle disabled, and closes at once when the filter is cleared |
+| 6 | With the group open, run `docker run -d --name cc-a3 --label com.docker.compose.project=cc-group busybox sleep 600`, then `docker rm -f cc-a3` | The row appears and then vanishes at once; the other rows do not animate |
+| 7 | Repeat 1 and 2 with the table under 34 rem wide (a 390 px window) and between 34 and 60 rem (a 768 px window) | The same as 1 and 2, with the rows as blocks or with the stacked columns |
+| 8 | With a job in the panel at the bottom, click "Collapse" and "Expand" | The chevron of the button turns by 180° each time |
+| 9 | Turn "Animations" off in the menu, or the system's reduced motion on, and repeat 1, 2 and 8 | The group and the panel change at once, with no transition |
+
+Cleanup: `docker rm -f cc-a1 cc-a2`.
+
 ## Images, volumes, networks and Compose
 
 | # | Steps | Expected result |
@@ -246,7 +265,7 @@ At 320, 390, 768, 1024 and 1280 px, on the containers, environment, Compose and 
 | 7 | Focus with Tab on every screen | `#0076a3` ring in light, `#24bee6` in dark and on `ink`. The first Tab shows "Skip to content" |
 | 8 | Status | Always icon and text |
 | 9 | Long ids and paths | Monospaced, breaking only after `.`, `/` or `-`. A stretch without those characters scrolls in its own box |
-| 10 | "Animate data changes" toggle, in the menu | Off, the CPU and memory bars in a container's details change without a transition, and the choice persists. The same with the system's reduced motion |
+| 10 | "Animations" toggle, in the menu | Off, the CPU and memory bars in a container's details change without a transition, the Compose groups open and close at once, and the choice persists. The same with the system's reduced motion |
 | 11 | Browser console on every screen | No CSP violation, no font or image error |
 | 12 | Phone or touch simulator | Fields at 16 px, no zoom on focus. Buttons at least 40 px |
 

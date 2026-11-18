@@ -1,0 +1,15 @@
+# Every container tool in one compose project, so the container console shows them as one group. Run from the
+# workspace root, with the env file of each tool that has one (custom/env/<tool>.env):
+#   docker compose --env-file custom/env/azurite-console.env -f tools/compose.yaml up -d --build
+# Some tools only: name their services at the end (... up -d --build login-simulator). /run-tools does all of this
+# (scripts/run-tools.sh): it lists the tools of this machine, checks their configuration and ports, tags the images it
+# replaces as rollback-latest, and moves a tool still running in its old project into this one.
+# Each tool's own compose.yaml still starts it alone; this file only includes them. A new tool shows in /run-tools by
+# joining this list, with an x-run-tools block (title, description, url, requires) on its main service.
+name: claude-cli-agents-tools
+
+include:
+  - observability/compose.yaml
+  - login-simulator/compose.yaml
+  - safe-browsing-simulator/compose.yaml
+  - azurite-console/compose.yaml

@@ -21,11 +21,13 @@ The workspace's local telemetry stack, with the `grafana/otel-lgtm` image: Grafa
 
 ## How to run
 
+`/run-tools` in a session, ticking Observability, or from the workspace root:
+
 ```bash
-docker compose -f tools/observability/compose.yaml up -d
+bash scripts/run-tools.sh up observability
 ```
 
-To restart it by hand: `docker compose -f tools/observability/compose.yaml restart`.
+It runs in `claude-cli-agents-tools`, the compose project of every tool (`tools/compose.yaml`). To restart it by hand: `docker compose -f tools/compose.yaml restart otel-lgtm`. This folder's `compose.yaml` still starts it alone (project `observability`), for development; stop it before `/run-tools`, which otherwise moves it into the group.
 
 Another project reaches `otel-lgtm:4317` through the `observability` network: with this stack already up, its compose file declares `networks: {observability: {external: true}}` and each service that sends telemetry lists `observability` in `networks`, together with `default` if it also talks to the project's other services.
 
@@ -92,10 +94,10 @@ grep '\[3P telemetry\]' telemetry.log
 cp ~/.claude/settings.json ~/.claude/settings.json.bak
 jq '.env |= with_entries(select(.key | test("^(OTEL_|CLAUDE_CODE_ENABLE_TELEMETRY$|CLAUDE_CODE_ENHANCED_TELEMETRY_BETA$)") | not))' \
   ~/.claude/settings.json.bak > ~/.claude/settings.json
-docker compose -f tools/observability/compose.yaml down
+bash scripts/run-tools.sh down observability
 ```
 
-`down` does not delete the data (see [Where the data lives](#where-the-data-lives)).
+Stopping does not delete the data (see [Where the data lives](#where-the-data-lives)).
 
 ### Cowork limit
 

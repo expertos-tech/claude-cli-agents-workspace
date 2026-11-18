@@ -56,9 +56,62 @@ tbody:last-child > .row:last-child > * {
   border-bottom: 0;
 }
 
-/* A closed group keeps its rows in the page, out of sight and of the accessibility tree. */
-.table tbody[hidden] {
-  display: none;
+/*
+ * A closed group keeps its rows in the page with no height: the content of each cell sits in a
+ * grid row that goes from 1fr to 0fr, and the cell loses its vertical padding and its border.
+ * Hidden only once collapsed, so it leaves the accessibility tree; `inert` keeps it out of the
+ * tab order meanwhile.
+ */
+.groupBody[data-open="false"] {
+  visibility: hidden;
+}
+
+.groupBody[data-open="false"] > .row > * {
+  padding-block: 0;
+  border-bottom-width: 0;
+}
+
+.collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.groupBody[data-open="false"] .collapse {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+/*
+ * Clipped only vertically: `clip` is not a scroll container, so the cell keeps the minimum width of
+ * its content and the table columns stay as wide as before. The 4 px above and below keep the focus
+ * ring (2 px plus 2 px of offset) from being cut.
+ */
+.collapseInner {
+  min-height: 0;
+  margin-block: -0.25rem;
+  padding-block: 0.25rem;
+  overflow: visible clip;
+}
+
+/* Only a click animates: the first render, the filter and the live rows change at once. */
+.groupBody[data-animate] {
+  transition: visibility 0s linear var(--motion-ui);
+}
+
+.groupBody[data-animate][data-open="true"] {
+  transition-delay: 0s;
+}
+
+.groupBody[data-animate] > .row > * {
+  transition-duration: var(--motion-ui);
+  transition-property: padding-block, border-bottom-width;
+  transition-timing-function: ease-out;
+}
+
+.groupBody[data-animate] .collapse {
+  transition-duration: var(--motion-ui);
+  transition-property: grid-template-rows, opacity;
+  transition-timing-function: ease-out;
 }
 
 .groupCell {
@@ -93,8 +146,18 @@ tbody:last-child > .row:last-child > * {
   cursor: pointer;
 }
 
-.groupToggle svg {
+.chevron {
+  display: inline-flex;
   flex: none;
+}
+
+/* One chevron: pointing right while closed, down while open. */
+.groupToggle[aria-expanded="false"] .chevron {
+  transform: rotate(-90deg);
+}
+
+.groupHead[data-animate] .chevron {
+  transition: transform var(--motion-ui) ease-out;
 }
 
 .groupToggle:disabled {
@@ -204,6 +267,17 @@ tbody:last-child > .row:last-child > * {
   .row {
     padding: var(--space-3) 0;
     border-bottom: 1px solid var(--table-border);
+  }
+
+  .groupBody[data-open="false"] > .row {
+    padding-block: 0;
+    border-bottom-width: 0;
+  }
+
+  .groupBody[data-animate] > .row {
+    transition-duration: var(--motion-ui);
+    transition-property: padding-block, border-bottom-width;
+    transition-timing-function: ease-out;
   }
 
   tbody:last-child > .row:last-child {

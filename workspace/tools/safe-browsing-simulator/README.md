@@ -21,20 +21,21 @@ A local stand-in for Google Safe Browsing for any workspace application that che
 
 ## How to run
 
-Once, from the workspace root; after that Docker starts the tool along with itself (`restart: unless-stopped`):
+Put the threats file in the custom layer, `custom/config/safe-browsing-simulator/threats.json` ([Threats file](#threats-file); start from `config/threats.json`), then run `/run-tools` in a session and tick it, or, from the workspace root:
 
 ```bash
-bash scripts/sync-env.sh --path tools/safe-browsing-simulator   # once: custom/env/safe-browsing-simulator.env from .env.example (or /local-env tools/safe-browsing-simulator)
-docker compose --env-file custom/env/safe-browsing-simulator.env -f tools/safe-browsing-simulator/compose.yaml up -d --build
+bash scripts/run-tools.sh up safe-browsing-simulator
 ```
 
-The settings live in the custom layer, `custom/env/safe-browsing-simulator.env`, never in this folder; they are optional, so without that file `--env-file tools/safe-browsing-simulator/.env.example` runs with the defaults. A change to `config/threats.json` takes effect on restart:
+It runs in `claude-cli-agents-tools`, the compose project of every tool (`tools/compose.yaml`), and Docker starts it again along with itself (`restart: unless-stopped`). Without the threats file it is listed as "configuration missing" and does not start. The settings are optional and live in `custom/env/safe-browsing-simulator.env` (`/local-env tools/safe-browsing-simulator`), never in this folder. A change to the threats file takes effect on restart:
 
 ```bash
-docker compose --env-file custom/env/safe-browsing-simulator.env -f tools/safe-browsing-simulator/compose.yaml restart
+docker compose -f tools/compose.yaml restart safe-browsing-simulator
 ```
 
-Invalid file: the container does not start and the log (`docker logs safe-browsing-simulator-safe-browsing-simulator-1`) names the field and the problem. A code change: `up -d --build` again. Outside Docker, the server runs with `THREATS_PATH=config/threats.json PORT=28090 node src/main.js`.
+The tool's own `compose.yaml` still starts it alone, for development: `SAFE_BROWSING_THREATS=./config/threats.json docker compose -f tools/safe-browsing-simulator/compose.yaml up -d --build` runs the example (project `safe-browsing-simulator`, not the group; stop it before `/run-tools`).
+
+Invalid file: the container does not start and the log (`docker compose -f tools/compose.yaml logs safe-browsing-simulator`) names the field and the problem. A code change: `bash scripts/run-tools.sh up safe-browsing-simulator` again. Outside Docker, the server runs with `THREATS_PATH=config/threats.json PORT=28090 node src/main.js`.
 
 ## How an application uses it
 
@@ -103,7 +104,7 @@ The example file, `config/threats.json`, holds:
 
 Domains that are down: `unavailable.safe-browsing-simulator.test` and `pending.example.test`.
 
-The default file is an example. The real one, with the projects' domains, lives outside the tool: the compose file mounts the path in `SAFE_BROWSING_THREATS`, relative to this folder, and uses the example when the variable is not set. To use the one of the custom layer, set `SAFE_BROWSING_THREATS=../../custom/config/safe-browsing-simulator/threats.json` in `custom/env/safe-browsing-simulator.env` and run `up -d` again. `custom/config/<tool>/` holds the configuration of the workspace's own tools; `custom/tools/` is for tools of yours.
+`config/threats.json` is an example. The real file, with the projects' domains, lives outside the tool, in the custom layer: `custom/config/safe-browsing-simulator/threats.json`, the path the compose file mounts by default. `SAFE_BROWSING_THREATS` in `custom/env/safe-browsing-simulator.env`, relative to this folder, points to another file. The compose file never creates a missing file: the container is not created and `/run-tools` says what is missing. `custom/config/<tool>/` holds the configuration of the workspace's own tools; `custom/tools/` is for tools of yours.
 
 ## How the URL is matched
 

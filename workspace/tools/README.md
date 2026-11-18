@@ -12,6 +12,18 @@ Support tools for local environments, part of the workspace core. One folder per
 | login-simulator | tool | Local login in place of Auth0: fixed fictitious users, one-click login, no internet, always on in Docker |
 | azurite-console | tool | Page to see and operate the local Azurite: blobs, queues, tables and the access log, with its own compose |
 | safe-browsing-simulator | tool | Local Google Safe Browsing (Lookup v4): dangerous URLs and an outage read from a file, no internet and no real key |
+| compose.yaml | file | The compose project of every container tool, `claude-cli-agents-tools`: it includes each tool's own `compose.yaml` |
+
+## How to start the tools
+
+`/run-tools` in a session: it shows checkboxes with the tools of this machine and starts the ones you tick. Behind it, `bash scripts/run-tools.sh list --json | status | up <tool>... | down <tool>...` (`--help`).
+
+- The container tools (observability, the two simulators, the Azurite console) run in one compose project, `claude-cli-agents-tools`, so the container console shows them as one group. `tools/compose.yaml` includes each tool's own `compose.yaml`, which still starts that tool alone, for development. By hand: `docker compose --env-file custom/env/azurite-console.env -f tools/compose.yaml up -d --build [<service>...]`.
+- Title, description and URL of each tool live in the `x-run-tools` block of its main service. A new container tool shows in `/run-tools` once `tools/compose.yaml` includes it.
+- A tool's configuration lives in the custom layer: `custom/env/<tool>.env` and `custom/config/<tool>/`. A tool without it is listed as "configuration missing" and does not start; the others still do.
+- Of the two container consoles, only the machine's one shows: `container-console-docker-ce` on Linux and WSL with Docker Engine, `container-console-colima` on macOS with Colima. They are machine services (systemd, launchd), outside the group; `/run-tools` installs one with `make install` or starts its service.
+- Each start tags the images it replaces as `<name>:rollback-latest`. Unticking a tool that is up stops nothing; `/run-tools --down` stops.
+- A tool still running in its own old project (an install from before the group) moves into the group at its first start: a named volume is copied to the group's name, and the old volume is kept until you confirm its deletion.
 
 ## Host ports
 

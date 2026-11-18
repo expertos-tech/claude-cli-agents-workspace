@@ -17,17 +17,19 @@ A small Go program on top of the Azure SDK, with a React page and no UI library,
 
 ## How to run
 
-Everything from the workspace root. `compose.yaml` starts Azurite and the console, with the project name `azurite-console`. The account key comes from `AZURITE_ACCOUNT_KEY`, in the environment or in `custom/env/azurite-console.env`, the filled copy of this folder's `.env.example` in the custom layer (git-ignored there, mode 600), which compose reads with `--env-file`. No `.env` is written in this folder. The key is yours: Azurite uses the same key through `AZURITE_ACCOUNTS`. Compose refuses to start without it. `DOCKER_SOCKET_GID` is the group that owns the Docker socket, for the access log panel; without it, the container joins group 0, and the panel says why when it cannot read.
+Everything from the workspace root. `compose.yaml` holds Azurite and the console; `/run-tools` (`bash scripts/run-tools.sh up azurite-console`) starts them in `claude-cli-agents-tools`, the compose project of every tool (`tools/compose.yaml`). The account key comes from `AZURITE_ACCOUNT_KEY`, in the environment or in `custom/env/azurite-console.env`, the filled copy of this folder's `.env.example` in the custom layer (git-ignored there, mode 600), which compose reads with `--env-file`. No `.env` is written in this folder. The key is yours: Azurite uses the same key through `AZURITE_ACCOUNTS`. Without it `/run-tools` lists the tool as "configuration missing" and does not start it; started by hand, Azurite exits at start with the reason and the console never starts. The check runs in the container rather than in Compose, because the group file loads every tool's file and a variable Compose requires would stop them all. `DOCKER_SOCKET_GID` is the group that owns the Docker socket, for the access log panel; without it, the container joins group 0, and the panel says why when it cannot read.
 
 Once, create the file and fill both values without printing them (`/local-env tools/azurite-console` in a session creates it with empty values for you to fill in an editor):
 
 ```bash
 mkdir -p custom/env && chmod 700 custom/env
 (umask 077; printf 'AZURITE_ACCOUNT_KEY=%s\nDOCKER_SOCKET_GID=%s\n' "$(openssl rand -base64 48)" "$(stat -c %g /var/run/docker.sock)" > custom/env/azurite-console.env)
-docker compose --env-file custom/env/azurite-console.env -f tools/azurite-console/compose.yaml up -d --build --wait
+bash scripts/run-tools.sh up azurite-console
 ```
 
-Open `http://127.0.0.1:28091`. The image builds the page and compiles the program; after changing the code, run the same `up -d --build --wait` again. To stop and delete this project's data, `docker compose --env-file custom/env/azurite-console.env -f tools/azurite-console/compose.yaml down -v`.
+Open `http://127.0.0.1:28091`. The image builds the page and compiles the program; after changing the code, run the same `up` again. The data lives in the volume `claude-cli-agents-tools_azurite-data`. A workspace where the tool ran in its own project, `azurite-console`, keeps the old volume `azurite-console_azurite-data`: the first `/run-tools` copies it to the group's and keeps the old one, which you delete only after checking (`/run-tools` asks).
+
+This folder's `compose.yaml` still starts it alone, for development, in the project `azurite-console` with its own volume: `docker compose --env-file custom/env/azurite-console.env -f tools/azurite-console/compose.yaml up -d --build --wait`; stop it before `/run-tools`.
 
 Ports, all only on `127.0.0.1`:
 

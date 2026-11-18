@@ -22,27 +22,28 @@ A local stand-in for Auth0 for any workspace application that needs a login. The
 
 ## How to run
 
-Once, from the workspace root; after that Docker starts the tool along with itself (`restart: unless-stopped`):
+Put the configuration file in the custom layer, `custom/config/login-simulator/config.json` ([Configuration file](#configuration-file); start from `config/config.json`), then run `/run-tools` in a session and tick it, or, from the workspace root:
 
 ```bash
-bash scripts/sync-env.sh --path tools/login-simulator   # once: custom/env/login-simulator.env from .env.example (or /local-env tools/login-simulator)
-docker compose --env-file custom/env/login-simulator.env -f tools/login-simulator/compose.yaml up -d --build
+bash scripts/run-tools.sh up login-simulator
 ```
 
-The settings live in the custom layer, `custom/env/login-simulator.env`, never in this folder; they are optional, so without that file `--env-file tools/login-simulator/.env.example` runs with the defaults. A change to `config/config.json` takes effect on restart:
+It runs in `claude-cli-agents-tools`, the compose project of every tool (`tools/compose.yaml`), and Docker starts it again along with itself (`restart: unless-stopped`). Without the configuration file it is listed as "configuration missing" and does not start. The settings are optional and live in `custom/env/login-simulator.env` (`/local-env tools/login-simulator`), never in this folder. A change to the configuration file takes effect on restart:
 
 ```bash
-docker compose --env-file custom/env/login-simulator.env -f tools/login-simulator/compose.yaml restart
+docker compose -f tools/compose.yaml restart login-simulator
 ```
 
-An invalid file or an invalid `AVATAR_ORIGIN`: the container does not start and the log (`docker logs login-simulator-login-simulator-1`) names the field and the problem. A code change: `up -d --build` again.
+The tool's own `compose.yaml` still starts it alone, for development: `LOGIN_SIMULATOR_CONFIG=./config/config.json docker compose -f tools/login-simulator/compose.yaml up -d --build` runs the example (project `login-simulator`, not the group; stop it before `/run-tools`).
+
+An invalid file or an invalid `AVATAR_ORIGIN`: the container does not start and the log (`docker compose -f tools/compose.yaml logs login-simulator`) names the field and the problem. A code change: `bash scripts/run-tools.sh up login-simulator` again.
 
 ## Configuration file
 
 The configuration file registers the applications and the users. An unknown field, an invalid URL, a wrong type or a repeated id rejects the file.
 
 - `config/config.json` is an example: two fictitious applications and the users of each, covering roles, permissions, MFA, social login and an unverified email.
-- The real file, with the projects' applications, lives outside the tool. The compose file mounts the path in `LOGIN_SIMULATOR_CONFIG`, relative to this folder, and uses the example when the variable is not set. To use the one of the custom layer, set `LOGIN_SIMULATOR_CONFIG=../../custom/config/login-simulator/config.json` in `custom/env/login-simulator.env` and run `up -d` again. `custom/config/<tool>/` holds the configuration of the workspace's own tools; `custom/tools/` is for tools of yours.
+- The real file, with the projects' applications, lives outside the tool, in the custom layer: `custom/config/login-simulator/config.json`, the path the compose file mounts by default. `LOGIN_SIMULATOR_CONFIG` in `custom/env/login-simulator.env`, relative to this folder, points to another file. The compose file never creates a missing file: the container is not created and `/run-tools` says what is missing. `custom/config/<tool>/` holds the configuration of the workspace's own tools; `custom/tools/` is for tools of yours.
 
 ```json
 {
@@ -78,7 +79,7 @@ The users are valid for every application, like the ones of an Auth0 tenant. The
 
 ## How an application uses it
 
-1. Register the application in `config/config.json` and restart.
+1. Register the application in the configuration file (`custom/config/login-simulator/config.json`) and restart.
 2. In its configuration, replace the Auth0 domain with `http://localhost:28080` and the client id with the registered one. Auth0 SDK in the browser (`auth0-spa-js`, `auth0-angular`, `auth0-react`): `domain: "http://localhost:28080"`.
 3. Backend in a container: put the service on the external network and call the tool at `http://login-simulator:8080`:
 
@@ -111,8 +112,8 @@ The `login-simulator` network has a fixed subnet (`172.31.250.0/24`). If a netwo
 ```bash
 docker network inspect login-simulator --format '{{range .Containers}}{{.Name}} {{end}}'   # who is on the network
 docker network disconnect login-simulator <container>                                      # each one, except the simulator
-docker compose --env-file custom/env/login-simulator.env -f tools/login-simulator/compose.yaml down
-docker compose --env-file custom/env/login-simulator.env -f tools/login-simulator/compose.yaml up -d --build
+docker compose -f tools/compose.yaml rm --stop --force login-simulator && docker network rm login-simulator
+bash scripts/run-tools.sh up login-simulator
 docker network connect login-simulator <container>                                         # each one back
 ```
 

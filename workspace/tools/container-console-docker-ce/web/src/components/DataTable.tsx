@@ -93,6 +93,15 @@ function writeOpenGroups(storageKey: string, open: Set<string>): void {
   }
 }
 
+/** The content of a cell of a group, wrapped so it can shrink to no height. */
+function Collapsible({ children }: { children: ReactNode }) {
+  return (
+    <div className={styles.collapse}>
+      <div className={styles.collapseInner}>{children}</div>
+    </div>
+  )
+}
+
 /**
  * A real table whose identification, status and actions never leave the screen. It adapts to its
  * own width, so the side menu counts. The explicit roles keep the table semantics on phones,
@@ -114,6 +123,8 @@ export function DataTable<Row>({
   const groupIdPrefix = useId()
   const [query, setQuery] = useState('')
   const [openGroups, setOpenGroups] = useState(() => readOpenGroups(grouping?.storageKey))
+  // Groups the viewer toggled since the filter last changed: only they animate (BR-4).
+  const [clicked, setClicked] = useState<ReadonlySet<string>>(() => new Set())
   const needle = query.trim().toLowerCase()
   const filtering = Boolean(searchText && needle)
   const visible = searchText && needle ? rows.filter(row => searchText(row).toLowerCase().includes(needle)) : rows
@@ -122,6 +133,7 @@ export function DataTable<Row>({
 
   /** Opens or closes one group and remembers the choice. */
   function toggle(key: string): void {
+    setClicked(current => (current.has(key) ? current : new Set(current).add(key)))
     setOpenGroups(current => {
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
@@ -131,50 +143,59 @@ export function DataTable<Row>({
     })
   }
 
-  /** One data row; a member of a group is indented under its header. */
+  /** One data row; a member of a group is indented under its header, and its cells can collapse. */
   function renderRow(row: Row, member: boolean) {
+    const cell = (content: ReactNode) => (member ? <Collapsible>{content}</Collapsible> : content)
     return (
       <tr key={rowKey(row)} role="row" className={member ? `${styles.row} ${styles.memberRow}` : styles.row}>
         <th role="rowheader" scope="row" className={styles.identity}>
-          <div className={styles.identityValue}>{identity.cell(row)}</div>
-          {columns.length > 0 && (
-            <dl className={styles.stacked}>
-              {columns.map(column => (
-                <div key={column.id} className={styles.stackedItem}>
-                  <dt>{column.header}</dt>
-                  <dd>{column.cell(row)}</dd>
-                </div>
-              ))}
-            </dl>
+          {cell(
+            <>
+              <div className={styles.identityValue}>{identity.cell(row)}</div>
+              {columns.length > 0 && (
+                <dl className={styles.stacked}>
+                  {columns.map(column => (
+                    <div key={column.id} className={styles.stackedItem}>
+                      <dt>{column.header}</dt>
+                      <dd>{column.cell(row)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </>,
           )}
         </th>
         {status && (
           <td role="cell" className={styles.status}>
-            {status.cell(row)}
+            {cell(status.cell(row))}
           </td>
         )}
         {columns.map(column => (
           <td key={column.id} role="cell" className={styles.secondary}>
-            {column.cell(row)}
+            {cell(column.cell(row))}
           </td>
         ))}
         {actions && (
           <td role="cell" className={styles.actions}>
-            <div className={styles.actionList}>{actions(row)}</div>
+            {cell(<div className={styles.actionList}>{actions(row)}</div>)}
           </td>
         )}
       </tr>
     )
   }
 
-  /** A group: the header row with the toggle, then its rows, hidden while closed. */
+  /**
+   * A group: the header row with the toggle, then its rows. Closed rows keep their place in the
+   * page with no height, out of sight, of the tab order and of the accessibility tree.
+   */
   function renderGroup(key: string, members: Row[], index: number) {
     if (!grouping) return null
     // A filter opens every group with a match, so a match is never hidden.
     const open = filtering || openGroups.has(key)
     const bodyId = `${groupIdPrefix}-group-${index}`
+    const animate = clicked.has(key) || undefined
     return [
-      <tbody key={`group-head-${key}`} role="rowgroup" className={styles.groupHead}>
+      <tbody key={`group-head-${key}`} role="rowgroup" className={styles.groupHead} data-animate={animate}>
         <tr role="row" className={styles.groupRow}>
           <th role="rowheader" scope="rowgroup" colSpan={columnCount} className={styles.groupCell}>
             <div className={styles.groupHeader}>
@@ -187,7 +208,9 @@ export function DataTable<Row>({
                 disabled={filtering}
                 onClick={() => toggle(key)}
               >
-                <Icon name={open ? 'chevronUp' : 'chevronDown'} />
+                <span className={styles.chevron}>
+                  <Icon name="chevronDown" />
+                </span>
                 <span className={styles.groupTitle}>{grouping.title(key, members)}</span>
               </button>
               {grouping.summary && <div className={styles.groupSummary}>{grouping.summary(members)}</div>}
@@ -195,7 +218,15 @@ export function DataTable<Row>({
           </th>
         </tr>
       </tbody>,
-      <tbody key={`group-body-${key}`} id={bodyId} role="rowgroup" hidden={!open}>
+      <tbody
+        key={`group-body-${key}`}
+        id={bodyId}
+        role="rowgroup"
+        className={styles.groupBody}
+        data-open={open}
+        data-animate={animate}
+        inert={!open}
+      >
         {members.map(row => renderRow(row, true))}
       </tbody>,
     ]
@@ -211,7 +242,11 @@ export function DataTable<Row>({
               type="search"
               autoComplete="off"
               value={query}
-              onChange={event => setQuery(event.target.value)}
+              onChange={event => {
+                // A filter opens and closes groups at once; only a click on a toggle animates.
+                setClicked(new Set())
+                setQuery(event.target.value)
+              }}
             />
           )}
         </Field>
