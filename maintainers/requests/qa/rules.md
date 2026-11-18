@@ -106,8 +106,9 @@ The agents of each stage run with the stage's effort, passed in the call.
   would have reached `.claude/` around `guard-bash` and the deny rules (a BLOCKER of the review, confirmed by a second
   one). The `deny Edit` rules on `custom/rules/**` and `custom/brand/**` that the plan removes were already gone.
 - **Acceptance criteria:**
-  - AC-1: proven (test-setup-claude `test_config_excluded_rule_leaves_rules_and_agents_md`; test_rules_config
-    `AgentsTests`, the real `AGENTS.md` included; the test installation).
+  - AC-1: proven at `.claude/` level (test-setup-claude `test_config_excluded_rule_leaves_rules_and_agents_md`;
+    test_rules_config `AgentsTests`, the real `AGENTS.md` included; the test installation); that a session loads it
+    through `CLAUDE.md` (`@.claude/AGENTS.md`) is pending a real session.
   - AC-1a: the candidate table proven (`test_candidates`: the grave general and the suggestion seen twice, not the
     rare one); the approved row becoming an own rule is skill text, pending a real session.
   - AC-2: proven (`test_config_mandatory_rule_stays_with_a_warning`, `MandatoryTests`; the test installation refused
@@ -128,7 +129,8 @@ The agents of each stage run with the stage's effort, passed in the call.
   REJECTED (1 BLOCKER, confirmed by a second review; 1 RECOMMENDED), its fix APPROVED_WITH_CHANGES (1 BLOCKER,
   confirmed; 2 RECOMMENDED), that fix APPROVED_WITH_CHANGES (1 BLOCKER, 1 RECOMMENDED), the last fix
   APPROVED_WITH_CHANGES (1 RECOMMENDED); every finding fixed and the fixes reviewed, the last RECOMMENDED fix by its
-  tests.
+  tests; the merge review (effort high): APPROVED_WITH_CHANGES, no defect, 1 RECOMMENDED (AC-1 labelled proven while
+  its session part was not seen), fixed in this block.
 - **Left:** a real session in an installation, to see `CLAUDE.md` load `@.claude/AGENTS.md`, the skill list without a
   turned-off skill, and `/rules` (`add`, `lessons`); an installed workspace renames `custom/rules/` with
   `git -C custom mv rules my-rules`; `import-from-fork` (BR-8) should write the lesson tags in the bracket syntax
