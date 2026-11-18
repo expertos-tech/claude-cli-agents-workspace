@@ -42,6 +42,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 | Round | Request | Notes |
 | --- | --- | --- |
 | 0 | `autonomous-work.md` | Design: `plans/autonomous-work.md`; before round 2 |
+| 0 | `validators-warn-not-block.md` | Right after `autonomous-work`: validators block only real errors; the rest is a warning and the person decides |
 | 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
 | 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
