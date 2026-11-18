@@ -413,8 +413,9 @@ class Workspace:
             self.warn(f'{self.own_path(rel)} skipped: cannot be read ({type(error).__name__})')
 
     def _filtered(self, rel, text, name, keys):
-        """The text of an own skill or agent with its front matter filtered (own_front_matter), warning what went."""
-        result, dropped = own_front_matter(text, name, keys)
+        """The text of an own skill or agent with its front matter filtered (own_front_matter), warning what went.
+        A leading byte order mark is dropped first, so it cannot hide the front matter from the filter."""
+        result, dropped = own_front_matter(text.lstrip('\ufeff'), name, keys)
         if dropped:
             self.warn(f'{self.own_path(rel)}: front matter not allowed for an own item, left out: {", ".join(dropped)}')
         return result
@@ -430,21 +431,37 @@ class Workspace:
 
     def _copy_skill(self, name, target):
         """Copies an own skill to target: regular files only, SKILL.md with its front matter filtered and its name
-        prefixed. A file that cannot be read leaves the whole skill out (the copy is written only at the end)."""
+        prefixed. Hidden files and folders (a nested .claude/ that Claude Code could load as configuration) and a
+        SKILL.md below the top are left out. A SKILL.md that opens like a front matter the filter cannot read, or a
+        file that cannot be read, leaves the whole skill out (the copy is written only at the end)."""
         source = os.path.join(self.own_dir, 'skills', name)
         files_out = []
         for folder, subfolders, files in os.walk(source):
-            subfolders[:] = [d for d in sorted(subfolders) if not os.path.islink(os.path.join(folder, d))]
+            for hidden in [d for d in subfolders if d.startswith('.')]:
+                self.warn(
+                    f'{self.own_path(os.path.relpath(os.path.join(folder, hidden), self.own_dir))} skipped: hidden'
+                )
+            subfolders[:] = [
+                d for d in sorted(subfolders) if not d.startswith('.') and not os.path.islink(os.path.join(folder, d))
+            ]
             for file in sorted(files):
                 path = os.path.join(folder, file)
                 rel = os.path.relpath(path, source)
+                shown = self.own_path(f'skills/{name}/{rel}')
                 if file == '.DS_Store':
                     continue
-                if not is_regular(path):
-                    self.warn(f'{self.own_path("skills/" + name + "/" + rel)} skipped: not a regular file')
+                if file.startswith('.'):
+                    self.warn(f'{shown} skipped: hidden')
+                elif not is_regular(path):
+                    self.warn(f'{shown} skipped: not a regular file')
+                elif file == 'SKILL.md' and rel != 'SKILL.md':
+                    self.warn(f'{shown} skipped: a skill holds one SKILL.md, at its top')
                 elif rel == 'SKILL.md':
-                    text = read_text(path)
+                    text = read_text(path).lstrip('\ufeff')
                     filtered = self._filtered(f'skills/{name}/SKILL.md', text, f'custom-{name}', SKILL_KEYS)
+                    if filtered is None and text.lstrip(' \t\r\n').startswith('---'):
+                        self.warn(f'{shown}: its front matter cannot be read; the skill is skipped')
+                        return
                     files_out.append((rel, (filtered if filtered is not None else text).encode('utf-8')))
                 else:
                     with open(path, 'rb') as handle:

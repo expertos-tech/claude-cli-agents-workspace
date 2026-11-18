@@ -286,6 +286,57 @@ class OwnItemTests(Base):
             'agents/sql.md: front matter not allowed for an own item, left out: permissionMode, mcpServers', text
         )
 
+    def test_nested_configuration_never_reaches_claude(self):
+        """Regression (review of the fix): a hidden folder (a nested .claude/skills/) or file, and a SKILL.md below
+        the top, stay out of .claude/; the rest of the skill is copied."""
+        self.root.write('custom/my-rules/skills/x/SKILL.md', '---\nname: x\n---\nbody\n')
+        self.root.write('custom/my-rules/skills/x/ref.md', 'ref')
+        self.root.write('custom/my-rules/skills/x/.claude/skills/evil/SKILL.md', '---\nhooks: x\n---\n')
+        self.root.write('custom/my-rules/skills/x/.mcp.json', '{}')
+        self.root.write('custom/my-rules/skills/x/sub/SKILL.md', '---\nallowed-tools: Bash(*)\n---\n')
+        ws, out = self.build()
+        copied = sorted(str(p.relative_to(out)) for p in out.rglob('*') if p.is_file() and 'skills' in p.parts)
+        self.assertEqual(copied, ['skills/custom-x/SKILL.md', 'skills/custom-x/ref.md'])
+        text = self.warnings(ws)
+        self.assertIn('skills/x/.claude skipped: hidden', text)
+        self.assertIn('skills/x/.mcp.json skipped: hidden', text)
+        self.assertIn('skills/x/sub/SKILL.md skipped: a skill holds one SKILL.md, at its top', text)
+
+    def test_byte_order_mark_and_unreadable_front_matter(self):
+        """Regression (review of the fix): a BOM cannot hide the front matter; an unclosed one skips the skill."""
+        (self.root.base / 'custom/my-rules/skills/bom').mkdir(parents=True)
+        (self.root.base / 'custom/my-rules/skills/bom/SKILL.md').write_text('\ufeff---\nname: b\nhooks: x\n---\nbody\n')
+        self.root.write('custom/my-rules/skills/open/SKILL.md', '\n---\nallowed-tools: Bash(*)\nbody\n')
+        self.root.write('custom/my-rules/skills/plain/SKILL.md', 'no front matter\n')
+        ws, out = self.build()
+        bom = (out / 'skills' / 'custom-bom' / 'SKILL.md').read_text()
+        self.assertEqual(bom, '---\nname: custom-bom\n---\nbody\n')
+        self.assertFalse((out / 'skills' / 'custom-open').exists())
+        self.assertIn('skills/open/SKILL.md: its front matter cannot be read; the skill is skipped', self.warnings(ws))
+        self.assertEqual((out / 'skills' / 'custom-plain' / 'SKILL.md').read_text(), 'no front matter\n')
+
+    def test_yaml_forms_never_bring_a_key(self):
+        """Regression (review of the fix): each YAML form below leaves only name and the allowed keys."""
+        forms = [
+            'hooks: x\r\n',
+            '{hooks: x}\n',
+            'hooks : x\n',
+            '? hooks\n: x\n',
+            '\thooks: x\n',
+            'model:\n  claude-fable-5-2\n',
+            'model: >-\n  claude-fable-5-2\n',
+            '"allowed-tools": Bash(*)\n',
+            "'hooks': x\n",
+            'Hooks: x\n',
+        ]
+        for form in forms:
+            with self.subTest(form=form):
+                result, _ = rc.own_front_matter(
+                    f'---\nname: s\n{form}effort: low\n---\nbody\n', 'custom-s', rc.SKILL_KEYS
+                )
+                front = result.split('\n---\n')[0].split('\n')[1:]
+                self.assertEqual([line.split(':')[0] for line in front if line], ['name', 'effort'], result)
+
     def test_an_unreadable_item_skips_only_itself(self):
         """RN-7: a non-UTF-8 agent or skill is left out with a warning; every other own item still loads."""
         self.root.write('custom/my-rules/company.md', 'c')
