@@ -46,3 +46,22 @@ medium
   `make check` passes with the lockfiles unchanged: prove it there (the "then passes" part of "Done when") and
   `/caw-merge`. If npm still reports it after a few days, the owner decides again (an update that clears it, or
   filtering this one advisory, which weakens the check and needs a review).
+
+## Execution — 2026-11-18, merged into developer
+
+- **Done:** in the `check` target of both consoles' `Makefile`, `npm audit --audit-level=high` and the type check are
+  joined by `&&`, so a high finding fails `make check` (b3510f1). Changelogs: a Fixed entry in
+  `workspace/CHANGELOG.md` (the audit line was already in v0.1.0) and a Product line in the root one.
+- **Decisions:** the owner chose to change only the Makefiles and leave the lockfiles, after the finding proved to
+  have no fix (see "Where it stopped"). `&&` stops before the type check when the audit fails; the check fails either
+  way.
+- **Deviations:** no dependency was updated. The second half of "Done when" ("then passes with the updated
+  dependencies") is met with the lockfiles unchanged: npm stopped reporting the withdrawn advisory
+  (GHSA-fc5q-39xc-vjpf) between 16:49 and 19:31 UTC.
+- **Done when:** met. With the lockfile of the time, `make check` exited 2 in both tools on the 4 high findings
+  (16:4x UTC); at 19:31 UTC `npm audit` reported 0 vulnerabilities and `make check` exited 0 in both tools.
+  `make build` built both tools and changed no tracked file. The screen was not loaded: the front-end did not change.
+- **Checks:** `bash tests/check.sh --base origin/developer --i18n-pending` passed (translations pending, as before;
+  repo-terms skipped: no terms list).
+- **Left:** the `web` target joins `npm ci`, the cleanup and the build with `;` too, so a failed `npm ci` does not stop
+  it; not in this request.

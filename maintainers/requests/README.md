@@ -66,14 +66,6 @@ Small adjustments, effort low unless noted.
 | `review-docs-only-scope.md` | `CLAUDE.md`, `AGENTS.md` and templates count as documentation and skip the review |
 | `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
 
-### Ready: product fixes
-
-Independent of the rounds above; each runs whenever the owner asks.
-
-| Request | What it fixes |
-| --- | --- |
-| `console-npm-audit.md` | `make check` of the container consoles ignores a high npm vulnerability, and 4 are open |
-
 ### Ideas
 
 | Round | Request | What is missing |
@@ -112,6 +104,7 @@ Independent of the rounds above; each runs whenever the owner asks.
 | `qa/2026-11-18-maintenance-closing-board.md` | this merge | Met |
 | `qa/old-names-leftovers.md` | this merge | Met |
 | `qa/caw-layers-missing-target.md` | this merge | Met |
+| `qa/console-npm-audit.md` | this merge | Met |
 
 ## Done
 
