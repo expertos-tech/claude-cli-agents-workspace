@@ -17,7 +17,7 @@ A hard refusal (a `deny`, a refusal of a hook or of the gate, a BLOCKER that sto
 | --- | --- |
 | A secret in clear (a key, a token, a password, a private key, a `.env` with values) committed, pushed or read into the session | Once it leaves the machine it must be rotated: nothing takes it back |
 | Deleting a remote repository, or rewriting or deleting published history (a force push to a shared branch; deleting `developer`, `main` or a tag on the remote) | Other clones, releases and installs depend on it, and it cannot be undone |
-| A git write in `projects/` or in the read-only core outside the gate; Terraform changing the cloud outside `aiwp-cmds.sh apply` | The gate and the apply are where the human sees what changes in a shared base or in real infrastructure |
+| A git write in `projects/` outside the gate; a write in the read-only core of an installed workspace (git, a mode change, `aiwp update` from inside a session); Terraform changing the cloud outside `aiwp-cmds.sh apply` | The gate, `aiwp update` in a terminal and the apply are where the human sees what changes in a shared base, in the rules of the sessions or in real infrastructure |
 | A merge into a base without the human's order (`/merge` typed by the human) | What enters a base, and from there production, is the human's decision |
 | Deleting a database or Grafana's data (`tools/observability/.data`) without the human's confirmation | Data that is not code has no copy to come back to |
 | A change that does something nobody asked for and that cannot be undone (data deleted, a remote changed) | A mistake nobody can repair after it happens |
@@ -42,7 +42,7 @@ WARNING: <what was seen> — <why it may be a problem> — <what the human can d
 ## Dependencies
 
 - Pin exact versions, transitive ones included, through a committed lock file. Container images are pinned by tag and digest, never `latest`.
-- A known high or critical vulnerability in a dependency or an image blocks delivery, unless the human accepts the risk (`scripts/validate.sh`, check `vuln`).
+- A known high or critical vulnerability in a dependency or an image is a warning of the gate (`scripts/validate.sh`, check `vuln`): the human decides to fix it, or accepts the risk.
 - Check license compatibility before adding a dependency. Never add one without a concrete benefit.
 
 ## Permissions
