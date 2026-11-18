@@ -26,6 +26,8 @@ ac = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ac)
 
 GROUP = 'agent_1118-add-export'
+# The clone in config(): the fake docker answers with the folder compose runs in (its cwd) in its place.
+CLONE = '/acme/clone'
 REAL_RUN = subprocess.run
 # What every internal network of a copy carries: no gateway to the host.
 ISOLATED = (
@@ -56,7 +58,7 @@ def config(**extra):
         'name': GROUP,
         'services': {
             'web': {
-                'build': {'context': '.'},
+                'build': {'context': CLONE, 'dockerfile': 'Dockerfile'},
                 'image': 'billing-api-web',
                 'container_name': 'billing-web',
                 'ports': [{'target': 80, 'published': '8080', 'protocol': 'tcp', 'host_ip': '127.0.0.1'}],
@@ -159,6 +161,8 @@ class FakeDocker:
             return subprocess.CompletedProcess(args, code, out, err)
         self.calls.append(list(args))
         code, out, err = self.answer(args)
+        if kwargs.get('cwd') and args[1:2] == ['compose']:
+            out = out.replace(CLONE, kwargs['cwd'])
         return subprocess.CompletedProcess(args, code, out, err)
 
 
@@ -310,7 +314,7 @@ class HelperTests(unittest.TestCase):
             ac.pick_ports(entries[:1], {}, lambda p, _: False)
 
     def test_isolation_refusals(self):
-        self.assertEqual(ac.isolation_refusals(config()), [])
+        self.assertEqual(ac.isolation_refusals(config(), [CLONE]), [])
         bad = config(
             networks={'shared': {'external': True, 'name': 'proxy'}},
             volumes={'data': {'external': True}},
@@ -318,10 +322,23 @@ class HelperTests(unittest.TestCase):
         bad['services']['web']['network_mode'] = 'host'
         bad['services']['db']['network_mode'] = 'container:billing-db'
         bad['services']['worker']['network_mode'] = 'service:web'
-        refusals = ac.isolation_refusals(bad)
-        self.assertEqual(len(refusals), 4)
-        self.assertIn('network shared is external (proxy)', refusals[0])
-        self.assertIn('volume data is external (data)', refusals[1])
+        refusals = ac.isolation_refusals(bad, [CLONE])
+        self.assertEqual(
+            refusals,
+            [
+                'network shared sets external',
+                'volume data sets external',
+                'service db sets network_mode container:billing-db: only service:<x> of the same files',
+                'service web sets network_mode host: only service:<x> of the same files',
+            ],
+        )
+        self.assertEqual(
+            ac.isolation_refusals(config()),
+            [
+                'service web builds from a context /acme/clone, outside the clone',
+                'service web builds from a Dockerfile /acme/clone/Dockerfile, outside the clone',
+            ],
+        )
 
     def test_build_override(self):
         entries = ac.port_entries(config())
@@ -528,76 +545,183 @@ class EscapeTests(CopyTestCase):
         self.fake.up = False
         self.assertEqual(ac.engine_major(), 0)
 
-    def test_every_way_out_is_refused_and_named(self):
-        spec = {
-            'privileged': True,
-            'cap_add': ['NET_ADMIN'],
-            'devices': ['/dev/kvm'],
-            'security_opt': ['apparmor:unconfined'],
-            'device_cgroup_rules': ['c 1:3 mr'],
-            'pid': 'host',
-            'ipc': 'host',
-            'uts': 'host',
-            'cgroup': 'host',
-            'userns_mode': 'host',
-            'volumes': [
-                {'type': 'bind', 'source': '/var/run/docker.sock', 'target': '/var/run/docker.sock'},
-                {'type': 'bind', 'source': '/etc', 'target': '/host-etc'},
-                {'type': 'bind', 'source': f'{self.clone}/data', 'target': '/data'},
-                {'type': 'volume', 'source': 'data', 'target': '/v'},
-                {'type': 'volume', 'source': 'sock', 'target': '/run/containerd.sock'},
-            ],
-        }
-        data = {
-            'services': {'bad': spec, 'side': {'network_mode': 'service:bad'}},
-            'networks': {'ovl': {'driver': 'overlay'}, 'plain': {'driver': 'bridge'}},
-            'volumes': {'hostpath': {'driver_opts': {'type': 'none', 'o': 'bind', 'device': '/srv'}}, 'data': {}},
-        }
-        refusals = ac.isolation_refusals(data, self.clone)
-        joined = '\n'.join(refusals)
-        for expected in (
-            'network ovl uses the driver overlay',
-            'volume hostpath mounts the host path /srv',
-            'service bad is privileged',
-            'service bad sets cap_add',
-            'service bad sets devices',
-            'service bad sets security_opt',
-            'service bad sets device_cgroup_rules',
-            'service bad uses the host pid',
-            'service bad uses the host ipc',
-            'service bad uses the host uts',
-            'service bad uses the host cgroup',
-            'service bad uses the host userns_mode',
-            'service bad mounts a container runtime socket (/var/run/docker.sock)',
-            'service bad binds /etc, outside the clone',
-            'service bad mounts a container runtime socket (/run/containerd.sock)',
-        ):
-            self.assertIn(expected, joined)
-        self.assertEqual(len(refusals), 15)
-        for mode in ('host', 'bridge', 'none', 'container:x'):
-            found = ac.isolation_refusals({'services': {'s': {'network_mode': mode}}})
-            self.assertEqual(found, [f'service s uses network_mode {mode}: a copy runs on its own networks only'])
+    def valid(self):
+        """Returns a compose config that a copy of the clone may run: every allowed form once."""
+        Path(self.clone, 'Dockerfile').write_text('FROM scratch\n', encoding='utf-8')
+        data = config(
+            volumes={'data': {'name': f'{GROUP}_data'}, 'cache': {'driver': 'local', 'labels': {'a': 'b'}}},
+            secrets={'pw': {'file': f'{self.clone}/pw'}, 'token': {'environment': 'TOKEN'}},
+            configs={'site': {'file': f'{self.clone}/site.conf'}, 'inline': {'content': 'x'}},
+            **{'x-acme': {'any': 'thing'}},
+        )
+        data['services']['web']['build'] = {
+            'context': self.clone, 'dockerfile': 'Dockerfile', 'args': {'A': '1'}, 'target': 't', 'cache_from': ['x'],
+        }  # fmt: skip
+        data['services']['web'].update(
+            {
+                'security_opt': ['no-new-privileges:true', 'no-new-privileges'],
+                'env_file': [{'path': f'{self.clone}/.env', 'required': False}],
+                'volumes': [
+                    {'type': 'bind', 'source': f'{self.clone}/conf', 'target': '/c'},
+                    {'type': 'volume', 'source': 'data', 'target': '/d'},
+                    {'type': 'volume', 'target': '/anonymous'},
+                    {'type': 'tmpfs', 'target': '/t'},
+                ],
+                'deploy': {'resources': {'limits': {'cpus': '1'}}},
+                'logging': {'driver': 'json-file', 'options': {'max-size': '1m'}},
+                'extra_hosts': ['acme:10.0.0.1'],
+                'pid': 'service:db',
+                'cap_drop': ['ALL'],
+                'read_only': True,
+                'group_add': ['999'],
+                'x-run-tools': {'title': 'x'},
+            }
+        )
+        data['services']['worker']['network_mode'] = 'service:web'
+        data['services']['db']['ipc'] = 'service:web'
+        return data
 
-    def test_binds_inside_the_clone_or_the_configuration_folder_pass(self):
-        os.makedirs(os.path.join(self.root, 'installed'))
-        link = os.path.join(self.clone, 'escape')
-        os.symlink('/etc', link)
-        mounts = [
-            {'type': 'bind', 'source': f'{self.clone}/data', 'target': '/d'},
-            {'type': 'bind', 'source': f'{self.root}/installed/config.json', 'target': '/c'},
+    def test_the_allowed_forms_pass(self):
+        self.assertEqual(ac.isolation_refusals(self.valid(), [self.clone]), [])
+
+    def test_every_other_form_is_refused_and_named(self):
+        sock = '/var/run/docker.sock'
+        cases = [
+            (lambda d: d['secrets'].update(s={'file': sock}), f'secret s reads {sock}: a container runtime socket'),
+            (lambda d: d['configs'].update(c={'file': '/etc/passwd'}), 'config c reads /etc/passwd, outside the clone'),
+            (lambda d: d['secrets'].update(e={'external': True}), 'secret e sets external'),
+            (
+                lambda d: d['services']['web'].update(volumes_from=['container:billing-db']),
+                'service web sets volumes_from',
+            ),
+            (lambda d: d['services']['web'].update(pid='container:x'), 'service web sets pid container:x'),
+            (lambda d: d['services']['web'].update(ipc='host'), 'service web sets ipc host'),
+            (lambda d: d['services']['web'].update(uts='service:nobody'), 'service web sets uts service:nobody'),
+            (lambda d: d['services']['web'].update(cgroup='host'), 'service web sets cgroup host'),
+            (lambda d: d['services']['web']['build'].update(network='host'), 'service web build sets network'),
+            (lambda d: d['services']['web']['build'].update(ssh=['default']), 'service web build sets ssh'),
+            (lambda d: d['services']['web']['build'].update(secrets=['pw']), 'service web build sets secrets'),
+            (
+                lambda d: d['services']['web']['build'].update(additional_contexts={'x': '/etc'}),
+                'service web build sets additional_contexts',
+            ),
+            (lambda d: d['services']['web']['build'].update(entitlements=['network.host']), 'build sets entitlements'),
+            (lambda d: d['services']['web']['build'].update(context='https://example.com/x.git'), 'builds from https'),
+            (lambda d: d['services']['web']['build'].update(dockerfile='../../../etc/x'), 'a Dockerfile'),
+            (lambda d: d['services']['web'].update(build='.'), 'service web has a build that is not a mapping'),
+            (
+                lambda d: d['services']['web'].update(env_file=[{'path': '/etc/environment'}]),
+                'service web reads the env file /etc/environment, outside the clone',
+            ),
+            (lambda d: d['services']['web'].update(env_file=['/etc/x.env']), 'reads the env file /etc/x.env'),
+            (lambda d: d['services']['web'].update(privileged=True), 'service web sets privileged'),
+            (lambda d: d['services']['web'].update(cap_add=['NET_ADMIN']), 'service web sets cap_add'),
+            (lambda d: d['services']['web'].update(devices=['/dev/kvm']), 'service web sets devices'),
+            (lambda d: d['services']['web'].update(userns_mode='host'), 'service web sets userns_mode'),
+            (lambda d: d['services']['web'].update(sysctls={'a': 1}), 'service web sets sysctls'),
+            (lambda d: d['services']['web'].update(security_opt=['seccomp:unconfined']), 'security_opt seccomp'),
+            (lambda d: d['services']['web'].update(network_mode='host'), 'network_mode host'),
+            (lambda d: d['services']['web'].update(network_mode='bridge'), 'network_mode bridge'),
+            (lambda d: d['services']['web'].update(network_mode='none'), 'network_mode none'),
+            (lambda d: d['services']['web'].update(network_mode='container:x'), 'network_mode container:x'),
+            (
+                lambda d: d['volumes'].update(h={'driver_opts': {'device': '/srv', 'o': 'bind'}}),
+                'volume h sets driver_opts',
+            ),
+            (lambda d: d['volumes'].update(n={'driver': 'nfs'}), 'volume n uses the driver nfs'),
+            (lambda d: d['networks'].update(o={'driver': 'overlay'}), 'network o uses the driver overlay'),
+            (lambda d: d['networks'].update(p={'driver_opts': {'a': 'b'}}), 'network p sets driver_opts'),
+            (lambda d: d['services']['web'].update(extra_hosts=['h:host-gateway']), 'maps a name to host-gateway'),
+            (lambda d: d['services']['web'].update(extra_hosts={'h': 'host-gateway'}), 'maps a name to host-gateway'),
+            (lambda d: d['services']['web'].update(deploy={'placement': {}}), 'service web deploy sets placement'),
+            (
+                lambda d: d['services']['web'].update(deploy={'resources': {'reservations': {'devices': [{}]}}}),
+                'service web reserves devices',
+            ),
+            (lambda d: d['services']['web'].update(logging={'driver': 'syslog'}), 'service web logs through syslog'),
+            (
+                lambda d: d['services']['web']['volumes'].append({'type': 'bind', 'source': '/etc', 'target': '/e'}),
+                'service web binds /etc, outside the clone',
+            ),
+            (
+                lambda d: d['services']['web']['volumes'].append({'type': 'bind', 'source': sock, 'target': '/s'}),
+                f'service web binds {sock}: a container runtime socket',
+            ),
+            (
+                lambda d: d['services']['web']['volumes'].append({'type': 'volume', 'source': 'data', 'target': sock}),
+                f'service web mounts {sock}: a container runtime socket',
+            ),
+            (
+                lambda d: d['services']['web']['volumes'].append({'type': 'volume', 'source': 'other', 'target': '/o'}),
+                'mounts the volume other, which the compose files do not declare',
+            ),
+            (
+                lambda d: d['services']['web']['volumes'].append({'type': 'npipe', 'source': 'x', 'target': '/o'}),
+                'service web mounts a npipe mount',
+            ),
+            (lambda d: d.update(models={}), 'the compose files sets models'),
         ]
-        data = {'services': {'s': {'volumes': mounts}}}
-        self.assertEqual(ac.isolation_refusals(data, self.clone, [f'{self.root}/installed']), [])
-        self.assertEqual(len(ac.isolation_refusals(data, self.clone)), 1)
-        data['services']['s']['volumes'] = [{'type': 'bind', 'source': link, 'target': '/e'}]
-        self.assertIn('binds', ac.isolation_refusals(data, self.clone)[0])
-        # Through up: a bind outside the clone, nothing started.
+        for mutate, expected in cases:
+            data = self.valid()
+            mutate(data)
+            refusals = ac.isolation_refusals(data, [self.clone])
+            self.assertTrue(any(expected in why for why in refusals), (expected, refusals))
+        os.symlink('/etc', os.path.join(self.clone, 'escape'))
+        data = self.valid()
+        data['services']['web']['volumes'] = [{'type': 'bind', 'source': f'{self.clone}/escape', 'target': '/e'}]
+        self.assertIn('outside the clone', ac.isolation_refusals(data, [self.clone])[0])
+
+    def test_allowed_roots_and_the_configuration_folder(self):
+        installed = os.path.join(self.root, 'installed')
+        os.makedirs(installed)
+        data = self.valid()
+        data['services']['web']['volumes'] = [{'type': 'bind', 'source': f'{self.root}/tmp/x', 'target': '/c'}]
+        self.assertEqual(len(ac.isolation_refusals(data, [self.clone])), 1)
+        self.assertEqual(ac.isolation_refusals(data, [self.clone, self.root]), [])
+
+        def remap(path):
+            """Moves the configuration of the clone to the installed folder."""
+            return path.replace(f'{self.clone}/custom', installed)
+
+        data['services']['web']['volumes'] = [{'type': 'bind', 'source': f'{self.clone}/custom/c.json', 'target': '/c'}]
+        self.assertIn(f'binds {installed}/c.json, outside', ac.isolation_refusals(data, [self.clone], remap)[0])
+        self.assertEqual(ac.isolation_refusals(data, [self.clone, installed], remap), [])
+        # Through up: --allow-root adds a folder; without it, a bind outside the clone is refused, nothing started.
         self.fake.config = config()
-        self.fake.config['services']['db']['volumes'] = [{'type': 'bind', 'source': '/srv/acme', 'target': '/s'}]
+        self.fake.config['services']['db']['volumes'] = [{'type': 'bind', 'source': installed, 'target': '/s'}]
         code, _, err = self.up()
         self.assertEqual(code, 1)
-        self.assertIn('service db binds /srv/acme, outside the clone', err)
+        self.assertIn(f'service db binds {installed}, outside the clone', err)
         self.assertFalse(self.fake.called('up -d'))
+        self.assertEqual(self.up('--allow-root', installed)[0], 0)
+        with mock.patch.dict(os.environ, {ac.CUSTOM_DIR_VAR: installed}):
+            self.assertEqual(self.up()[0], 0)
+
+
+class ProductToolTests(unittest.TestCase):
+    """The product's tools publish as copies of a clone of this repository, but the one that mounts the socket."""
+
+    def test_the_product_tools_pass_but_the_socket(self):
+        if not shutil.which('docker') or REAL_RUN(['docker', 'compose', 'version'], capture_output=True).returncode:
+            self.skipTest('docker compose is not on this machine')
+        workspace = MODULE_PATH.parent.parent
+        clone = workspace.parent
+        env = {k: v for k, v in os.environ.items() if k not in ('LOGIN_SIMULATOR_CONFIG', 'SAFE_BROWSING_THREATS')}
+        found = {}
+        for tool in ('observability', 'login-simulator', 'safe-browsing-simulator', 'azurite-console'):
+            done = REAL_RUN(
+                ['docker', 'compose', '-p', GROUP, '-f', str(workspace / 'tools' / tool / 'compose.yaml'), 'config',
+                 '--format', 'json'],
+                capture_output=True, text=True, env=env, check=True,
+            )  # fmt: skip
+            found[tool] = ac.isolation_refusals(json.loads(done.stdout), [str(clone)])
+        self.assertEqual(found['observability'], [])
+        self.assertEqual(found['login-simulator'], [])
+        self.assertEqual(found['safe-browsing-simulator'], [])
+        self.assertEqual(
+            found['azurite-console'],
+            ['service azurite-console mounts /var/run/docker.sock: a container runtime socket, never in a copy'],
+        )
 
 
 class DeployBindsTests(CopyTestCase):
@@ -894,7 +1018,7 @@ class UpTests(CopyTestCase):
         self.fake.config = config(volumes={'data': {'external': True, 'name': 'billing-data'}})
         code, _, err = self.up()
         self.assertEqual(code, 1)
-        self.assertIn('volume data is external (billing-data)', err)
+        self.assertIn('volume data sets external', err)
         self.fake.config_text = 'not json'
         code, _, err = self.up()
         self.assertIn('docker compose config gave no JSON: not json', err)
@@ -1053,7 +1177,11 @@ class MainTests(CopyTestCase):
     def test_parse_up(self):
         self.assertEqual(
             ac.parse_up(['g', 'f', 'o', '--custom-root', '/ws/custom/', '--env-file', 'a', '--', '-f', 'x']),
-            ('g', 'f', 'o', '', ['a'], '/ws/custom', ['-f', 'x']),
+            ('g', 'f', 'o', '', ['a'], '/ws/custom', ['-f', 'x'], []),
+        )
+        self.assertEqual(
+            ac.parse_up(['g', 'f', 'o', '--allow-root', '/acme/', '--allow-root', '/x/../y'])[7],
+            [os.path.realpath('/acme'), os.path.realpath('/y')],
         )
 
 

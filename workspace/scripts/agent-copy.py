@@ -7,7 +7,9 @@ container, network and volume names are reset, and every published host port bec
 its name matches GROUP_RE. Everything goes through the docker command on PATH, so the tests replace it with a fake.
 
 Usage: python3 -I agent-copy.py up <group> <folder> <override> [--fallback <group>] [--env-file <file>]...
-                                   [--custom-root <dir>] [-- <docker compose options>...]
+                                   [--custom-root <dir>] [--allow-root <dir>]... [-- <docker compose options>...]
+--allow-root: a folder the copy may read besides <folder> (binds, build context, env files, secret and config files);
+repeated. Without it: <folder> and AIWP_CUSTOM_DIR.
        python3 -I agent-copy.py down <group>
        python3 -I agent-copy.py destroy [--under <path>]... [<group>...]
        python3 -I agent-copy.py list [--under <path>]... [--group <group>]...
@@ -358,59 +360,157 @@ def q(value):
     return json.dumps(str(value))
 
 
-def mount_refusal(service, mount, folder, allowed):
-    """Returns why a mount of a service would reach outside its copy (a runtime socket, a bind outside the clone and the
-    allowed folders), or an empty string."""
-    source = mount.get('source') or ''
-    for path in (source, mount.get('target') or ''):
-        if os.path.basename(path.rstrip('/')) in RUNTIME_SOCKETS:
-            return f'service {service} mounts a container runtime socket ({path})'
-    if mount.get('type') != 'bind' or not folder:
-        return ''
-    real = os.path.realpath(source)
-    if any(inside(real, os.path.realpath(root)) for root in (folder, *allowed) if root):
-        return ''
-    return f'service {service} binds {source}, outside the clone (use a named volume of the group)'
+# The allowlist of a copy: what its compose files may hold. Anything else is refused, named, before anything starts.
+TOP_KEYS = {'name', 'services', 'networks', 'volumes', 'secrets', 'configs'}
+SERVICE_KEYS = {
+    'image', 'build', 'command', 'entrypoint', 'environment', 'env_file', 'ports', 'expose', 'volumes', 'tmpfs',
+    'depends_on', 'healthcheck', 'restart', 'working_dir', 'user', 'labels', 'networks', 'secrets', 'configs',
+    'read_only', 'cap_drop', 'security_opt', 'init', 'stop_signal', 'stop_grace_period', 'logging', 'deploy',
+    'ulimits', 'shm_size', 'profiles', 'extra_hosts', 'hostname', 'domainname', 'container_name', 'pid', 'ipc', 'uts',
+    'cgroup', 'network_mode',
+    # Limits, the extra groups of the container user, a terminal, the pull policy and the platform: nothing of the host.
+    'cpus', 'cpu_shares', 'mem_limit', 'mem_reservation', 'memswap_limit', 'pids_limit', 'group_add', 'stdin_open',
+    'tty', 'pull_policy', 'platform',
+}  # fmt: skip
+BUILD_KEYS = {'context', 'dockerfile', 'args', 'target', 'cache_from', 'tags', 'labels'}
+NETWORK_KEYS = {'name', 'ipam', 'internal', 'driver', 'labels', 'enable_ipv6'}
+VOLUME_KEYS = {'name', 'driver', 'labels'}
+FILE_KEYS = {'name', 'file', 'environment', 'content'}
+SECURITY_OPTS = {'no-new-privileges', 'no-new-privileges:true', 'no-new-privileges=true'}
+LOG_DRIVERS = {'', 'json-file', 'local', 'none'}
 
 
-def isolation_refusals(config, folder='', allowed=()):
-    """Returns why the copy cannot be isolated, each named: an external network or volume, a network that is not a
-    bridge, a local volume on a host path, a network_mode other than service:<x>, privileged, cap_add, pid, ipc, uts or
-    cgroup host, devices, security_opt, a container runtime socket, and (folder given) a bind outside the clone and the
-    allowed folders (the configuration of AIWP_CUSTOM_DIR)."""
+def extension(key):
+    """Returns True for an x-* extension key, which compose itself ignores."""
+    return str(key).startswith('x-')
+
+
+def unknown_keys(where, spec, allowed):
+    """Returns a refusal for each key of a mapping that is not allowed (x-* extensions pass)."""
+    return [f'{where} sets {key}' for key in sorted(spec or {}) if key not in allowed and not extension(key)]
+
+
+def socket_path(path):
+    """Returns True when a path names a container runtime socket."""
+    return os.path.basename(str(path or '').rstrip('/')) in RUNTIME_SOCKETS
+
+
+def path_refusal(what, path, roots):
+    """Returns why a host path may not be read by a copy (a runtime socket, or outside every allowed root after
+    following links), or an empty string."""
+    if socket_path(path):
+        return f'{what} {path}: a container runtime socket, never in a copy'
+    real = os.path.realpath(path)
+    if any(inside(real, os.path.realpath(root)) for root in roots if root):
+        return ''
+    return f'{what} {path}, outside the clone'
+
+
+def build_refusals(service, build, roots):
+    """Returns why a service's build may not run in a copy: a key off BUILD_KEYS (network, ssh, secrets,
+    additional_contexts, entitlements, privileged...), a remote context, a context or Dockerfile outside the roots."""
+    if not isinstance(build, dict):
+        return [f'service {service} has a build that is not a mapping']
+    refusals = unknown_keys(f'service {service} build', build, BUILD_KEYS)
+    context = str(build.get('context') or '')
+    if '://' in context or context.startswith('git@') or not os.path.isabs(context):
+        return [*refusals, f'service {service} builds from {context or "no context"}: only a folder of the clone']
+    for what, path in (('a context', context), ('a Dockerfile', os.path.join(context, build.get('dockerfile') or ''))):
+        why = path_refusal(f'service {service} builds from {what}', path, roots)
+        if why:
+            refusals.append(why)
+    return refusals
+
+
+def mount_refusals(service, spec, volumes, roots, remap):
+    """Returns why a service's mounts may not run in a copy: a bind outside the roots (remap: where a configuration
+    bind is really read from) or of a runtime socket, a volume the file does not declare, another kind of mount."""
     refusals = []
-    for kind in ('networks', 'volumes'):
-        for key, spec in sorted((config.get(kind) or {}).items()):
-            if (spec or {}).get('external'):
-                refusals.append(
-                    f'{kind[:-1]} {key} is external ({spec.get("name") or key}): shared with other stacks, a copy '
-                    'cannot have its own'
-                )
-    if EDGE_KEY in (config.get('networks') or {}):
-        refusals.append(f"network {EDGE_KEY} is the key of the copy's own edge network: rename it in the project")
-    for key, spec in sorted((config.get('networks') or {}).items()):
-        driver = (spec or {}).get('driver') or 'bridge'
-        if driver != 'bridge' and not (spec or {}).get('external'):
-            refusals.append(f'network {key} uses the driver {driver}: only a bridge network can be kept off the host')
-    for key, spec in sorted((config.get('volumes') or {}).items()):
-        if ((spec or {}).get('driver_opts') or {}).get('device'):
-            refusals.append(f'volume {key} mounts the host path {spec["driver_opts"]["device"]}')
-    for service, spec in sorted((config.get('services') or {}).items()):
-        mode = spec.get('network_mode') or ''
-        if mode and not mode.startswith('service:'):
-            refusals.append(f'service {service} uses network_mode {mode}: a copy runs on its own networks only')
-        if spec.get('privileged'):
-            refusals.append(f'service {service} is privileged')
-        for key in ('cap_add', 'devices', 'security_opt', 'device_cgroup_rules'):
-            if spec.get(key):
-                refusals.append(f'service {service} sets {key}')
-        for key in ('pid', 'ipc', 'uts', 'cgroup', 'userns_mode'):
-            if spec.get(key) == 'host':
-                refusals.append(f'service {service} uses the host {key}')
-        for mount in spec.get('volumes') or []:
-            why = mount_refusal(service, mount, folder, allowed)
+    for mount in spec.get('volumes') or []:
+        kind, source = mount.get('type'), mount.get('source') or ''
+        if socket_path(mount.get('target')):
+            refusals.append(
+                f'service {service} mounts {mount.get("target")}: a container runtime socket, never in a copy'
+            )
+        elif kind == 'bind':
+            why = path_refusal(f'service {service} binds', remap(source), roots)
             if why:
                 refusals.append(why)
+        elif kind == 'volume':
+            if source and source not in volumes:
+                refusals.append(f'service {service} mounts the volume {source}, which the compose files do not declare')
+        elif kind != 'tmpfs':
+            refusals.append(f'service {service} mounts a {kind} mount')
+    return refusals
+
+
+def option_refusals(service, spec, services):
+    """Returns why a service's options may not run in a copy: security_opt other than no-new-privileges, a namespace
+    or network_mode that is not service:<x> of the file, a deploy other than resources (no devices), a log driver that
+    sends elsewhere, an extra host on the host gateway."""
+    refusals = []
+    for option in spec.get('security_opt') or []:
+        if option not in SECURITY_OPTS:
+            refusals.append(f'service {service} sets security_opt {option}')
+    for key in ('pid', 'ipc', 'uts', 'cgroup', 'network_mode'):
+        value = str(spec.get(key) or '')
+        if value and not (value.startswith('service:') and value.split(':', 1)[1] in services):
+            refusals.append(f'service {service} sets {key} {value}: only service:<x> of the same files')
+    deploy = spec.get('deploy') or {}
+    refusals += unknown_keys(f'service {service} deploy', deploy, {'resources'})
+    if ((deploy.get('resources') or {}).get('reservations') or {}).get('devices'):
+        refusals.append(f'service {service} reserves devices')
+    driver = (spec.get('logging') or {}).get('driver') or ''
+    if driver not in LOG_DRIVERS:
+        refusals.append(f'service {service} logs through {driver}')
+    hosts = spec.get('extra_hosts') or []
+    values = hosts.values() if isinstance(hosts, dict) else hosts
+    if any('host-gateway' in str(value) for value in values):
+        refusals.append(f'service {service} maps a name to host-gateway, the host')
+    return refusals
+
+
+def isolation_refusals(config, roots=(), remap=lambda path: path):
+    """Returns why the copy cannot run isolated, each named, from an allowlist: only the keys of TOP_KEYS,
+    SERVICE_KEYS, BUILD_KEYS, NETWORK_KEYS, VOLUME_KEYS and FILE_KEYS (and x-* extensions), only bridge networks,
+    local volumes with no options, files and binds inside the roots (the clone and the folders the caller allows; links
+    followed), env files inside them, no runtime socket, and the options option_refusals allows. Nothing external."""
+    refusals = unknown_keys('the compose files', config, TOP_KEYS)
+    services = config.get('services') or {}
+    volumes = config.get('volumes') or {}
+    for key, spec in sorted((config.get('networks') or {}).items()):
+        spec = spec or {}
+        refusals += unknown_keys(f'network {key}', spec, NETWORK_KEYS)
+        if (spec.get('driver') or 'bridge') != 'bridge':
+            refusals.append(
+                f'network {key} uses the driver {spec["driver"]}: only a bridge network can be kept off the host'
+            )
+    if EDGE_KEY in (config.get('networks') or {}):
+        refusals.append(f"network {EDGE_KEY} is the key of the copy's own edge network: rename it in the project")
+    for key, spec in sorted(volumes.items()):
+        spec = spec or {}
+        refusals += unknown_keys(f'volume {key}', spec, VOLUME_KEYS)
+        if (spec.get('driver') or 'local') != 'local':
+            refusals.append(f'volume {key} uses the driver {spec["driver"]}')
+    for kind in ('secrets', 'configs'):
+        for key, spec in sorted((config.get(kind) or {}).items()):
+            spec = spec or {}
+            refusals += unknown_keys(f'{kind[:-1]} {key}', spec, FILE_KEYS)
+            if spec.get('file'):
+                why = path_refusal(f'{kind[:-1]} {key} reads', remap(spec['file']), roots)
+                if why:
+                    refusals.append(why)
+    for service, spec in sorted(services.items()):
+        refusals += unknown_keys(f'service {service}', spec, SERVICE_KEYS)
+        if 'build' in spec:
+            refusals += build_refusals(service, spec['build'], roots)
+        for item in spec.get('env_file') or []:
+            path = item.get('path') if isinstance(item, dict) else item
+            why = path_refusal(f'service {service} reads the env file', str(path or ''), roots)
+            if why:
+                refusals.append(why)
+        refusals += mount_refusals(service, spec, volumes, roots, remap)
+        refusals += option_refusals(service, spec, services)
     return refusals
 
 
@@ -596,7 +696,7 @@ def own_ports(found):
     return {port for container in found for _, port in container['ports']}
 
 
-def cmd_up(group, folder, override, fallback, env_files, custom_root, options):
+def cmd_up(group, folder, override, fallback, env_files, custom_root, options, allow_roots=()):
     """Publishes a copy: checks the group is the folder's, writes the override and ports files, then
     docker compose up -d --build in the group, and prints each port."""
     folder = os.path.realpath(folder)
@@ -631,7 +731,15 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options):
         raise Refused(f'docker compose config failed: {first_line(err or out)}')
     config = load_json(out, 'docker compose config')
     custom = custom_dir()
-    refusals = isolation_refusals(config, folder, [custom_root] if custom and custom_root else [])
+    roots = [folder, *allow_roots] if allow_roots else [folder, *([custom] if custom else [])]
+
+    def remap(path):
+        """Returns where a bind is really read from: under custom_root, the same path of AIWP_CUSTOM_DIR."""
+        if custom and custom_root and inside(path, custom_root):
+            return os.path.normpath(os.path.join(custom, os.path.relpath(os.path.normpath(path), custom_root)))
+        return path
+
+    refusals = isolation_refusals(config, roots, remap)
     if refusals:
         raise Refused('; '.join(refusals))
     entries = port_entries(config)
@@ -939,19 +1047,22 @@ def cmd_list(under, named):
 
 
 def parse_up(argv):
-    """Returns the arguments of up: group, folder, override, fallback, env files, custom root, compose options."""
+    """Returns the arguments of up: group, folder, override, fallback, env files, custom root, compose options, and the
+    folders --allow-root adds to what a copy may read (default: the folder and AIWP_CUSTOM_DIR)."""
     if len(argv) < 3:
         raise ValueError('up <group> <folder> <override> [options] [-- <docker compose options>...]')
     group, folder, override, rest = argv[0], argv[1], argv[2], argv[3:]
-    fallback, env_files, custom_root, options = '', [], '', []
+    fallback, env_files, custom_root, options, allow_roots = '', [], '', [], []
     while rest:
         arg = rest.pop(0)
         if arg == '--':
             options = rest
             break
-        if arg in ('--fallback', '--env-file', '--custom-root') and rest:
+        if arg in ('--fallback', '--env-file', '--custom-root', '--allow-root') and rest:
             value = rest.pop(0)
-            if arg == '--fallback':
+            if arg == '--allow-root':
+                allow_roots.append(os.path.realpath(value))
+            elif arg == '--fallback':
                 fallback = value
             elif arg == '--env-file':
                 env_files.append(value)
@@ -959,7 +1070,7 @@ def parse_up(argv):
                 custom_root = os.path.normpath(os.path.abspath(value))
             continue
         raise ValueError(f'unknown option: {arg}')
-    return group, folder, override, fallback, env_files, custom_root, options
+    return group, folder, override, fallback, env_files, custom_root, options, allow_roots
 
 
 def parse_pairs(argv, flags):
