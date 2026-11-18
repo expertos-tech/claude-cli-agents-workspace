@@ -113,6 +113,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |
 | `/draft-request [ideas \| file]` | Turns your ideas into a request of the right size (adjustment, feature or system), with the effort of each step; asks only what blocks and saves it in `custom/requests/` |
 | `/request [name \| path]` | Runs a written request, gives the session the project's name, numbered; `/merge` moves it to qa, and the release to done |
+| `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows the rules, skills and agents a session loads and where each comes from; turns core ones off or on, replaces a core rule or adds your own, in `custom/rules-config.json` and `custom/my-rules/` (the mandatory core always loads); `lessons` proposes own rules from the tagged lessons |
 | `/pilot [auto\|manual]` | Shows or changes who runs the tests a human would run by hand: Claude (`auto`, the default) or you (`manual`) |
 | `/local-env [folder]` | Creates or completes the filled `.env` from `.env.example`, without showing values: for `docker/`, `docker/sonar/` and a tool of `tools/`, in `custom/env/<name>.env` |
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lists the state of every project and POC; or analyses one (four analysts, a plan you approve, the language of its docs) and migrates it on a tested branch, with checkpoint tags, into `developer` and `main` |

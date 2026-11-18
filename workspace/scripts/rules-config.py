@@ -29,7 +29,9 @@ Commands:
                         file does not exist yet, and declares the replace.
   add <subject>         create custom/my-rules/<slug>.md with a title, for the own rule to be written in it.
   lessons               the candidate lessons of custom/docs/lessons.md: tagged grave, or recurring (tagged so or
-                        written more than once), never rare.
+                        written more than once), never rare. Tags are words in square brackets on the line: weight
+                        [grave] [attention] [suggestion], scope [general] [project <name>], [recurring] or [rare];
+                        a line without a weight is not read.
 Exit codes: 0 done (build and show always, unless the root has no rules/); 1 refused, with the reason; 2 usage.
 Usage: python3 -I -B scripts/rules-config.py <command> [--root <workspace>] ...
 """

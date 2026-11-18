@@ -170,6 +170,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
 | `/draft-request [ideas \| file]` | Builds a functional request from ideas |
 | `/request [name \| path]` | Runs the request written in a file |
+| `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows and changes the rules, skills and agents a session loads (below, "Changing the workspace itself") |
 | `/pilot [auto\|manual]` | Shows or changes who runs the manual tests |
 | `/local-env [folder]` | Creates or completes a filled `.env` without showing values (`custom/env/<name>.env` for `docker/`, `docker/sonar/` and a tool) |
 | `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
