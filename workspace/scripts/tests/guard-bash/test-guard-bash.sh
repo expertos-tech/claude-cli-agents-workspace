@@ -29,6 +29,13 @@
 #  D22 a repo inside a repo of projects/, at any depth, ignored or not -> deny .. test_nested_repos_denied
 #  D23 a line that stays in a clone tmp/work/<date-slug>/<clone> -> allow; a path out -> silent  test_clone_trail
 #  D24 a line that would ask and holds other commands -> deny "Run it alone"; alone -> ask  test_clone_trail
+#  D25 the task's own Docker group -> allow, docker down -v included; another group's volume -> ask  test_docker_group
+#  D26 Docker that does not answer -> today's question, never a silent pass ... test_docker_group
+#  D27 deleting, moving or emptying Grafana's data -> ask, in an approved clone line too  test_protected_folders
+#  D28 changing CLAUDECODE/CLAUDE_CODE_SESSION_ID, writing .history/merge-orders/, running
+#      scripts/session-title.py -> deny; aiwp-cmds.sh deploy -> ask ......... test_protected_folders
+#  D29 find . -delete in a clone (its .git) and a .env -> silent; a leading cd travels with the question  test_clone_trail
+#  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask  test_real_docker
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -143,6 +150,108 @@ test_clone_trail() {
   has "the refusal says to run it alone" "Run it alone: dropdb deletes a database"
   hook_in "dropdb billing" "$clone" "$root"
   has "the same command alone gets the question" '"permissionDecision": "ask"'
+  hook_in "cd src && dropdb billing" "$clone" "$root"
+  has "a leading cd travels with the asked command" '"permissionDecision": "ask"'
+  hook_in "find . -delete" "$clone" "$root"
+  silent "a find that deletes the clone's .git prints nothing"
+  hook_in "cat .env" "$clone" "$root"
+  silent "a local secret file prints nothing"
+  hook_in "uv tool install ruff" "$clone" "$root"
+  silent "an install outside the clone prints nothing"
+}
+
+# Runs the hook on command $1 in folder $2, with the workspace root $3 and the docker stub $4.
+hook_docker() {
+  OUT="$(payload "$1" "$2" | CLAUDE_PROJECT_DIR="$3" GUARD_BASH_DOCKER="$4" bash "$SCRIPT" 2>&1)"
+  RC=$?
+}
+
+test_docker_group() {
+  local root clone stub group="agent_1118-add-export"
+  root="$(new_root docker-group)"
+  clone="$root/tmp/work/2026-11-18-add-export/billing-api"
+  new_repo "$clone"
+  stub="$BASE/docker-labels"
+  # Answers docker <kind> inspect --format <format> <names...> with the labels of each name; exit 1 for an unknown one.
+  cat >"$stub" <<'STUB'
+#!/usr/bin/env bash
+shift 4
+for name in "$@"; do
+  case "$name" in
+    agent_1118-add-export_db) echo '{"com.docker.compose.project":"agent_1118-add-export"}' ;;
+    other_db) echo '{"com.docker.compose.project":"agent_1118-other"}' ;;
+    *) exit 1 ;;
+  esac
+done
+STUB
+  chmod +x "$stub"
+  hook_docker "docker compose -p $group down -v" "$clone" "$root" "$stub"
+  rc_is 0
+  has "docker compose down -v on the own group is allowed" '"permissionDecision": "allow"'
+  has "the reason says Docker stays in the own group" "Docker only in the task's own group"
+  hook_docker "npm test && docker volume rm ${group}_db" "$clone" "$root" "$stub"
+  has "a volume of the own group is allowed with the rest of the line" '"permissionDecision": "allow"'
+  hook_docker "docker volume rm other_db" "$clone" "$root" "$stub"
+  has "a volume of another group asks" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p agent_1118-other down -v" "$clone" "$root" "$stub"
+  has "another group's down -v asks" '"permissionDecision": "ask"'
+  hook_docker "docker volume rm ${group}_db" "$clone" "$root" "$BASE/no-such-docker"
+  has "Docker that does not answer keeps the question" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group push" "$clone" "$root" "$stub"
+  silent "a push of the own group prints nothing"
+  hook_docker "psql -c 'DROP TABLE x'" "$clone" "$root" "$stub"
+  has "a SQL client on the host keeps its question" '"permissionDecision": "ask"'
+}
+
+test_protected_folders() {
+  local root clone
+  root="$(new_root protected)"
+  clone="$root/tmp/work/2026-11-18-add-export/billing-api"
+  new_repo "$clone"
+  mkdir -p "$root/tools/observability/.data" "$root/.history/merge-orders"
+  echo x >"$root/tools/observability/.data/grafana.db"
+  hook_in "rm -rf tools/observability/.data" "$root" "$root"
+  has "deleting Grafana's data asks" '"permissionDecision": "ask"'
+  has "the reason names Grafana's data" "the data of Grafana"
+  hook_in "npm test && rm -rf ../../../../tools" "$clone" "$root"
+  has "in an approved clone line it is refused to run alone" "Run it alone: it deletes, moves or empties"
+  hook_in "ls tools/observability/.data" "$root" "$root"
+  silent "reading Grafana's data prints nothing"
+  hook_in "CLAUDECODE= bash scripts/aiwp-gate.sh gate --merge" "$clone" "$root"
+  has "clearing CLAUDECODE is refused" '"permissionDecision": "deny"'
+  has "the reason names the variables" "CLAUDECODE or CLAUDE_CODE_SESSION_ID"
+  hook_in "env -u CLAUDE_CODE_SESSION_ID bash x.sh" "$root" "$root"
+  has "env -u of the session id is refused" '"permissionDecision": "deny"'
+  hook_in "echo order >> .history/merge-orders/abc" "$root" "$root"
+  has "writing a merge order is refused" "where the UserPromptSubmit hook records the /merge"
+  hook_in "printf '{\"session_id\":\"abc\",\"prompt\":\"/merge\"}' | python3 -I scripts/session-title.py ." "$root" "$root"
+  has "running the hook that records the order is refused" '"permissionDecision": "deny"'
+  hook_in "cat .history/merge-orders/abc" "$root" "$root"
+  silent "reading a merge order prints nothing"
+  hook_in "bash scripts/aiwp-cmds.sh deploy billing-api developer" "$root" "$root"
+  has "deploy asks" '"permissionDecision": "ask"'
+  has "the reason says it updates the final stack" "updates the final stack"
+}
+
+test_real_docker() {
+  local root clone id own other
+  if ! docker info >/dev/null 2>&1; then
+    echo "skip test_real_docker: Docker does not answer"
+    return 0
+  fi
+  id="gb$$"
+  root="$(new_root real-docker)"
+  clone="$root/tmp/work/2026-11-18-$id/app"
+  new_repo "$clone"
+  own="agent_1118-${id}_data"
+  other="agent_1118-${id}x_data"
+  docker volume create --label "com.docker.compose.project=agent_1118-$id" "$own" >/dev/null
+  docker volume create --label "com.docker.compose.project=agent_1118-${id}x" "$other" >/dev/null
+  hook_in "docker volume rm $own" "$clone" "$root"
+  has "a real volume of the own group is allowed" '"permissionDecision": "allow"'
+  hook_in "docker volume rm $other" "$clone" "$root"
+  has "a real volume of another group asks" '"permissionDecision": "ask"'
+  docker volume rm "$own" "$other" >/dev/null
 }
 
 test_help_and_args() {
@@ -566,5 +675,8 @@ test_aiwp_core_commands
 test_writable_list_failure_asks
 test_settings_static
 test_clone_trail
+test_docker_group
+test_protected_folders
+test_real_docker
 echo "passed=$PASS failed=$FAILED"
 [ "$FAILED" -eq 0 ]

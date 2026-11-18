@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Claude Code PreToolUse hook for the Bash tool: the human confirms a destructive or outward command, alone in its
-# call; a commit that carries a secret and a change to the read-only core of an installed workspace are refused; a line
-# that stays in one clone of tmp/work/ is allowed with no question. The decision logic lives in guard-bash.py, next to
-# this file.
+# call; a commit that carries a secret, a change to the read-only core of an installed workspace and a way around the
+# person's merge order are refused; a line that stays in one clone of tmp/work/ (Docker in the task's own group) is
+# allowed with no question. The decision logic lives in guard-bash.py, next to this file.
 set -euo pipefail
 
 # Prints the command reference.
@@ -26,11 +26,23 @@ mode (auto mode judges destruction); this hook holds only what the workspace nev
   deny  a git commit in custom/ that carries a file named .env or local.settings.json, or a secret that
         scripts/validate.sh --only secrets finds in its files; asks when that scan cannot run. Commits in the clones
         of tmp/work/ are checked by their pre-push hook instead (scripts/aiwp-cmds.sh --help).
+  deny  a way around the person's merge order (/merge is the person's): a line that sets, exports, unsets or clears
+        CLAUDECODE or CLAUDE_CODE_SESSION_ID (VAR=x, export, declare, unset, read, printf -v, ${VAR:=x}, env -u,
+        env -i, env -, exec -c); one that writes, moves, deletes or links a path under .history/merge-orders/ of the
+        root, or a folder that holds it (a redirection, or any command but a reader such as cat, ls, grep; interpreter
+        code that names it; links resolved, from the folder the command runs in); and one that runs or copies
+        scripts/session-title.py, the UserPromptSubmit hook that records the order.
   ask   deleting a database: docker volume rm/prune, docker compose down -v / rm -v, docker system prune --volumes,
         docker rm -v; DROP or TRUNCATE given to a SQL client (psql, mysql, mariadb, sqlite3, sqlcmd, mongosh,
         duckdb); dropdb, mysqladmin drop, dotnet ef database drop, prisma migrate reset or db push --force-reset,
-        rails/rake db:drop, db:reset, db:purge; rm of a .data folder or of a .db, .sqlite, .mdf or .ldf file.
-  ask   scripts/aiwp-cmds.sh release, hotfix (pushes a fix to main), hotfix-tag (pushes a release tag), hotfix-down
+        rails/rake db:drop, db:reset, db:purge; rm of a .data folder or of a .db, .sqlite, .mdf or .ldf file. Not in
+        the task's own Docker group (see allow below): there they run with no question.
+  ask   deleting, moving or emptying tools/observability/.data of the root, Grafana's data, anything in it or a folder
+        that holds it, whatever the rest of the line is and wherever it runs, an approved clone included: rm, rmdir,
+        mv, shred, truncate, find -delete or -exec rm, rsync --delete, cp, dd, sed -i or a redirection into it, xargs
+        fed by a find, interpreter code that names it, ssh that names it.
+  ask   scripts/aiwp-cmds.sh release, deploy (updates the final stack of a project from a branch), hotfix (pushes a
+        fix to main), hotfix-tag (pushes a release tag), hotfix-down
         (merges main into developer and pushes it), checkpoint (pushes the checkpoint tags), developer --create (creates
         developer on the remote), gate --untested (a normalization without its tests), apply --apply and close --discard
         (run, by a shell, or by source).
@@ -59,7 +71,8 @@ the core changes only through aiwp. Outside an installed workspace (this reposit
 A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in the clone's folder.
   deny  "Run it alone: ..." instead of a question above when the line holds other commands too (joined by ;, &&, ||,
         & or a newline at the top level; a pipeline, a subshell, a compound command (if, for, while, case, { }) and
-        what is nested in the asked command (bash -c, $(...)) count as one). Run the other commands first, then the
+        what is nested in the asked command (bash -c, $(...)) count as one; a cd, pushd, popd or an assignment alone,
+        with no redirection, travels with the asked command). Run the other commands first, then the
         asked one alone in its own call, so the question shows only it. A line that runs a file it wrote itself
         (cat > f.sh ... && bash f.sh) keeps the question: alone, later, that file is not seen.
   allow a line it can tell stays in one clone, tmp/work/<yyyy-mm-dd>-<slug>/<clone>/ (the work trail), when no deny or
@@ -67,7 +80,8 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
         - every command runs in that clone (a cd into it from the root counts; scripts/aiwp-cmds.sh run
           <work>/<clone> -- <command> of this workspace counts, wherever it runs, and its command is judged in the
           clone);
-        - every path it names stays in that clone, out of its .git (the hooks that scan and push): each argument and
+        - every path it names stays in that clone, out of its .git (the hooks that scan and push), and is no local
+          secret file (.env, local.settings.json, env/<name>.env): each argument and
           each token of it (code or a message given as one word), the value after = (--out=x, of=x, DESTDIR=x), the
           value glued to a short option (-o/x), each piece between colons, every redirection target; read from the
           folder the command runs in, links resolved. /dev/null and 2>&1 are fine; a URL is not a path (file: is);
@@ -75,10 +89,22 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
           hand is never allowed), git remote add/set-url, git config writes, ssh, scp, rsync, sftp, curl, wget, cloud
           and cluster CLIs (aws, az, gcloud, kubectl, helm, terraform, tofu, pulumi, gh, glab...), a remote word
           (push, publish, deploy, release, upload, login: npm publish, mvn deploy, twine upload, gem push), a global
-          install (npm -g, pip --user, go install, cargo install), npm config, links (ln, cp -s), kill, sudo, xargs.
+          install (npm -g, npm link, pip --user, python3 -m pip --user, go install, cargo install, uv tool install,
+          gem install, dotnet tool -g, composer global), npm config, links (ln, cp -s), kill, sudo, xargs.
           Installing dependencies (npm install, pip install, uv sync, go mod download, mvn, gradle, dotnet restore) is
-          not remote. Docker, docker compose, SQL clients and the workspace scripts (aiwp, aiwp-cmds.sh other than
-          run, aiwp-gate.sh) are never allowed here: they keep their own rules.
+          not remote. SQL clients on the host and the workspace scripts (aiwp, aiwp-cmds.sh other than run,
+          aiwp-gate.sh) are never allowed here: they keep their own rules;
+        - nothing deletes or moves the clone's .git or a folder that holds it (rm -rf ., mv . x, find . -delete,
+          find . -exec rm);
+        - Docker only in the task's own group, the compose project agent_<MMDD>-<slug> or agent_<MMDD>-<slug>-<clone>
+          of that clone's work tmp/work/<yyyy-mm-dd>-<slug>/ (an existing clone folder), run from the clone with no
+          docker global option and no DOCKER_* or COMPOSE_* variable on the line: docker compose -p <group> (or
+          --project-name) with any subcommand but push, publish or --push, -f naming only files of the clone or the
+          copy's override tmp/work/<work>/agent-<clone>.compose.yaml, run and exec mounting only folders of the clone
+          and running nothing remote in the container (a SQL client or dropdb there runs with no question); docker
+          rm, rmi, image rm, volume rm or inspect, network rm of resources that all carry the label
+          com.docker.compose.project=<group> (docker inspect, 5 s; Docker that does not answer, a resource with no
+          label or of another group: today's rules). Any other Docker command is left to them.
         It stays silent when it cannot tell: a word with $ (a variable, a substitution) or ~, a brace expansion, a
         wildcard that may leave (a dot segment after it, a match that is a link out), a folder it does not know, two
         clones, a redirection with no command, a nested text it could not read.
@@ -105,7 +131,11 @@ internal error and a run longer than 240 s ask too: never a silent pass, never a
 Not seen, by design: a command held in a variable or a function, what a script or an interpreter builds at run time
 (an allowed line may run a script of the clone: the trail trusts the clone, not what the script does),
 and what runs inside a container or another host beyond the command line given here. Other tools that change
-permissions (setfacl, chattr, install -m, a chmod inside a script or an interpreter) are not judged.
+permissions (setfacl, chattr, install -m, a chmod inside a script or an interpreter) are not judged. Grafana's data
+and the merge orders: a container that mounts them (docker run -v), a path held in a variable the line does not set
+(only its text is matched), archive extraction (tar -C, unzip -d); sudo, ssh localhost or an interpreter that starts
+a process with a cleaned environment (only the shell forms above are seen). The own Docker group trusts its compose
+files, which live in the clone.
 This is a speed bump with the human's confirmation behind it, not a sandbox.
 Workspace root: $CLAUDE_PROJECT_DIR, else the parent of this script's folder.
 Test seams: GUARD_BASH_DOCKER (docker binary), GUARD_BASH_VALIDATE (validate script).

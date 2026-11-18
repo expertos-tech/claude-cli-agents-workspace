@@ -39,9 +39,12 @@ class FakeRun:
     tests run inside the coverage image); docker and the validate script answer what the test sets."""
 
     def __init__(
-        self, repos=None, docker_rc=0, validate_rc=0, validate_out='', error=None, broken=False, writable=None
-    ):
+        self, repos=None, docker_rc=0, validate_rc=0, validate_out='', error=None, broken=False, writable=None,
+        labels=None,
+    ):  # fmt: skip
         self.repos = repos or {}
+        # What docker <kind> inspect answers: {resource name: its labels (a dict), or the raw line to print}.
+        self.labels = labels
         self.docker_rc, self.validate_rc, self.validate_out, self.error = docker_rc, validate_rc, validate_out, error
         self.broken = broken
         # What scripts/aiwp.sh _writable answers: (exit code, stdout), or an exception to raise.
@@ -98,6 +101,11 @@ class FakeRun:
                 self.listed = handle.read().split()
             return subprocess.CompletedProcess(cmd, self.validate_rc, self.validate_out, '')
         self.other_calls.append(cmd[:2])
+        if self.labels is not None and cmd[2:3] == ['inspect']:
+            names = cmd[5:]
+            found = [self.labels[name] for name in names if name in self.labels]
+            lines = ''.join((item if isinstance(item, str) else json.dumps(item)) + '\n' for item in found)
+            return subprocess.CompletedProcess(cmd, 0 if len(found) == len(names) else 1, lines, '')
         return subprocess.CompletedProcess(cmd, self.docker_rc, '', '')
 
 
@@ -246,7 +254,8 @@ class GitTests(unittest.TestCase):
             'for r in a b; do git -C projects/$r add a.txt; done',
         ):  # fmt: skip
             result = decision(command, cwd=CLONE)
-            question(self, result, command.startswith(('cd ', 'popd')), command)
+            # A leading cd or popd travels with the asked command; one whose target runs a command ($(pwd)) does not.
+            question(self, result, '$(' in command, command)
             self.assertIn('I do not know which repository', result['permissionDecisionReason'])
         for command in ('cd "$d" && git status', 'git -C "$X" log', 'cd "$d" && git push --help'):
             self.assertIsNone(verdict(command, CLONE), command)
@@ -380,7 +389,7 @@ class WorkspaceCommandTests(unittest.TestCase):
             ('bash -c "bash scripts/aiwp-cmds.sh hotfix-down app"', 'hotfix-down'),
         ):  # fmt: skip
             result = decision(command)
-            question(self, result, command.startswith('cd '), command)
+            question(self, result, False, command)  # a leading cd travels with the asked command
             self.assertIn('aiwp-cmds.sh ' + text, result['permissionDecisionReason'])
 
     def test_the_hotfix_commands_say_what_they_move(self):
@@ -1068,7 +1077,7 @@ class CommitTests(unittest.TestCase):
         ):
             self.assertTrue(self.denied(self.repo(staged=('a.txt', '.env')), command), command)
         result = self.commit(self.repo(staged=('a.txt', '.env')), 'cd "$d" && git reset .env; git -C . commit -m x')
-        question(self, result, True)
+        question(self, result, False)  # the cd travels; git reset and the commit both ask
 
     def test_tracked_secret_file_the_commit_deletes_is_accepted(self):
         self.write('b.txt', 'plain')
@@ -1190,7 +1199,7 @@ class CommitTests(unittest.TestCase):
         for command in ('cd "$d" && git commit -m x', 'cd - && git commit -m x'):
             run = self.repo()
             result = self.commit(run, command)
-            question(self, result, True, command)
+            question(self, result, False, command)  # the cd travels with the asked commit
             self.assertIn('I do not know which repository', result['permissionDecisionReason'])
             self.assertEqual(run.validate_calls, [])
         self.assertIsNone(self.commit(self.repo(), 'cd "$d" && git -C ' + self.top + ' commit -m x'))
@@ -1348,7 +1357,7 @@ class ReviewFindingsTests(unittest.TestCase):
             self.assertEqual(verdict(command, ROOT), 'deny', command)
         self.assertIsNone(verdict('bash scripts/aiwp-cmds.sh run tmp/work/c -- git commit -m x', ROOT))
         self.assertIsNone(verdict('bash scripts/aiwp-cmds.sh run tmp/work/c -- git push origin HEAD', ROOT))
-        question(self, decision('cd "$X" && bash scripts/aiwp-cmds.sh run w/c -- git push', cwd=ROOT), True)
+        question(self, decision('cd "$X" && bash scripts/aiwp-cmds.sh run w/c -- git push', cwd=ROOT), False)
         self.assertIsNone(guard.aiwp_run(['bash', 'scripts/aiwp-cmds.sh', 'status'], ROOT))
         self.assertIsNone(guard.aiwp_run(['ls', '-la'], ROOT))
         self.assertIsNone(guard.aiwp_run(['bash', 'x.sh', 'run', 'w/c', '--', 'ls'], ROOT))
@@ -1499,7 +1508,7 @@ class InstalledWorkspaceTests(unittest.TestCase):
             ('for f in *.sh; do chmod +x "$f"; done', 'projects/x'),
         ):  # fmt: skip
             result = self.result(command, os.path.join(self.ws, cwd))
-            question(self, result, command.startswith('cd '), command)
+            question(self, result, False, command)  # a leading cd travels with the asked command
             self.assertIn('may reach the read-only core', result['permissionDecisionReason'], command)
         self.assertIn('other hard links', self.result('chmod 666 tmp/work/y/hard.md')['permissionDecisionReason'])
 
@@ -1825,6 +1834,301 @@ class CloneApprovalTests(unittest.TestCase):
         many = [os.path.join(self.clone, 'src', str(k)) for k in range(guard.MAX_MATCHES + 1)]
         with mock.patch.object(guard.glob, 'iglob', return_value=iter(many)):
             self.assertFalse(guard.word_stays('src/*', self.clone, self.clone))
+
+
+# The Docker groups of that work (BR-7): the work's group and the group of its second clone.
+GROUP = 'agent_1118-add-export'
+WEB_GROUP = GROUP + '-billing-web'
+LABEL = 'com.docker.compose.project'
+
+
+class TrailTestCase(unittest.TestCase):
+    """A workspace root with the work of CloneApprovalTests, its two clones, the override of a copy and Grafana's
+    data folder; docker inspect answers from LABELS."""
+
+    LABELS = {
+        GROUP + '_db': {LABEL: GROUP}, WEB_GROUP + '_db': {LABEL: WEB_GROUP}, 'other_db': {LABEL: 'agent_1118-other'},
+        'bare_db': {}, 'c1': {LABEL: GROUP}, 'img': {LABEL: GROUP}, 'net': {LABEL: GROUP}, 'nolabels': 'null',
+        'broken': '{not json',
+    }  # fmt: skip
+
+    def setUp(self):
+        self.root = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.work = os.path.join(self.root, 'tmp', 'work', WORK)
+        self.clone = os.path.join(self.work, 'billing-api')
+        for folder in (
+            self.clone + '/src', self.clone + '/.git/hooks', self.work + '/billing-web', self.root + '/scripts',
+            self.root + '/tools/observability/.data', self.root + '/tools/observability/dashboards',
+            self.root + '/.history/merge-orders', self.root + '/projects/x',
+        ):  # fmt: skip
+            Path(folder).mkdir(parents=True)
+        Path(self.work, 'agent-billing-api.compose.yaml').write_text('services: {}\n', encoding='utf-8')
+        Path(self.root, 'tools/observability/.data/grafana.db').write_text('x', encoding='utf-8')
+        self.run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS))
+
+    def result(self, command, cwd=None, run=None):
+        """Returns the decision object of a command run in the clone (or cwd), or None when the hook stays silent."""
+        return decision(command, self.root, cwd or self.clone, run or self.run)
+
+    def decided(self, command, cwd=None, run=None):
+        """Returns only the decision of a command: 'allow', 'ask', 'deny' or None."""
+        result = self.result(command, cwd, run)
+        return result['permissionDecision'] if result else None
+
+
+class DockerGroupTests(TrailTestCase):
+    """The task's own Docker group is free, volumes and data included (BR-8, AC-7); every other group, Docker that
+    cannot be read and SQL clients on the host keep today's questions."""
+
+    def test_the_own_group_is_allowed_with_no_question(self):
+        for command in (
+            'docker compose -p ' + GROUP + ' down -v', 'docker compose --project-name ' + GROUP + ' up -d --build',
+            'docker compose --project-name=' + WEB_GROUP + ' ps', 'docker compose -p' + GROUP + ' logs app',
+            'docker compose -p ' + GROUP + ' -f compose.yaml -f ../agent-billing-api.compose.yaml up -d',
+            'docker compose --dry-run -p ' + GROUP + ' --env-file src/x.env rm -fsv',
+            'docker compose -p ' + GROUP + ' exec -T db psql -U app -c "DROP TABLE users"',
+            'docker compose -p ' + GROUP + ' run --rm -v ./src:/app/src -e A=1 -w /app app pytest /app/tests',
+            'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
+            'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' up -d',
+            'docker volume rm ' + GROUP + '_db', 'docker volume rm -f ' + GROUP + '_db ' + WEB_GROUP + '_db',
+            'docker volume inspect --format "{{.Mountpoint}}" ' + GROUP + '_db', 'docker rm -fv c1',
+            'docker container rm c1', 'docker rmi img', 'docker image rm --no-prune img', 'docker network rm net',
+        ):  # fmt: skip
+            result = self.result(command)
+            self.assertEqual(result and result['permissionDecision'], 'allow', command)
+            self.assertIn(guard.OWN_GROUP, result['permissionDecisionReason'], command)
+
+    def test_another_group_or_what_cannot_be_told_keeps_the_question(self):
+        for command in (
+            'docker volume rm other_db', 'docker volume rm ' + GROUP + '_db other_db', 'docker volume rm bare_db',
+            'docker volume rm missing_db', 'docker volume rm nolabels', 'docker volume rm broken',
+            'docker compose -p agent_1118-other down -v', 'docker compose down -v', 'docker rm -v other_db',
+            'docker compose -p ' + GROUP + '-nobody down -v', 'docker compose -p ' + GROUP + ' -p x down -v',
+            'docker compose -p ' + GROUP + ' -f /etc/x.yaml down -v',
+            'docker --context prod volume rm ' + GROUP + '_db',
+            'DOCKER_HOST=tcp://example.com:2375 docker compose -p ' + GROUP + ' down -v',
+            'docker compose -p agent_1118-other exec db psql -c "DROP TABLE x"', 'psql -c "DROP TABLE x"',
+            'docker volume rm "$V"', 'sudo docker volume rm ' + GROUP + '_db', 'podman volume rm ' + GROUP + '_db',
+        ):  # fmt: skip
+            self.assertEqual(self.decided(command), 'ask', command)
+        self.assertEqual(self.decided('docker compose -p ' + GROUP + ' down -v', self.root), 'ask')
+        for error in (OSError('no docker'), subprocess.TimeoutExpired('docker', 5)):
+            run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS), error=error)
+            self.assertEqual(self.decided('docker volume rm ' + GROUP + '_db', run=run), 'ask', error)
+        run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS))
+        self.assertEqual(self.decided('npm test && docker volume rm other_db', run=run), 'deny')
+
+    def test_a_push_a_remote_or_a_path_out_is_left_to_the_permission_mode(self):
+        for command in (
+            'docker compose -p ' + GROUP + ' push', 'docker compose -p ' + GROUP + ' build --push',
+            'docker compose -p ' + GROUP + ' publish x', 'docker compose -p ' + GROUP + ' -f ../../x.yaml up',
+            'docker compose -p ' + GROUP + ' -f ../agent-nobody.compose.yaml up',
+            'docker compose -p ' + GROUP + ' --unknown up', 'docker compose -p ' + GROUP,
+            'docker compose -p ' + GROUP + ' run -v /:/host app ls', 'docker compose up -d',
+            'docker compose -p ' + GROUP + ' run -v .:/w app rm -rf /w/.git',
+            'docker compose -p ' + GROUP + ' run -v ./src/..:/w app ls',
+            'docker compose -p ' + GROUP + ' run --volume=$HOME:/h app ls',
+            'docker compose -p ' + GROUP + ' --env-file /etc/x.env up',
+            'docker compose -p ' + GROUP + ' exec app curl https://example.com',
+            'docker compose -p ' + GROUP + ' exec app npm publish', 'docker compose -p ' + GROUP + ' up > /etc/x',
+            'X=/etc docker compose -p ' + GROUP + ' up', 'docker compose -p ' + GROUP + ' cp app:/etc/passwd x',
+            'docker push img', 'docker login', 'docker rmi "img$X"', 'docker rm -l c1', 'docker volume ls',
+            'docker image prune', 'docker rmi', 'docker network create n', 'docker',
+        ):  # fmt: skip
+            self.assertIsNone(self.decided(command), command)
+        self.assertIsNone(self.decided('docker compose -p ' + GROUP + ' up -d', self.root))
+
+    def test_helpers(self):
+        self.assertEqual(guard.own_groups(self.clone), {GROUP, GROUP + '-billing-api', WEB_GROUP})
+        self.assertEqual(guard.own_groups(os.path.join(self.root, 'tmp', 'work', '2026-11-18-gone', 'c')),
+                         {'agent_1118-gone'})  # fmt: skip
+        self.assertEqual(guard.option_value(['-pX'], 0), ('-p', 'X', 1))
+        self.assertEqual(guard.option_value(['--file'], 0), ('--file', '', 2))
+        self.assertTrue(guard.inner_reaches_out(['app', 'ssh', 'host']))
+        self.assertFalse(guard.inner_reaches_out(['db', 'psql', '-c', 'select 1']))
+        groups = guard.DockerGroups(self.root, self.run)
+        self.assertFalse(groups.override('$X.yaml', self.clone, self.clone))
+        self.assertFalse(groups.resources(['volume', 'rm', 'a b'], {GROUP}))
+        self.assertTrue(groups.resources(['volume', 'inspect', '--format={{.Name}}', GROUP + '_db'], {GROUP}))
+
+
+class ProtectedFolderTests(TrailTestCase):
+    """Grafana's data asks whatever runs it, even in a clone that is approved otherwise (BR-9, AC-8); the person's
+    merge order cannot be forged or run around (BR-13); aiwp-cmds.sh deploy asks (BR-16)."""
+
+    def test_deleting_moving_or_emptying_grafana_data_asks(self):
+        for command, cwd in (
+            ('rm -rf tools/observability/.data', ''), ('rm tools/observability/.data/grafana.db', ''),
+            ('rm -rf tools/observability', ''), ('rm -rf tools', ''), ('rm -rf tools/*', ''), ('rm -rf *', ''),
+            ('rm -rf tools/o*/', ''), ('rm -rf tools/{a,b}', ''), ('mv tools/observability/.data /tmp/x', ''),
+            ('find tools -delete', ''), ("find tools -name '*.db' -delete", ''),
+            ('find tools -exec rm -rf {} +', ''), ('truncate -s 0 tools/observability/.data/grafana.db', ''),
+            ('shred tools/observability/.data/grafana.db', ''), ('> tools/observability/.data/grafana.db', ''),
+            ('echo x > tools/observability/.data/grafana.db', ''), ('cp /dev/null tools/observability/.data/x', ''),
+            ('cp -r /tmp/.data tools/observability', ''), ('rsync -a --delete e/ tools/observability/.data/', ''),
+            ('cd tools/observability && rm -rf .data', ''), ('find tools -name x | xargs rm -rf', ''),
+            ('dd if=/dev/zero of=tools/observability/.data/grafana.db', ''),
+            ('sed -i s/a/b/ tools/observability/.data/grafana.db', ''),
+            ('python3 -c "import shutil; shutil.rmtree(\'tools/observability/.data\')"', ''),
+            ('rm -rf "$UNKNOWN/tools/observability/.data"', ''), ('ssh host rm -rf /srv/tools/observability/.data', ''),
+            ('rm -rf ../../../../tools/observability/.data', 'clone'), ('rm -rf ../../../../tools', 'clone'),
+            ('cd ../../../.. && rm -rf tools/observability/.data', 'clone'),
+        ):  # fmt: skip
+            result = self.result(command, self.clone if cwd else self.root)
+            question(self, result, False, command)
+            self.assertIn('the data of Grafana', result['permissionDecisionReason'], command)
+
+    def test_a_refusal_comes_before_the_grafana_question(self):
+        # find . -delete at the root reaches .history/merge-orders/ too: the refusal wins over the question.
+        self.assertEqual(self.decided("find . -name '*.db' -delete", self.root), 'deny')
+        self.assertEqual(self.decided('rm -rf tools && unset CLAUDECODE', self.root), 'deny')
+
+    def test_grafana_data_asks_even_inside_an_approved_clone_line(self):
+        result = self.result('npm test && rm -rf ../../../../tools/observability/.data')
+        question(self, result, True)
+        self.assertIn('the data of Grafana', result['permissionDecisionReason'])
+        self.assertEqual(self.decided('npm test && rm -rf build'), 'allow')
+
+    def test_reading_or_other_folders_of_grafana_data_stay_silent(self):
+        for command in (
+            'ls tools/observability/.data', 'cat tools/observability/.data/grafana.db',
+            'cp tools/observability/.data/grafana.db /tmp/backup.db', 'rm -rf tools/observability/dashboards/x',
+            'rm -rf ./*.log', 'rm tools', 'find tools -name x', 'find . -exec chmod u+w {} +',
+            'rsync -a tools/observability/.data/ /tmp/backup/', 'cp -r x tools/observability',
+        ):  # fmt: skip
+            self.assertIsNone(self.decided(command, self.root), command)
+
+    def test_session_variables_cannot_change(self):
+        for command in (
+            'CLAUDECODE= bash scripts/aiwp-gate.sh gate --merge', 'CLAUDECODE=', 'unset CLAUDECODE',
+            'export CLAUDE_CODE_SESSION_ID=abc', 'export CLAUDECODE', 'env -u CLAUDECODE bash x.sh',
+            'env -uCLAUDECODE bash x.sh', 'env --unset=CLAUDECODE bash x.sh', 'env -i bash x.sh', 'env - bash x.sh',
+            'exec -c bash x.sh', 'declare -x CLAUDECODE=1', 'typeset +x CLAUDECODE', 'read CLAUDE_CODE_SESSION_ID',
+            'printf -v CLAUDECODE x', ': ${CLAUDECODE:=}', 'env CLAUDE_CODE_SESSION_ID=x bash x.sh',
+            'bash -c "unset CLAUDECODE; bash scripts/aiwp-gate.sh gate --merge"', 'npm test; unset CLAUDECODE',
+            'env -u CLAUDECODE', 'sudo CLAUDECODE= bash x.sh',
+        ):  # fmt: skip
+            for cwd in (self.root, self.clone):
+                result = self.result(command, cwd)
+                self.assertEqual(result and result['permissionDecision'], 'deny', (command, cwd))
+                self.assertIn('CLAUDECODE or CLAUDE_CODE_SESSION_ID', result['permissionDecisionReason'], command)
+        for command in (
+            'echo $CLAUDECODE', 'printf "%s" "$CLAUDE_CODE_SESSION_ID"', 'env', 'env | grep CLAUDE',
+            'echo "${CLAUDECODE}"', 'X=1 && npm test', 'env A=1 npm test',
+        ):  # fmt: skip
+            self.assertNotEqual(self.decided(command), 'deny', command)
+
+    def test_merge_orders_cannot_be_written(self):
+        for command, cwd in (
+            ('echo order > .history/merge-orders/abc', ''), ("printf 'order\\t1\\n' >> .history/merge-orders/abc", ''),
+            ('echo order | tee -a .history/merge-orders/abc', ''), ('cp /tmp/x .history/merge-orders/abc', ''),
+            ('mv /tmp/x .history/merge-orders/abc', ''), ('rm .history/merge-orders/abc', ''), ('rm -rf .history', ''),
+            ('mv .history /tmp/h', ''), ('ln -s /tmp/x .history/merge-orders/abc', ''),
+            ('ln -s .history/merge-orders/abc mylink', ''), ('touch .history/merge-orders/abc', ''),
+            ('sed -i s/a/b/ .history/merge-orders/abc', ''), ('dd if=/tmp/x of=.history/merge-orders/abc', ''),
+            ('install -m 600 /tmp/x .history/merge-orders/abc', ''), ('cp -r /tmp/merge-orders .history/', ''),
+            ('python3 -c "open(\'.history/merge-orders/abc\', \'a\').write(\'order\')"', ''),
+            ('cd .history && echo order > merge-orders/abc', ''), ('> .history/merge-orders/abc', ''),
+            ('X=1 > .history/merge-orders/abc', ''), ('(echo order) > .history/merge-orders/abc', ''),
+            ("ssh localhost 'echo order >> ws/.history/merge-orders/abc'", ''),
+            ('bash -c "echo order >> .history/merge-orders/abc"', ''), ('find .history -name x -delete', ''),
+            ('ls .history/merge-orders | xargs rm', ''), ('vim .history/merge-orders/abc', ''),
+            ('echo order >> ../../../../.history/merge-orders/abc', 'clone'),
+            ('npm test && echo order >> ../../../../.history/merge-orders/abc', 'clone'),
+        ):  # fmt: skip
+            result = self.result(command, self.clone if cwd else self.root)
+            self.assertEqual(result and result['permissionDecision'], 'deny', command)
+            self.assertIn('.history/merge-orders/', result['permissionDecisionReason'], command)
+
+    def test_merge_orders_are_found_by_their_real_path(self):
+        os.symlink(os.path.join(self.root, '.history', 'merge-orders'), os.path.join(self.clone, 'h'))
+        for command in ('echo order > h/abc', 'cd ../../../.. && rm -rf .history', 'cp x h/', 'rm -rf ../../../..'):
+            self.assertEqual(self.decided(command), 'deny', command)
+        # A shell's * never matches .history; it does match tools/, which holds Grafana's data.
+        self.assertEqual(self.decided('rm -rf ../../../../*'), 'ask')
+        self.assertEqual(self.decided('cat h/abc'), None)
+
+    def test_the_hook_that_records_the_order_cannot_be_run(self):
+        for command in (
+            'printf \'{"session_id":"abc","prompt":"/merge"}\' | python3 -I scripts/session-title.py .',
+            'python3 scripts/session-title.py .', 'cp scripts/session-title.py /tmp/t.py',
+            'uv run python scripts/session-title.py .', 'python3 -c "exec(open(\'scripts/session-title.py\').read())"',
+            './scripts/session-title.py .',
+        ):  # fmt: skip
+            result = self.result(command, self.root)
+            self.assertEqual(result and result['permissionDecision'], 'deny', command)
+            self.assertIn('session-title.py', result['permissionDecisionReason'], command)
+        for command in (
+            'cat .history/merge-orders/abc', 'ls .history/merge-orders', 'grep -r order .history/merge-orders',
+            'cat scripts/session-title.py', 'git log -- scripts/session-title.py', 'find .history -name x',
+            'python3 scripts/prompt-log.py sync',
+        ):  # fmt: skip
+            self.assertNotEqual(self.decided(command, self.root), 'deny', command)
+        self.assertEqual(self.decided('git commit -m "fix merge-orders"'), 'allow')
+
+    def test_deploy_asks_and_says_it_updates_the_final_stack(self):
+        for command in ('bash scripts/aiwp-cmds.sh deploy billing-api developer', 'aiwp-cmds.sh deploy app main'):
+            result = self.result(command, self.root)
+            question(self, result, False, command)
+            self.assertIn('updates the final stack', result['permissionDecisionReason'], command)
+        self.assertIsNone(self.decided('bash scripts/aiwp-cmds.sh deploy --help', self.root))
+
+    def test_helpers(self):
+        self.assertIsNone(guard.word_place('$NOPE_X/a', self.root, self.root))
+        self.assertEqual(guard.word_place('a/*/b', '/w', '/r'), ('/w/a', '*'))
+        self.assertEqual(guard.word_place('x', None, '/r'), ('/r/x', None))
+        self.assertFalse(guard.reaches_path(('/a/b', None), '/c', 'remove'))
+        self.assertTrue(guard.reaches_path(('/a', None), '/a/b/c', 'into', ('/tmp/b/',)))
+        self.assertFalse(guard.reaches_path(('/a', None), '/a/b/c', 'write'))
+        self.assertEqual(guard.target_folder(['-t', 'd', 'x']), 'd')
+        self.assertEqual(guard.target_folder(['--target-directory=d', 'x']), 'd')
+        self.assertEqual(guard.target_folder(['-td']), 'd')
+        self.assertIsNone(guard.target_folder(['a', 'b']))
+        self.assertEqual(guard.fed_words({'stdin': ['a b'], 'source': None}), ['a', 'b'])
+        self.assertEqual(guard.fed_words({'stdin': None, 'source': None}), [])
+        self.assertEqual(guard.touches(['cp', '-t', 'd', 'x'], []), [('into', 'd', ('x',))])
+        self.assertFalse(guard.find_removes(['find', '.', '-exec', 'chmod', 'u+w', '{}', '+']))
+        self.assertTrue(guard.find_removes(['find', '.', '-exec', 'sh', '-c', 'rm "$1"', '_', '{}', ';']))
+
+
+class ReviewOfTheTrailTests(TrailTestCase):
+    """What the independent review of the Stage 2 approval found (commit 48fc802)."""
+
+    def test_deleting_the_clone_git_folder_is_never_approved(self):
+        for command in (
+            'find . -delete', 'find . -exec rm -rf {} +', "find . -name x -execdir rm {} ';'", 'find src/.. -delete',
+            'find -delete', 'find . -exec mv {} /tmp \\;', 'find . -ok shred {} \\;', 'mv .git /tmp/g',
+            'rm -rf src/..', 'find * .* -delete',
+        ):  # fmt: skip
+            self.assertIsNone(self.result(command), command)
+        for command in ("find src -name '*.pyc' -delete", 'find . -name x -print', 'rm -rf src/x', 'mv src/a src/b'):
+            self.assertEqual(self.decided(command), 'allow', command)
+
+    def test_installs_outside_the_clone_are_left_to_the_permission_mode(self):
+        for command in (
+            'uv tool install ruff', 'python3 -m pip install --user x', 'gem install rails', 'gem update',
+            'dotnet tool install -g x', 'dotnet tool install --global x', 'composer global require x', 'npm link',
+            'yarn global add x', 'pnpm add -g x',
+        ):  # fmt: skip
+            self.assertIsNone(self.result(command), command)
+        for command in ('uv tool run ruff check src', 'dotnet tool restore', 'composer install', 'gem list'):
+            self.assertEqual(self.decided(command), 'allow', command)
+
+    def test_local_secret_files_are_left_to_the_permission_mode(self):
+        Path(self.clone, 'src', '.env').write_text('KEY=1', encoding='utf-8')
+        for command in (
+            'cat .env', 'cat src/.env', 'cp .env x.txt', 'echo KEY=1 > .env', 'cat local.settings.json',
+            'cat env/prod.env', 'grep KEY src/.e?v', 'python3 -c "print(open(\'.env\').read())"',
+        ):  # fmt: skip
+            self.assertIsNone(self.result(command), command)
+        self.assertEqual(self.decided('cat .env.example'), 'allow')
+
+    def test_a_leading_cd_or_assignment_travels_with_the_asked_command(self):
+        for command in ('cd src && dropdb x', 'cd src; dropdb x', 'X=1; dropdb x', 'pushd src && dropdb x'):
+            question(self, self.result(command), False, command)
+        for command in ('cd src && npm test && dropdb x', 'cd $(mktemp -d) && dropdb x', 'cd src > log && dropdb x'):
+            question(self, self.result(command), True, command)
 
 
 if __name__ == '__main__':

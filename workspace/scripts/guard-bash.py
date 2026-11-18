@@ -5,17 +5,24 @@ It asks the human before a command that destroys data, rewrites history, moves a
 in the spellings scripts/guard-bash.sh --help lists (git -C <dir>, wrappers, shell keywords, bash -c, command
 substitution, ssh, heredocs), and it refuses a commit that carries a local secret file or a secret gitleaks finds.
 In an installed workspace it refuses chmod, chown, chgrp, git init and git clone that reach the read-only core, and
-denies aiwp update, rollback, repair, forget and the opening (aiwp, aiwp -- ...) inside a session. What it cannot
-read, it asks about. A line it would ask about that holds other top-level commands too is denied instead ("Run it
-alone:"), so the question shows only the command it asks about.
+denies aiwp update, rollback, repair, forget and the opening (aiwp, aiwp -- ...) inside a session. It denies a way
+around the person's merge order: changing CLAUDECODE or CLAUDE_CODE_SESSION_ID, writing .history/merge-orders/,
+running scripts/session-title.py. It asks before deleting, moving or emptying Grafana's data (tools/observability/
+.data) and before aiwp-cmds.sh deploy. What it cannot read, it asks about. A line it would ask about that holds other
+top-level commands too is denied instead ("Run it alone:"), so the question shows only the command it asks about; a
+leading cd or assignment travels with it.
 It allows, with no question, a line it can tell stays in one clone of tmp/work/<yyyy-mm-dd>-<slug>/<clone>/: every
-command runs there, every path it names (arguments and redirections, links resolved) stays there out of its .git, and
-none reaches a remote system (a push, a publish, a deploy, ssh, curl, a cloud or cluster CLI). Docker, SQL clients and
-the workspace scripts are never allowed by it. Every deny and ask comes first; what it cannot tell stays silent.
+command runs there, every path it names (arguments and redirections, links resolved) stays there out of its .git and
+is no local secret file, nothing deletes that .git, and none reaches a remote system (a push, a publish, a deploy, ssh,
+curl, a cloud or cluster CLI, a global install). Docker only in the task's own group (agent_<MMDD>-<slug>[-<clone>],
+its resources told by their compose label), where deleting a volume or a database asks nothing. SQL clients on the
+host and the workspace scripts are never allowed by it. Every deny and ask comes first; what it cannot tell stays
+silent.
 A speed bump with the human's confirmation behind it, not a sandbox: text a shell builds at run time is not seen.
 Usage: python3 -I -B guard-bash.py <workspace-root>
 """
 
+import fnmatch
 import glob
 import itertools
 import json
@@ -140,7 +147,8 @@ class Lexer:
         self.text, self.size = text, len(text)
         self.cwd, self.oldpwd, self.dirs, self.exports, self.vars = cwd, None, [], {}, {}
         self.commands = [] if commands is None else commands
-        # Redirections with no command to carry them ((a) > f, > f, exec 3> f): their targets, which no entry holds.
+        # Redirections with no command to carry them ((a) > f, > f): (operator, target, folder, group), which no entry
+        # holds.
         self.loose = []
         self.pending, self.depth, self.group, self.compound = [], 0, [0], 0
 
@@ -193,7 +201,7 @@ class Lexer:
             push()
             entry = self.emit(words, piped, source, inputs, redirects) if words else None
             if not words:
-                self.loose.extend(target for _, target in redirects)
+                self.loose.extend((operator, target, self.cwd, self.group[0]) for operator, target in redirects)
             words, inputs, redirects, awaiting = [], [], [], None
             piped, source = next_piped, entry if next_piped else None
 
@@ -545,9 +553,10 @@ def short_options(word, values):
 
 def strip_wrappers(argv):
     """Drops leading shell keywords, variable assignments and wrapper commands (sudo, env, timeout 5, xargs -n 1).
-    Returns (the command left, what was dropped: env, wrappers, chdir, the texts given to env -S and flock -c, and
-    shell: True for sudo -s or -i, which open a shell)."""
-    info = {'env': {}, 'wrappers': set(), 'chdir': '', 'texts': [], 'shell': False}
+    Returns (the command left, what was dropped: env, wrappers, chdir, the texts given to env -S and flock -c,
+    shell: True for sudo -s or -i, which open a shell, unset: the names env -u takes out of the environment, and
+    cleared: True for env -i, env - and exec -c, which start from an empty environment)."""
+    info = {'env': {}, 'wrappers': set(), 'chdir': '', 'texts': [], 'shell': False, 'unset': [], 'cleared': False}
     i, size = 0, len(argv)
     while i < size:
         if ASSIGNMENT.match(argv[i]):
@@ -586,6 +595,12 @@ def strip_wrappers(argv):
                 info['chdir'] = value
             elif name == 'env' and option in ('-S', '--split-string'):
                 info['texts'].append(value)
+            elif name == 'env' and option in ('-u', '--unset'):
+                info['unset'].append(value)
+            if (name == 'env' and (word == '-' or {'-i', '--ignore-environment'} & set(names))) or (
+                name == 'exec' and '-c' in names
+            ):
+                info['cleared'] = True
             if name in ('sudo', 'doas') and {'-s', '-i', '--shell', '--login'} & set(names):
                 info['shell'] = True
             i += 2 if separate else 1
@@ -942,13 +957,19 @@ def docker_db_reason(args):
 
 
 def aiwp_verdict(argv):
-    """Returns ('ask', reason) for the commands of scripts/aiwp-cmds.sh that the human confirms, or None."""
+    """Returns ('ask', reason) for the commands of scripts/aiwp-cmds.sh that the human confirms (release, deploy, the
+    hotfix commands, checkpoint, developer --create, gate --untested, apply --apply, close --discard), or None."""
     words = argv[1:]
     sub = words[0] if words else ''
     if sub == 'release':
         return 'ask', (
             'aiwp-cmds.sh release takes developer into main and pushes main to the remote; with --tag it also creates '
             'and pushes a release tag'
+        )
+    if sub == 'deploy':
+        return 'ask', (
+            'aiwp-cmds.sh deploy updates the final stack of a project, the one the person uses, from a branch; confirm '
+            'only when the person ran /docker-deploy'
         )
     if sub == 'hotfix':
         return 'ask', (
@@ -1667,16 +1688,25 @@ def aiwp_run(argv, folder):
 
 def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=False, shared=None, group=None):
     """Yields one entry per simple command of a command line, nested command lines included: a dict with argv, env,
-    wrappers, folder, redirects, remote and group, or {'reason': text, 'group': group} for something that asks on its
-    own. wrappers and stdin: what wraps and what feeds the command line this text was found in. remote: it runs in
-    another machine, container or user. shared: what the whole walk shares (the files the line wrote, the nested texts
-    left to read; 'unread' once a nested text could not be read, 'fed' once a command runs or reads a file the line
-    wrote, 'loose' once a redirection carries no command). group: the top-level command of the line this
-    text was found in; None for the line itself, whose groups the lexer counts."""
+    wrappers, folder, redirects, remote, group, unset and cleared (what env -u, env -i or exec -c take out of the
+    environment), or {'reason': text, 'group': group} for something that asks on its own. A part with no command
+    (X=1, > f, exec 3> f, env -u X) is an entry too, marked bare, with the argv [':'], so its assignments and its
+    redirections are judged. wrappers and stdin: what wraps and what feeds the command line this text was found in.
+    remote: False, or the entry of the command that runs it in another machine, container or user (ssh, docker exec).
+    shared: what the whole walk shares (the files the line wrote, the nested texts left to read; 'unread' once a
+    nested text could not be read, 'fed' once a command runs or reads a file the line wrote, 'loose' once a
+    redirection carries no command). group: the top-level command of the line this text was found in; None for the
+    line itself, whose groups the lexer counts."""
     lexer = Lexer(command, cwd).run()
     shared = {'written': {}, 'texts': MAX_TEXTS} if shared is None else shared
     if lexer.loose:
         shared['loose'] = True
+    for operator, target, folder, owner in lexer.loose:
+        yield {
+            'argv': [':'], 'env': {}, 'wrappers': wrappers, 'folder': folder, 'redirects': [(operator, target)],
+            'remote': remote, 'vars': {}, 'stdin': None, 'source': None, 'group': owner if group is None else group,
+            'unset': [], 'cleared': False, 'bare': True,
+        }  # fmt: skip
     written, texts, owners = shared['written'], [], []
     for entry in lexer.commands:
         mine = entry['group'] if group is None else group
@@ -1694,13 +1724,21 @@ def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=Fal
         texts.extend((text, folder, outer, fed, remote) for text in info['texts'])
         targets = []
         reader = info['shell'] and not argv
+        if not argv and (entry['redirects'] or info['env'] or info['unset'] or info['cleared']):
+            yield {
+                'argv': [':'], 'env': env, 'wrappers': outer, 'folder': folder, 'redirects': entry['redirects'],
+                'remote': remote, 'vars': entry['vars'], 'stdin': None, 'source': None, 'group': mine,
+                'unset': info['unset'], 'cleared': info['cleared'], 'bare': True,
+            }  # fmt: skip
         if argv:
             name = os.path.basename(argv[0])
-            away = remote or name in ELSEWHERE
-            yield {
+            record = {
                 'argv': argv, 'env': env, 'wrappers': outer, 'folder': folder, 'redirects': entry['redirects'],
                 'remote': remote, 'vars': entry['vars'], 'stdin': fed[1], 'source': entry['source'], 'group': mine,
+                'unset': info['unset'], 'cleared': info['cleared'],
             }  # fmt: skip
+            away = remote or (record if name in ELSEWHERE else False)
+            yield record
             targets.append((argv, outer, remote))
             if len(argv) == 1 and ' ' in argv[0].strip():
                 texts.append((argv[0], folder, outer, fed, remote))
@@ -1729,6 +1767,7 @@ def walk(command, cwd, depth=0, wrappers=frozenset(), stdin=NO_STDIN, remote=Fal
                         yield {
                             'argv': inner, 'env': env, 'wrappers': around, 'folder': folder, 'redirects': [],
                             'remote': away, 'vars': entry['vars'], 'stdin': None, 'source': None, 'group': mine,
+                            'unset': more['unset'], 'cleared': more['cleared'],
                         }  # fmt: skip
                         targets.append((inner, around, away))
         for target, around, away in targets:
@@ -2054,7 +2093,7 @@ def stays_in(path, clone):
 def glob_stays(piece, folder, clone):
     """True when what a wildcard word matches stays in the clone: the folder of its literal part is in the clone, no
     .. and no segment that starts with a dot follows the wildcard (.* may match ..), and what it matches now, links
-    resolved, is in the clone too."""
+    resolved, is in the clone too and is no local secret file."""
     segments = piece.split('/')
     first = next(k for k, segment in enumerate(segments) if any(char in segment for char in GLOB_ONLY))
     rest = segments[first:]
@@ -2065,16 +2104,17 @@ def glob_stays(piece, folder, clone):
         return False
     pattern = os.path.join(glob.escape(folder), piece)
     matches = list(itertools.islice(glob.iglob(pattern), MAX_MATCHES + 1))
-    return len(matches) <= MAX_MATCHES and all(stays_in(match, clone) for match in matches)
+    return len(matches) <= MAX_MATCHES and all(stays_in(match, clone) and not local_secret(match) for match in matches)
 
 
 def piece_stays(piece, folder, clone):
     """True when one piece of a word, read as a path from the folder, stays in the clone. Every piece is read as a
-    path: a plain name stays unless it is a link that leaves, or .git."""
+    path: a plain name stays unless it is a link that leaves, or .git. A local secret file (.env, local.settings.json,
+    env/<name>.env) never counts as staying: reading or copying it is left to the permission mode."""
     if piece in ('', '-', '{}'):
         return True
-    if piece.startswith('~') or re.search(r'\{[^}]*(,|\.\.)', piece):
-        return False  # the home folder, or a brace expansion ({a,../x}, {1..3}) that may name anything
+    if piece.startswith('~') or re.search(r'\{[^}]*(,|\.\.)', piece) or local_secret(piece):
+        return False  # the home folder, a brace expansion ({a,../x}, {1..3}) that may name anything, a .env
     if any(char in piece for char in GLOB_ONLY):
         return glob_stays(piece, folder, clone)
     return stays_in(os.path.join(folder, piece), clone)
@@ -2122,8 +2162,8 @@ def reaches_out(argv):
     """True when a command acts on a remote system or outside the clone by what it is, whatever its paths say: a
     program of NOT_APPROVED (also run by a shell, a runner or after --), a remote subcommand word (push, publish,
     deploy...), git remote add or set-url, a git config write (it can turn off the clone's hooks), a link, a global
-    install (npm -g, pip --user, go install, cargo install) and a package tool's configuration (npm config, go env
-    -w)."""
+    install (npm -g, npm link, pip --user, python3 -m pip --user, go install, cargo install, uv tool, gem install,
+    dotnet tool -g, composer global) and a package tool's configuration (npm config, go env -w)."""
     name, args = os.path.basename(argv[0]), argv[1:]
     words = plain_words(args)
     if name in NOT_APPROVED or makes_links(argv):
@@ -2139,8 +2179,18 @@ def reaches_out(argv):
         return parts['sub'] in ('remote', 'config', 'credential', 'send-email', 'request-pull') and not git_reads(
             parts['sub'], parts['args']
         )
-    if name in ('npm', 'pnpm', 'yarn', 'bun') and ({'-g', '--global'} & set(args) or words[:1] == ['global']):
+    if name in ('npm', 'pnpm', 'yarn', 'bun') and (
+        {'-g', '--global'} & set(args) or words[:1] in (['global'], ['link'], ['unlink'])
+    ):
         return True
+    if (name == 'uv' and words[:1] == ['tool'] and words[1:2] != ['run']) or (name == 'composer' and 'global' in words):
+        return True  # uv tool install, composer global require: the user's tools, outside the clone
+    if name == 'gem' and words[:1] in (['install'], ['update'], ['uninstall']):
+        return True  # gems land in the user's or the system's gem folder
+    if name == 'dotnet' and words[:1] == ['tool'] and {'-g', '--global'} & set(args):
+        return True
+    if name.startswith('python') and '--user' in args and {'pip', 'pip3'} & set(args):
+        return True  # python3 -m pip install --user
     if name in PACKAGE_TOOLS and (words[:1] == ['config'] or words[:1] == ['env'] and '-w' in args):
         return True  # npm config set, pip config set, go env -w: the user's configuration, outside the clone
     return (name in ('go', 'cargo') and words[:1] == ['install']) or (name in ('pip', 'pip3') and '--user' in args)
@@ -2150,7 +2200,8 @@ def entry_clone(entry, root):
     """Returns the clone one command of the line stays in (a real path); ANYWHERE for a cd, pushd or popd with no
     target, which only moves the folder of what follows; None when it cannot tell. The outer scripts/aiwp-cmds.sh run
     <work>/<clone> -- <command> of this workspace stays in the clone it names wherever it runs: its command is judged
-    on its own, in the clone."""
+    on its own, in the clone. A command that deletes or moves the clone's .git, or a folder that holds it, never
+    stays."""
     argv, folder = entry['argv'], entry['folder']
     if entry['remote'] or entry['wrappers'] & UNCLEAR_WRAPPERS:
         return None
@@ -2174,21 +2225,26 @@ def entry_clone(entry, root):
         values += argv
         if name in WHOLE_CLONE and any(os.path.realpath(os.path.join(folder, w)) == clone for w in plain_words(args)):
             return None
+        if removes_git(entry, clone):
+            return None
     if clone is None or folder is None or not redirects_stay(entry['redirects'], folder, clone):
         return None
     return clone if all(word_stays(word, folder, clone) for word in values) else None
 
 
-def approval(entries, root, shared):
+def approval(entries, root, shared, groups=None):
     """Returns the clone, relative to the root, that every command of the line stays in, or None when it cannot tell
     (a nested text it could not read, a redirection with no command, a command that asks on its own, two clones, one
-    command outside a clone)."""
+    command outside a clone). A docker command on the task's own group, and what a container of that group runs,
+    stay in the clone of that group (groups: the DockerGroups of the line). An assignment alone is no command."""
     if shared.get('unread') or shared.get('loose'):
         return None
     clones = set()
     for entry in entries:
+        if entry.get('bare') and not entry['redirects']:
+            continue
         try:
-            found = None if 'reason' in entry else entry_clone(entry, root)
+            found = None if 'reason' in entry else (groups and groups.clone(entry)) or entry_clone(entry, root)
         except (OSError, ValueError):
             found = None  # a path the system cannot resolve (a NUL byte, a name too long): it cannot tell
         if found is None:
@@ -2196,6 +2252,486 @@ def approval(entries, root, shared):
         clones.add(found)
     clones.discard(ANYWHERE)
     return os.path.relpath(clones.pop(), os.path.realpath(root)) if len(clones) == 1 else None
+
+
+# What the line does to the paths it names, for the protected folders below and for the .git of a clone.
+DELETERS = {'rmdir', 'unlink', 'shred', 'truncate', 'srm', 'wipe'}
+PLACERS = {'mv', 'cp', 'install', 'ln', 'rsync'}
+FILE_WRITERS = {'tee', 'touch', 'mkdir'}
+# Programs that run code given on their own line (python3 -c, node -e, awk '...'): their code is read as tokens.
+INTERPRETERS = {
+    'node', 'nodejs', 'deno', 'bun', 'perl', 'ruby', 'php', 'awk', 'gawk', 'mawk', 'nawk', 'sed', 'lua', 'Rscript',
+    'pwsh', 'tclsh', 'osascript',
+}  # fmt: skip
+# Programs that only read the paths they name.
+READERS = {
+    'cat', 'less', 'more', 'head', 'tail', 'ls', 'grep', 'egrep', 'fgrep', 'rg', 'wc', 'stat', 'file', 'diff', 'cmp',
+    'md5sum', 'sha1sum', 'sha256sum', 'sha512sum', 'shasum', 'test', '[', '[[', 'realpath', 'readlink', 'basename',
+    'dirname', 'echo', 'printf', 'du', 'tree', 'od', 'xxd', 'hexdump', 'strings', 'nl', 'jq', 'cd', 'pushd', 'popd',
+    'pwd', 'true', ':', 'column', 'cut', 'tr',
+}  # fmt: skip
+FIND_WRITES = ('-delete', '-fprint', '-fprint0', '-fprintf', '-fls') + FIND_ACTIONS
+# BR-9: Grafana's data, at the root of the workspace. BR-13: the person's merge orders, written only by the
+# UserPromptSubmit hook (scripts/session-title.py), read by scripts/aiwp-gate.sh with the session's variables.
+GRAFANA_DATA = os.path.join('tools', 'observability', '.data')
+GRAFANA_MARK = re.compile(r'(^|/)observability/\.data(/|$)')
+GRAFANA_REASON = (
+    'it deletes, moves or empties tools/observability/.data, the data of Grafana (dashboards, users, settings)'
+)
+MERGE_ORDERS = os.path.join('.history', 'merge-orders')
+ORDERS_MARK = re.compile(r'(^|/)merge-orders(/|$)')
+ORDER_SCRIPT = 'session-title.py'
+SESSION_VARIABLES = {'CLAUDECODE', 'CLAUDE_CODE_SESSION_ID'}
+SESSION_WORD = re.compile(r'(?<![\w${])(CLAUDECODE|CLAUDE_CODE_SESSION_ID)(?!\w)')
+SESSION_DEFAULT = re.compile(r'\$\{(CLAUDECODE|CLAUDE_CODE_SESSION_ID):?=')
+# Shell builtins that set, export or unset the variable they name.
+NAMING_BUILTINS = {
+    'export', 'declare', 'typeset', 'readonly', 'local', 'unset', 'read', 'printf', 'mapfile', 'readarray', 'getopts',
+    'let',
+}  # fmt: skip
+ORDER_HINT = (
+    "The merge order is the person's: only the person's /merge, typed in this session, records it. Never run around "
+    'it; offer /merge'
+)
+SESSION_REASON = (
+    'Refused: this line sets, unsets or clears CLAUDECODE or CLAUDE_CODE_SESSION_ID, which tell scripts/aiwp-gate.sh '
+    'whose session runs the merge. ' + ORDER_HINT + '.'
+)
+ORDERS_REASON = (
+    'Refused: this line writes, moves, deletes or links .history/merge-orders/, where the UserPromptSubmit hook '
+    'records the /merge the person typed, or runs scripts/session-title.py, which writes it. ' + ORDER_HINT + '.'
+)
+
+
+def target_folder(args):
+    """Returns the value of -t or --target-directory of a cp, mv, install or ln command line, or None."""
+    for index, word in enumerate(args):
+        option, attached, value = word.partition('=')
+        if option == '--target-directory':
+            return value if attached else (args[index + 1] if index + 1 < len(args) else '')
+        if word.startswith('-') and not word.startswith('--'):
+            _, found, glued = short_options(word, {'-t', '-S'})
+            if found == '-t':
+                return glued if glued is not None else (args[index + 1] if index + 1 < len(args) else '')
+    return None
+
+
+def find_removes(argv):
+    """True when a find command line deletes or moves what it finds: -delete, or -exec, -execdir, -ok or -okdir
+    running rm, mv or another deleting program (also through a shell)."""
+    if '-delete' in argv:
+        return True
+    for index, word in enumerate(argv):
+        if word in FIND_ACTIONS:
+            rest = argv[index + 1 :]
+            stop = next((k for k, w in enumerate(rest) if w in (';', '+')), len(rest))
+            names = {os.path.basename(token) for w in rest[:stop] for token in w.split()}
+            if names & (DELETERS | {'rm', 'mv'}):
+                return True
+    return False
+
+
+def touches(argv, redirects):
+    """Returns what one command does to the paths it names, as (mode, word, sources): 'write' (it writes, empties or
+    deletes that path), 'remove' (it deletes or moves the path with all it holds) or 'into' (it puts the sources in
+    that folder). Redirection targets are writes."""
+    found = [
+        ('write', target, ())
+        for operator, target in redirects
+        if '>' in operator
+        and target not in SAFE_TARGETS
+        and not (operator.endswith('&') and (target.isdigit() or target == '-'))
+    ]
+    name, args = os.path.basename(argv[0]), argv[1:]
+    words = plain_words(args)
+    if name == 'rm':
+        mode = 'remove' if has_short_flag(args, 'rR') or '--recursive' in args else 'write'
+        found += [(mode, word, ()) for word in words]
+    elif name in DELETERS | FILE_WRITERS:
+        found += [('write', word, ()) for word in words]
+    elif name in PLACERS:
+        folder = target_folder(args)
+        words = plain_words(drop_values(args, {'-t', '--target-directory', '-S', '--suffix'}))
+        sources = words if folder is not None else words[:-1]
+        if name == 'mv' or (name == 'rsync' and any(a.startswith('--remove-source') for a in args)):
+            found += [('remove', word, ()) for word in sources]
+        if name == 'rsync' and any(a.startswith('--del') for a in args):
+            found += [('remove', word, ()) for word in words]
+        if makes_links(argv):
+            found += [('write', word, ()) for word in words]
+        if folder is not None or len(words) > 1:
+            found.append(('into', words[-1] if folder is None else folder, tuple(sources)))
+    elif name == 'find' and find_removes(argv):
+        found += [('remove', start, ()) for start in find_starts(argv)[0]]
+    elif name == 'dd':
+        found += [('write', a[3:], ()) for a in args if a.startswith('of=')]
+    elif name in ('sed', 'perl') and (has_short_flag(args, 'i') or any(a.startswith('--in-place') for a in args)):
+        found += [('write', word, ()) for word in words]
+    return found
+
+
+def word_place(word, folder, root, variables=None):
+    """Returns (the real path a word names, its first wildcard segment or None), read from the folder the command
+    runs in, else from the root; None when the word cannot be read as a path (a variable with no value)."""
+    known = {**os.environ, 'PWD': folder or '', **(variables or {})}
+    word = os.path.expanduser(VARIABLE.sub(lambda m: known.get(m.group(1) or m.group(2)) or m.group(0), word))
+    if not word or '$' in word or word.startswith('~'):
+        return None
+    base = folder if folder is not None else root
+    segments = word.split('/')
+    wild = next((k for k, segment in enumerate(segments) if any(char in segment for char in GLOB_CHARS)), None)
+    if wild is None:
+        return os.path.realpath(os.path.join(base, word)), None
+    prefix = '/'.join(segments[:wild]) or ('/' if word.startswith('/') else '.')
+    return os.path.realpath(os.path.join(base, prefix)), segments[wild]
+
+
+def reaches_path(place, path, mode, sources=()):
+    """True when a (real path, wildcard segment) place reaches a protected real path in that mode: it is the path or
+    lies inside it; or it holds the path and the command removes it whole ('remove'), or puts there a source named
+    like the next folder down to the path ('into'). A wildcard holds the path when it may match that next folder."""
+    real, pattern = place
+    if real == path or strictly_under(real, path):
+        return True
+    if not strictly_under(path, real):
+        return False
+    first = os.path.relpath(path, real).split(os.sep)[0]
+    if pattern is not None:
+        # As in a shell, a wildcard matches a name that starts with a dot only when it starts with a dot too.
+        hidden = first.startswith('.') and not pattern.startswith('.')
+        matches = not hidden and ('{' in pattern or fnmatch.fnmatchcase(first, pattern))
+        return matches and (mode == 'remove' or os.path.join(real, first) == path)
+    if mode == 'remove':
+        return True
+    return mode == 'into' and first in {os.path.basename(source.rstrip('/')) for source in sources}
+
+
+def fed_words(entry):
+    """Returns the words xargs or parallel hands to the command: what reaches its stdin when the line shows it, else
+    the folders the find piped into it walks, or the words of the command piped into it."""
+    if entry.get('stdin'):
+        return [word for text in entry['stdin'] for word in text.split()]
+    source = entry.get('source')
+    argv = strip_wrappers(source['argv'])[0] if source else []
+    if argv and os.path.basename(argv[0]) == 'find':
+        return find_starts(argv)[0]
+    return plain_words(argv[1:]) if argv else []
+
+
+def code_tokens(argv):
+    """Returns the tokens of the code an interpreter gets on its own line (python3 -c, node -e, awk '...'): the
+    words that hold a space, a parenthesis or a semicolon, split; [] for other programs."""
+    name = os.path.basename(argv[0])
+    if name not in INTERPRETERS and not name.startswith(('python', 'pypy')):
+        return []
+    return [token for word in argv[1:] if re.search(r'[\s(;]', word) for token in TOKEN_SEPARATORS.split(word)]
+
+
+def protected_hit(entry, root, relative, mark, every_word=False):
+    """True when one command reaches a protected folder of the root (relative): it deletes, moves, empties or writes
+    it, anything in it or a folder that holds it, by its paths (read from its folder, links resolved), by a
+    redirection, by the files xargs hands it, or by interpreter code that names it (mark). every_word: any path a
+    command other than a reader names inside the folder counts too. A command that runs elsewhere (ssh, a container)
+    is judged by the mark only."""
+    argv, folder = entry['argv'], entry['folder']
+    found = touches(argv, entry['redirects'])
+    name = os.path.basename(argv[0])
+    if entry['wrappers'] & {'xargs', 'parallel'} and (found or name in DELETERS | PLACERS | {'rm'}):
+        found += [('remove', word, ()) for word in fed_words(entry)]
+    if every_word and name not in READERS and not (name == 'find' and not any(a in FIND_WRITES for a in argv)):
+        for word in argv[1:]:
+            found += [('write', piece, ()) for piece in (word, word.partition('=')[2], word[2:]) if piece]
+    if any(mark.search(token) for token in code_tokens(argv)):
+        return True
+    path = os.path.realpath(os.path.join(root, relative))
+    for mode, word, sources in found:
+        if mark.search(word.rstrip('/')):
+            return True
+        place = None if entry['remote'] else word_place(word, folder, root, entry.get('vars'))
+        if place and reaches_path(place, path, mode, sources):
+            return True
+    return False
+
+
+def session_change(entry):
+    """True when one command sets, exports, unsets or clears CLAUDECODE or CLAUDE_CODE_SESSION_ID: an assignment
+    (VAR=x cmd, VAR=x alone, env VAR=x), export, declare, unset, read, printf -v, ${VAR:=x}, env -u, env -i, env -
+    and exec -c."""
+    if SESSION_VARIABLES & set(entry['env']) or SESSION_VARIABLES & set(entry.get('unset') or ()):
+        return True
+    if entry.get('cleared'):
+        return True
+    argv = entry['argv']
+    if os.path.basename(argv[0]) in NAMING_BUILTINS and any(SESSION_WORD.search(a) for a in argv[1:]):
+        return True
+    return any(SESSION_DEFAULT.search(a) for a in argv)
+
+
+def runs_order_script(entry):
+    """True when a command other than a reader names scripts/session-title.py, the hook that records the person's
+    /merge (python3 scripts/session-title.py, a copy of it, interpreter code that opens it)."""
+    argv = entry['argv']
+    name = os.path.basename(argv[0])
+    parts = git_parts(argv) if name == 'git' else None
+    if name in READERS or (parts and git_reads(parts['sub'], parts['args'])):
+        return False
+    words = argv + code_tokens(argv)
+    return any(os.path.basename(word.rstrip('/')) == ORDER_SCRIPT for word in words)
+
+
+def protection_verdict(entry, root):
+    """Returns ('deny', reason) for a command that gets around the person's merge order (BR-13): it changes the
+    session's variables, writes .history/merge-orders/ or runs the hook that writes it; ('ask', reason) for one that
+    deletes, moves or empties Grafana's data (BR-9), wherever it runs and whatever the rest of the line is; else
+    None."""
+    if session_change(entry):
+        return 'deny', SESSION_REASON
+    if runs_order_script(entry) or protected_hit(entry, root, MERGE_ORDERS, ORDERS_MARK, every_word=True):
+        return 'deny', ORDERS_REASON
+    if protected_hit(entry, root, GRAFANA_DATA, GRAFANA_MARK):
+        return 'ask', GRAFANA_REASON
+    return None
+
+
+def removes_git(entry, clone):
+    """True when a command deletes or moves the .git of the clone, or a folder that holds it (find . -delete, find .
+    -exec rm, rm -rf ., mv . x): the hooks that scan and push go, and every commit not pushed yet."""
+    path = os.path.join(clone, '.git')
+    for mode, word, sources in touches(entry['argv'], []):
+        place = word_place(word, entry['folder'], clone, entry.get('vars'))
+        if mode != 'write' and place and reaches_path(place, path, mode, sources):
+            return True
+    return False
+
+
+# BR-8: the task's own Docker group, a compose project agent_<MMDD>-<slug> or agent_<MMDD>-<slug>-<clone> of the work
+# tmp/work/<yyyy-mm-dd>-<slug>/, is free. Its resources carry the compose label with that name.
+GROUP_NAME = re.compile(r'^agent_[0-9]{4}-[a-z0-9][a-z0-9-]*$')
+GROUP_LABEL = 'com.docker.compose.project'
+OVERRIDE_FILE = re.compile(r'^agent-(.+)\.compose\.yaml$')
+INSPECT_TIMEOUT_SECONDS = 5
+COMPOSE_FLAGS = {'--dry-run', '--compatibility', '--all-resources', '--verbose'}
+# Options of docker compose run and exec that take a value.
+CONTAINER_VALUES = {
+    '-e', '--env', '--env-from-file', '-l', '--label', '--name', '-p', '--publish', '--pull', '-u', '--user', '-v',
+    '--volume', '-w', '--workdir', '--entrypoint', '--cap-add', '--cap-drop', '--index',
+}  # fmt: skip
+# docker <words> that remove or read a resource, its kind, and the options they may carry.
+RESOURCE_COMMANDS = {
+    ('rm',): 'container', ('container', 'rm'): 'container', ('container', 'remove'): 'container',
+    ('rmi',): 'image', ('image', 'rm'): 'image', ('image', 'remove'): 'image',
+    ('volume', 'rm'): 'volume', ('volume', 'remove'): 'volume', ('volume', 'inspect'): 'volume',
+    ('network', 'rm'): 'network', ('network', 'remove'): 'network',
+}  # fmt: skip
+RESOURCE_OPTIONS = {
+    'container': {'-f', '--force', '-v', '--volumes'}, 'image': {'-f', '--force', '--no-prune'},
+    'volume': {'-f', '--force'}, 'network': {'-f', '--force'},
+}  # fmt: skip
+LABELS_FORMAT = {
+    'container': '{{json .Config.Labels}}', 'image': '{{json .Config.Labels}}', 'volume': '{{json .Labels}}',
+    'network': '{{json .Labels}}',
+}  # fmt: skip
+RESOURCE_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:/@-]*$')
+
+
+def own_groups(clone):
+    """Returns the names of the Docker groups of the work a clone belongs to: agent_<MMDD>-<slug> and
+    agent_<MMDD>-<slug>-<clone> for each clone folder of the work, those that are valid group names."""
+    work = os.path.dirname(clone)
+    name = os.path.basename(work)
+    base = 'agent_' + name[5:7] + name[8:10] + '-' + name[11:]
+    try:
+        clones = [c for c in os.listdir(work) if not c.startswith('.') and os.path.isdir(os.path.join(work, c))]
+    except OSError:
+        clones = []
+    return {group for group in [base] + [base + '-' + c for c in clones] if GROUP_NAME.match(group)}
+
+
+def option_value(args, index, glued_ok=True):
+    """Returns (option, value, words used) for the option at args[index]: --name=value, --name value, -xvalue or
+    -x value."""
+    word = args[index]
+    option, attached, value = word.partition('=')
+    if attached:
+        return option, value, 1
+    if glued_ok and not word.startswith('--') and len(word) > 2:
+        return word[:2], word[2:], 1
+    return word, args[index + 1] if index + 1 < len(args) else '', 2
+
+
+def inner_reaches_out(words):
+    """True when the command a container of the group runs reaches a remote system: a program of NOT_APPROVED other
+    than a SQL client, or a remote word (push, publish, deploy...)."""
+    if any(os.path.basename(word) in NOT_APPROVED - SQL_CLIENTS for word in words):
+        return True
+    return any(w.partition(':')[0] in REMOTE_WORDS or w.startswith('publish') for w in plain_words(words))
+
+
+class DockerGroups:
+    """Tells which Docker commands of a line act only on the task's own group (BR-8): docker compose -p <group> with
+    any subcommand but push, and docker rm, rmi, image rm, volume rm or inspect, network rm of resources that all
+    carry the compose label of that group. The command runs in a clone of tmp/work/, and the group is one of the
+    work of that clone. The labels come from docker inspect under a short timeout; what it cannot tell is not its
+    own."""
+
+    def __init__(self, root, run):
+        self.root, self.run, self.known = root, run, {}
+
+    def clone(self, entry):
+        """Returns the clone (a real path) of a docker command that acts only on its own group, or of a command a
+        container of that group runs (docker compose -p <group> exec db psql); None otherwise. Cached per entry."""
+        key = id(entry)
+        if key not in self.known:
+            launcher = entry['remote']
+            if isinstance(launcher, dict):
+                own = self.clone(launcher)
+                self.known[key] = own if own and not inner_reaches_out(entry['argv']) else None
+            else:
+                self.known[key] = self.judge(entry)
+        return self.known[key]
+
+    def judge(self, entry):
+        """Returns the clone of a docker command run on the line itself that acts only on its own group, or None."""
+        argv, folder = entry['argv'], entry['folder']
+        if os.path.basename(argv[0]) != 'docker' or len(argv) < 2 or entry['wrappers'] & UNCLEAR_WRAPPERS:
+            return None
+        if any(key.startswith(('DOCKER_', 'COMPOSE_')) for key in entry['env']):
+            return None  # another daemon, another context or another project name
+        clone = clone_of(self.root, folder)
+        if clone is None or not redirects_stay(entry['redirects'], folder, clone):
+            return None
+        if not all(word_stays(value, folder, clone) for value in entry['env'].values()):
+            return None
+        groups = own_groups(clone)
+        if argv[1] == 'compose':
+            return clone if self.compose(argv[2:], folder, clone, groups) else None
+        return clone if self.resources(argv[1:], groups) else None
+
+    def compose(self, args, folder, clone, groups):
+        """True when a docker compose command line names only own groups with -p, only files of the clone or the
+        copy's override with -f, and runs no push."""
+        projects, i = [], 0
+        while i < len(args) and args[i].startswith('-'):
+            option, value, used = option_value(args, i)
+            if option in ('-p', '--project-name'):
+                projects.append(value)
+            elif option in ('-f', '--file'):
+                if not (word_stays(value, folder, clone) or self.override(value, folder, clone)):
+                    return False
+            elif option in COMPOSE_VALUE_OPTIONS:
+                if option in ('--env-file', '--project-directory') and not word_stays(value, folder, clone):
+                    return False
+            elif args[i] in COMPOSE_FLAGS:
+                used = 1
+            else:
+                return False
+            i += used
+        if not projects or not set(projects) <= groups or i >= len(args):
+            return False
+        sub, rest = args[i], args[i + 1 :]
+        if sub in REMOTE_WORDS or any(a.startswith('--push') for a in rest):
+            return False
+        if sub in ('run', 'exec'):
+            return self.container(rest, folder, clone)
+        return all(word_stays(word, folder, clone) for word in rest)
+
+    def override(self, word, folder, clone):
+        """True when a compose file is the override of a clone of the same work: tmp/work/<work>/agent-<clone>.compose
+        .yaml, next to an existing clone folder."""
+        if '$' in word:
+            return False
+        real = os.path.realpath(os.path.join(folder, word))
+        work = os.path.dirname(clone)
+        name = OVERRIDE_FILE.match(os.path.basename(real))
+        return bool(name) and os.path.dirname(real) == work and os.path.isdir(os.path.join(work, name.group(1)))
+
+    @staticmethod
+    def container(rest, folder, clone):
+        """True when docker compose run or exec mounts only folders of the clone (-v), none that holds its .git, and
+        the command it runs in the container reaches no remote system."""
+        i = 0
+        while i < len(rest) and rest[i].startswith('-'):
+            option, value, used = option_value(rest, i)
+            if option not in CONTAINER_VALUES:
+                i += 1
+                continue
+            i += used
+            host = value.split(':')[0] if option in ('-v', '--volume') else value
+            if option in ('-v', '--volume', '--env-from-file') and ('/' in host or host.startswith(('.', '~', '$'))):
+                if not word_stays(host, folder, clone):
+                    return False
+                place = (os.path.realpath(os.path.join(folder, host)), None)
+                if reaches_path(place, os.path.join(clone, '.git'), 'remove'):
+                    return False
+        return not inner_reaches_out(rest[i:])
+
+    def resources(self, args, groups):
+        """True when docker rm, rmi, image rm, volume rm or inspect, or network rm names only resources that carry
+        the label of an own group (docker inspect says so)."""
+        kind = RESOURCE_COMMANDS.get(tuple(args[:1])) or RESOURCE_COMMANDS.get(tuple(args[:2]))
+        if kind is None:
+            return False
+        rest = args[1:] if tuple(args[:1]) in RESOURCE_COMMANDS else args[2:]
+        allowed = RESOURCE_OPTIONS[kind]
+        names, i = [], 0
+        while i < len(rest):
+            word = rest[i]
+            i += 1
+            if word in ('--format', '-f') and args[1:2] == ['inspect']:
+                i += 1
+            elif word.startswith('--format=') and args[1:2] == ['inspect']:
+                continue
+            elif word.startswith('-'):
+                letters = {'-' + letter for letter in word[1:]} if not word.startswith('--') else {word}
+                if not letters <= allowed:
+                    return False
+            elif RESOURCE_NAME.match(word):
+                names.append(word)
+            else:
+                return False
+        labels = self.labels(kind, names) if names else None
+        return labels is not None and all(found.get(GROUP_LABEL) in groups for found in labels)
+
+    def labels(self, kind, names):
+        """Returns the labels of each named resource, from docker inspect under a short timeout; None when Docker does
+        not answer, a resource is missing or has no labels."""
+        docker = os.environ.get('GUARD_BASH_DOCKER', 'docker')
+        try:
+            done = self.run(
+                [docker, kind, 'inspect', '--format', LABELS_FORMAT[kind], *names],
+                capture_output=True, text=True, check=False, timeout=INSPECT_TIMEOUT_SECONDS,
+            )  # fmt: skip
+        except (OSError, subprocess.SubprocessError):
+            return None
+        lines = [line for line in (done.stdout or '').splitlines() if line.strip()]
+        if done.returncode != 0 or len(lines) != len(names):
+            return None
+        try:
+            found = [json.loads(line) for line in lines]
+        except ValueError:
+            return None
+        return found if all(isinstance(item, dict) for item in found) else None
+
+
+OWN_GROUP = "; Docker only in the task's own group"
+# What a container of the task's own group may run with no question: the database tools that ask on the host.
+GROUP_DATABASE_TOOLS = SQL_CLIENTS | {'dropdb', 'mysqladmin', 'dotnet', 'prisma', 'rails', 'rake', 'rm'}
+
+
+def in_own_group(entry, docker):
+    """True when a question about one command does not apply because it acts only on the task's own Docker group:
+    the docker command itself, or a database tool a container of that group runs."""
+    if not entry['remote']:
+        return os.path.basename(entry['argv'][0]) == 'docker' and bool(docker.clone(entry))
+    return os.path.basename(entry['argv'][0]) in GROUP_DATABASE_TOOLS and bool(docker.clone(entry))
+
+
+def travels(entry):
+    """True for a part of the line that travels with the asked command instead of counting as another command: a cd,
+    pushd or popd, or an assignment alone, with no redirection."""
+    if 'argv' not in entry or entry['redirects']:
+        return False
+    return bool(entry.get('bare')) or os.path.basename(entry['argv'][0]) in ('cd', 'pushd', 'popd')
 
 
 def alone_reason(asks):
@@ -2217,11 +2753,14 @@ def decide(data, root, run=subprocess.run):
     """Judges one Bash tool call: deny, ask or allow with the reason, or stay silent. Denies: a git write in projects/
     or in the core, Terraform that changes the cloud, git push --no-verify, a commit with a local secret file or a
     secret, chmod, chown, chgrp, git init or git clone in the read-only core of an installed workspace, aiwp update,
-    rollback and repair. Asks: deleting a database, aiwp-cmds.sh release, hotfix, hotfix-tag, hotfix-down, checkpoint,
-    developer --create, gate --untested, apply --apply and close --discard; a line that would ask and holds other
-    top-level commands too is denied instead, with "Run it alone:", so the question shows only what it asks about.
-    Allows, with no question, a line it can tell stays in one clone of tmp/work/ and reaches no remote system
-    (approval); never over a deny or an ask. The rest is left to Claude Code's own permission mode."""
+    rollback and repair; a line that gets around the person's merge order (CLAUDECODE or CLAUDE_CODE_SESSION_ID
+    changed, .history/merge-orders/ written, scripts/session-title.py run). Asks: deleting a database (but in the
+    task's own Docker group), deleting, moving or emptying Grafana's data, aiwp-cmds.sh release, deploy, hotfix,
+    hotfix-tag, hotfix-down, checkpoint, developer --create, gate --untested, apply --apply and close --discard; a line
+    that would ask and holds other top-level commands too is denied instead, with "Run it alone:", so the question
+    shows only what it asks about (a cd, pushd, popd or an assignment travels with the asked command). Allows, with no
+    question, a line it can tell stays in one clone of tmp/work/ and reaches no remote system, Docker only in the
+    task's own group (approval); never over a deny or an ask. The rest is left to Claude Code's own permission mode."""
     command = data['tool_input']['command']
     if not isinstance(command, str):
         raise TypeError('command is not a string')
@@ -2235,8 +2774,10 @@ def decide(data, root, run=subprocess.run):
         return
     asks, asked, staging, created = [], set(), [], []
     core = CoreGuard(root, cwd, run, entries)
+    docker = DockerGroups(root, run)
     for entry in entries:
         verdict = None
+        guarded = None if 'reason' in entry else protection_verdict(entry, root)
         if 'reason' in entry:
             verdict = ('ask', entry['reason']) if GUARDED_WORD.search(command) else None
         elif os.path.basename(entry['argv'][0]) == 'git':
@@ -2268,24 +2809,29 @@ def decide(data, root, run=subprocess.run):
             verdict = (None if entry['remote'] else core.verdict(entry)) or command_verdict(
                 entry['argv'], entry['wrappers']
             )
-        if verdict and verdict[0] == 'deny':
-            emit(*verdict)
+            if verdict and verdict[0] == 'ask' and in_own_group(entry, docker):
+                verdict = None  # BR-8: the task's own group is free, volumes and data included
+        found = [item for item in (guarded, verdict) if item]
+        refusal = next((item for item in found if item[0] == 'deny'), None)
+        if refusal:
+            emit(*refusal)
             return
-        if verdict:
+        for _, reason in found:
             asked.add(entry['group'])
-            if verdict[1] not in asks:
-                asks.append(verdict[1])
+            if reason not in asks:
+                asks.append(reason)
     if asks:
-        groups = {entry['group'] for entry in entries}
+        groups = {entry['group'] for entry in entries if not travels(entry)}
         # A command that runs a file the line wrote keeps the question: alone, in a later call, the file is not seen.
         if groups - asked and not shared.get('fed'):
             emit('deny', alone_reason(asks))
         else:
             emit('ask', 'Confirm before running: ' + '; '.join(reason.rstrip('.') for reason in asks[:3]) + '.')
         return
-    clone = approval(entries, root, shared)
+    clone = approval(entries, root, shared, docker)
     if clone:
-        emit('allow', 'Stays in the clone ' + clone + ' and reaches no remote system')
+        own = any(not entry['remote'] and docker.known.get(id(entry)) for entry in entries if 'argv' in entry)
+        emit('allow', 'Stays in the clone ' + clone + ' and reaches no remote system' + (OWN_GROUP if own else ''))
 
 
 def out_of_time(signum, frame):
