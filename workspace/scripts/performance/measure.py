@@ -31,7 +31,7 @@ KEBAB = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
 STEP_CAP_SECONDS = 3600
 GRAFANA_HEALTH = 'http://127.0.0.1:3000/api/health'
 OTLP_ADDRESS = ('127.0.0.1', 4317)
-STACK_UP = 'docker compose -f tools/observability/compose.yaml up -d'
+STACK_UP = 'bash scripts/run-tools.sh up observability'
 
 # Workspace scripts by what they are for; aiwp-cmds.sh is split by its first argument.
 SCRIPT_CATEGORY = {

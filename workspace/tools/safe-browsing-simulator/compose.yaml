@@ -2,15 +2,20 @@
 # starts it again at boot:
 #   docker compose --env-file custom/env/safe-browsing-simulator.env -f tools/safe-browsing-simulator/compose.yaml up -d --build
 # The threats come from SAFE_BROWSING_THREATS (a path relative to this folder), set in
-# custom/env/safe-browsing-simulator.env (template: .env.example here), else the example config/threats.json. Without
-# that file, pass --env-file tools/safe-browsing-simulator/.env.example. A change to the threats file takes effect on
-# restart:
+# custom/env/safe-browsing-simulator.env (template: .env.example here), else
+# custom/config/safe-browsing-simulator/threats.json; without that file the container is not created (the bind never
+# creates a missing path). To try the example: SAFE_BROWSING_THREATS=./config/threats.json. In the group of every
+# tool: tools/compose.yaml (/run-tools). A change to the threats file takes effect on restart:
 #   docker compose --env-file custom/env/safe-browsing-simulator.env -f tools/safe-browsing-simulator/compose.yaml restart
 # Details in README.md.
 name: safe-browsing-simulator
 
 services:
   safe-browsing-simulator:
+    x-run-tools:   # read by scripts/run-tools.sh and /run-tools
+      title: Safe Browsing simulator
+      description: Local Google Safe Browsing (Lookup v4) with dangerous URLs and an outage read from a file
+      url: http://localhost:28090
     build: .
     image: safe-browsing-simulator:0.1.0   # also the image a project's test stack runs, with its own threats file
     restart: unless-stopped
@@ -22,9 +27,16 @@ services:
     ports:
       - "127.0.0.1:28090:8080"   # host: http://localhost:28090
     volumes:
-      - ${SAFE_BROWSING_THREATS:-./config/threats.json}:/config/threats.json:ro   # README "Threats file"
+      - type: bind   # README "Threats file"
+        source: ${SAFE_BROWSING_THREATS:-../../custom/config/safe-browsing-simulator/threats.json}
+        target: /config/threats.json
+        read_only: true
+        bind:
+          create_host_path: false   # a missing file stops this tool, never becomes an empty folder
+    networks: [safe-browsing-simulator]
 
 # Fixed name, so other local stacks can attach to it as external and reach safe-browsing-simulator:8080.
+# Its own key, not default: the root tools/compose.yaml includes several files, and Compose refuses two defaults.
 networks:
-  default:
+  safe-browsing-simulator:
     name: safe-browsing-simulator

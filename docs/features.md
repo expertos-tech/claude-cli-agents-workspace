@@ -7,7 +7,7 @@ English · [Português (Brasil)](../i18n/pt-BR/docs/features.md) · [Español](.
 - **Rules** for the agent: one page that applies to every session (`AGENTS.md`) and rules per subject (git, security,
   quality, docs, frontend, infrastructure, models, review), read when the subject comes up.
 - **Skills**: slash commands for the daily flow (`/merge`, `/commit`, `/push`, `/validate`, `/draft-request`,
-  `/request`, `/pilot`, `/local-env`, `/normalize-projects`).
+  `/request`, `/pilot`, `/local-env`, `/run-tools`, `/normalize-projects`).
 - **Agents**: subagents for requirements, architecture, implementation, tests, review, verification, infrastructure,
   scripts, documentation and research, each with its model and effort.
 - **Hooks** that hold only what must never happen without you: git writes outside the gate, cloud changes, database
@@ -18,7 +18,8 @@ English · [Português (Brasil)](../i18n/pt-BR/docs/features.md) · [Español](.
   list, requests and lessons. It never goes into this repository.
 - **Tools**: a local Grafana for the Claude Code telemetry, a container console (Docker CE on Linux, Colima on macOS),
   login and Safe Browsing simulators, an Azurite console, a usage report and a model alert. Each one has its README in
-  `workspace/tools/`.
+  `workspace/tools/`. `/run-tools` starts the ones you tick, the container tools in one compose project, so the
+  container console shows them as one group.
 
 ## The custom layer
 

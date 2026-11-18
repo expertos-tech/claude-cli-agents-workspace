@@ -33,6 +33,7 @@ Once per workspace:
 | Create the workspace: the read-only core, the custom layer in `custom/` and the `.claude/` folder | the installer does it (it asks for the folder); another one: `aiwp new <folder>` (asks for the URL of the custom layer's repository, or `--custom <url>`; an empty answer starts a local one) |
 | Check Docker, used by the validations | `docker info` |
 | Create the filled `.env` of the validation tools, `custom/env/docker.env` | `/local-env docker`, in a session; then fill the values in an editor |
+| Optional, but the only way to measure the sessions: start the observability stack (a local Grafana) | `/run-tools`, in a session, ticking Observability; then its README turns on the Claude Code telemetry |
 | Optional: install the single-agent mode | `ln -sf "<workspace>/scripts/single-claude.sh" ~/.local/bin/single-claude` |
 
 From then on `.claude/` keeps itself up to date: a session start hook runs `setup-claude.sh`.
@@ -172,6 +173,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/request [name \| path]` | Runs the request written in a file |
 | `/pilot [auto\|manual]` | Shows or changes who runs the manual tests |
 | `/local-env [folder]` | Creates or completes a filled `.env` without showing values (`custom/env/<name>.env` for `docker/`, `docker/sonar/` and a tool) |
+| `/run-tools [--down [tool...]]` | Starts the local tools you tick (below, "Local tools"); `--down` stops |
 | `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
 
 The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `hotfix`, `hotfix-tag`, `hotfix-down`, `apply`, `developer`, `checkpoint`, `bring`).
@@ -217,6 +219,16 @@ In both modes, unit tests, coverage, lint and the secret scan are Claude's.
 - **Language:** English code is recommended in your projects, not required (`rules/rules.md` "Language").
 - **Infrastructure:** you do not size it. Without a number from you, it starts at the smallest size that runs the delivery (consumption plan, one node, one region) and ready to grow: the limits are Terraform variables, and the project's docs say which signal tells it is time to scale and how much the next step costs. If you have a real requirement (a volume, a deadline, a budget ceiling), say it in the request and it becomes a requirement. Before creating a resource that is billed, Claude gives the monthly estimate.
 - **Ideas:** an idea not yet ready is a request in `custom/requests/` in state `idea`, in the adjustment size of `templates/request.md` (What, Where, Done when, Effort).
+
+## Local tools
+
+`/run-tools` shows checkboxes with the tools of this machine, grouped in two questions (observability and consoles; simulators), each with its URL and state, and starts the ones you tick. Unticking a tool that is up stops nothing; `/run-tools --down` stops.
+
+- The container tools (observability, the login and Safe Browsing simulators, the Azurite console) run in one compose project, `claude-cli-agents-tools`: the container console shows them as one group (`tools/compose.yaml`).
+- Only this machine's container console shows: docker-ce on Linux and WSL with Docker Engine, Colima on macOS. It is a machine service: `/run-tools` installs it (`make install`) or starts it.
+- A tool's configuration lives in `custom/`: `custom/env/<tool>.env` (`/local-env tools/<tool>`) and `custom/config/<tool>/`. Without it the tool is listed as "configuration missing" and does not start; a busy port is shown the same way.
+- Each start tags the images it replaces as `<name>:rollback-latest`.
+- A tool installed before the group, still running in its own compose project, moves into the group at its first start. A named volume (Azurite's) is copied to the group's name first; the old one stays until you confirm its deletion. When a project's stack still uses one of the tool's networks, `/run-tools` says which, changes nothing, and you stop that stack first.
 
 ## Several sessions at once
 

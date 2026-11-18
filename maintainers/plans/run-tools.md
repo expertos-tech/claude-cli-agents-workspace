@@ -1,6 +1,6 @@
 # `/run-tools`: the tools in one compose project, picked by checkbox
 
-Status: approved design. Request: `maintainers/requests/run-tools.md`.
+Status: built, on `developer` (2026-11-17). Request: `maintainers/requests/qa/run-tools.md`.
 
 ## 1. Goal
 
