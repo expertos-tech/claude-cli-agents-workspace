@@ -23,7 +23,7 @@ Someone who installed the workspace may find core rules bad and turn them off, o
 | `replace` in `rules-config.json` | A better version of a core rule: a change to that rule |
 | `core.*.exclude` in `rules-config.json` | A core rule the person found bad: a proposal to change or remove it, with the reason |
 
-It never reads, and never sends, anything else: requests (`custom/prompts/`), the prompt log, `custom/projects.md`,
+It never reads, and never sends, anything else: requests (`custom/requests/`), the prompt log, `custom/projects.md`,
 the visual identity, measurements, projects.
 
 ## 3. Specific or reusable
