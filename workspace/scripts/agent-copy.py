@@ -11,13 +11,14 @@ Usage: python3 -I agent-copy.py up <group> <folder> <override> [--fallback <grou
        python3 -I agent-copy.py down <group>
        python3 -I agent-copy.py destroy [--under <path>]... [<group>...]
        python3 -I agent-copy.py list [--under <path>]... [--group <group>]...
-       python3 -I agent-copy.py deploy-binds <project> <checkout> <repo> <override> [-- <docker compose options>...]
+       python3 -I agent-copy.py deploy-binds <project> <checkout> <repo> <override> <workspace> [-- <options>...]
        python3 -I agent-copy.py bound-under <path>
-deploy-binds (aiwp-cmds.sh deploy main): every bind, secret file and config file of the stack under tmp/deploy/ (the
-checkout of main, or above it through ..) is taken from the same relative path of the repo instead (its data stays
-there, and the checkout can go); under a path either side tracks, a file that differs, or exists on one side only
-(tracked, or not ignored in the repo), is refused. Prints the compose options to use, one per line; the compose files
-are those compose would read (COMPOSE_FILE of the environment, of --env-file or of the checkout's .env).
+deploy-binds (aiwp-cmds.sh deploy main): every relative bind, secret file and config file of the stack (as the compose
+files wrote it: in the checkout of main, or above it through .., at any depth) is taken from the same relative path of
+the repo instead (its data stays there, and the checkout can go); one that leaves the workspace is refused; under a
+path either side tracks, a file that differs, or exists on one side only (tracked, or not ignored in the repo), is
+refused. Prints the compose options to use, one per line; the compose files are those compose would read
+(COMPOSE_FILE of the environment, of --env-file or of the checkout's .env).
 bound-under: prints each container with a mount under the path (exit 0), none (exit 1).
 Exit: 0 ok; 1 refused or failed; 2 usage error; 3 (list, bound-under) Docker not reachable.
 """
@@ -42,6 +43,13 @@ CUSTOM_DIR_VAR = 'AIWP_CUSTOM_DIR'
 # The one network of a copy that reaches outside Docker: only the services that publish a port join it. Every other
 # network of the copy is internal. Its name is <group>_edge, created by compose with the group's labels.
 EDGE_KEY = 'agent-edge'
+# An internal bridge still answers on its gateway, which is the host: the copy's internal networks have none.
+ISOLATED_GATEWAY = (
+    'com.docker.network.bridge.gateway_mode_ipv4',
+    'com.docker.network.bridge.gateway_mode_ipv6',
+)
+MIN_ENGINE = 28
+RUNTIME_SOCKETS = ('docker.sock', 'containerd.sock', 'podman.sock', 'crio.sock', 'dockershim.sock', 'cri-dockerd.sock')
 HOST_PORT = re.compile(r':(\d+)->')
 
 
@@ -98,6 +106,13 @@ def inside(path, folder):
 def docker_ok():
     """Returns True when the Docker daemon answers."""
     return run(['docker', 'version', '--format', '{{.Server.Version}}'], timeout=20)[0] == 0
+
+
+def engine_major():
+    """Returns the major version of the Docker Engine, 0 when it cannot be read."""
+    code, out, _ = run(['docker', 'version', '--format', '{{.Server.Version}}'], timeout=20)
+    found = re.match(r'\s*(\d+)\.', out) if code == 0 else None
+    return int(found.group(1)) if found else 0
 
 
 def containers(label):
@@ -343,8 +358,26 @@ def q(value):
     return json.dumps(str(value))
 
 
-def isolation_refusals(config):
-    """Returns why the copy cannot be isolated: an external network or volume, a host or container network mode."""
+def mount_refusal(service, mount, folder, allowed):
+    """Returns why a mount of a service would reach outside its copy (a runtime socket, a bind outside the clone and the
+    allowed folders), or an empty string."""
+    source = mount.get('source') or ''
+    for path in (source, mount.get('target') or ''):
+        if os.path.basename(path.rstrip('/')) in RUNTIME_SOCKETS:
+            return f'service {service} mounts a container runtime socket ({path})'
+    if mount.get('type') != 'bind' or not folder:
+        return ''
+    real = os.path.realpath(source)
+    if any(inside(real, os.path.realpath(root)) for root in (folder, *allowed) if root):
+        return ''
+    return f'service {service} binds {source}, outside the clone (use a named volume of the group)'
+
+
+def isolation_refusals(config, folder='', allowed=()):
+    """Returns why the copy cannot be isolated, each named: an external network or volume, a network that is not a
+    bridge, a local volume on a host path, a network_mode other than service:<x>, privileged, cap_add, pid, ipc, uts or
+    cgroup host, devices, security_opt, a container runtime socket, and (folder given) a bind outside the clone and the
+    allowed folders (the configuration of AIWP_CUSTOM_DIR)."""
     refusals = []
     for kind in ('networks', 'volumes'):
         for key, spec in sorted((config.get(kind) or {}).items()):
@@ -355,10 +388,29 @@ def isolation_refusals(config):
                 )
     if EDGE_KEY in (config.get('networks') or {}):
         refusals.append(f"network {EDGE_KEY} is the key of the copy's own edge network: rename it in the project")
+    for key, spec in sorted((config.get('networks') or {}).items()):
+        driver = (spec or {}).get('driver') or 'bridge'
+        if driver != 'bridge' and not (spec or {}).get('external'):
+            refusals.append(f'network {key} uses the driver {driver}: only a bridge network can be kept off the host')
+    for key, spec in sorted((config.get('volumes') or {}).items()):
+        if ((spec or {}).get('driver_opts') or {}).get('device'):
+            refusals.append(f'volume {key} mounts the host path {spec["driver_opts"]["device"]}')
     for service, spec in sorted((config.get('services') or {}).items()):
         mode = spec.get('network_mode') or ''
-        if mode == 'host' or mode.startswith('container:'):
-            refusals.append(f'service {service} uses network_mode {mode}: its ports and names are not its own')
+        if mode and not mode.startswith('service:'):
+            refusals.append(f'service {service} uses network_mode {mode}: a copy runs on its own networks only')
+        if spec.get('privileged'):
+            refusals.append(f'service {service} is privileged')
+        for key in ('cap_add', 'devices', 'security_opt', 'device_cgroup_rules'):
+            if spec.get(key):
+                refusals.append(f'service {service} sets {key}')
+        for key in ('pid', 'ipc', 'uts', 'cgroup', 'userns_mode'):
+            if spec.get(key) == 'host':
+                refusals.append(f'service {service} uses the host {key}')
+        for mount in spec.get('volumes') or []:
+            why = mount_refusal(service, mount, folder, allowed)
+            if why:
+                refusals.append(why)
     return refusals
 
 
@@ -523,6 +575,7 @@ def build_override(config, group, entries, ports, custom_root='', custom=''):
                 resets.setdefault(key, []).append('    ipam: !reset {}')
             if kind == 'networks':
                 resets.setdefault(key, []).append('    internal: true')
+                resets[key] += ['    driver_opts:', *[f'      {option}: "isolated"' for option in ISOLATED_GATEWAY]]
         if kind == 'networks' and edge:
             resets[EDGE_KEY] = [f'    name: {q(f"{group}_edge")}', '    internal: false']
         if resets:
@@ -554,6 +607,12 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options):
             raise Refused(f'{name} is not a copy group (agent_<MMDD>-<slug>)')
     if not docker_ok():
         raise Refused('Docker: not reachable')
+    major = engine_major()
+    if major < MIN_ENGINE:
+        raise Refused(
+            f'a copy needs Docker Engine {MIN_ENGINE} or later (its internal networks get no gateway to the host: '
+            f'gateway_mode isolated); this one is {major or "unknown"}'
+        )
     found = containers(f'{PROJECT_LABEL}={group}')
     if foreign(found, folder) and fallback:
         group = fallback
@@ -571,12 +630,13 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options):
     if code != 0:
         raise Refused(f'docker compose config failed: {first_line(err or out)}')
     config = load_json(out, 'docker compose config')
-    refusals = isolation_refusals(config)
+    custom = custom_dir()
+    refusals = isolation_refusals(config, folder, [custom_root] if custom and custom_root else [])
     if refusals:
         raise Refused('; '.join(refusals))
     entries = port_entries(config)
     ports = pick_ports(entries, read_ports_env(ports_path(override)), free_checker(own_ports(found)))
-    text = build_override(config, group, entries, ports, custom_root, custom_dir())
+    text = build_override(config, group, entries, ports, custom_root, custom)
     os.makedirs(os.path.dirname(os.path.abspath(override)), exist_ok=True)
     with open(override, 'w', encoding='utf-8') as handle:
         handle.write(text)
@@ -722,25 +782,33 @@ def tracked_differences(checkout, repo, rel):
     return differ
 
 
-def moved_source(source, checkout, repo, root):
-    """Returns (relative path, source in the repo) of a source that lies under root (tmp/deploy/: the checkout, or
-    above it through ..), else (None, None)."""
-    if not source or not inside(source, root):
-        return None, None
-    rel = os.path.relpath(os.path.normpath(source), checkout)
-    return rel, os.path.normpath(os.path.join(repo, rel))
+def moved_source(source, base, repo, roots):
+    """Returns (path relative to the checkout, source in the repo, refusal) of a source as the compose files wrote it
+    (docker compose config --no-path-resolution): a relative one is taken from the same relative path of the repo
+    (base: the folder of the first compose file, relative to the checkout), and refused when that leaves the roots (the
+    workspace, its projects/); an absolute one stays: (None, None, '')."""
+    if not source or os.path.isabs(source) or source.startswith('~'):
+        return None, None, ''
+    rel = os.path.normpath(os.path.join(base, source))
+    new = os.path.normpath(os.path.join(repo, rel))
+    if not any(inside(new, root) for root in roots):
+        return rel, None, f'{source} leads to {new}, outside the workspace'
+    return rel, new, ''
 
 
-def deploy_binds(config, checkout, repo):
+def deploy_binds(config, checkout, repo, roots, base=''):
     """Returns ({service: [moved mounts]}, {('secrets' or 'configs', name): moved file}, refusals) for a checkout of
-    main: every bind source and every secret or config file under tmp/deploy/ (the checkout, or above it through ..)
-    moves to the same relative path from the repo; files that differ between main and the repo there cannot move (main
-    would run with another file), and are refused."""
-    root = os.path.dirname(checkout)
+    main, from its compose config with no path resolution: every relative bind source and secret or config file (in
+    the checkout, or above it through .., at any depth) is taken from the same relative path of the repo; one that
+    leaves the workspace is refused, and so are files that differ between main and the repo under a path in the
+    checkout (main would run with another file). Absolute sources stay."""
     moved, files, refusals = {}, {}, []
 
-    def check(what, rel):
-        """Returns True when rel may move; else adds the refusal."""
+    def check(what, rel, new, why):
+        """Returns True when the source may move; else adds the refusal."""
+        if why:
+            refusals.append(f'{what} {why}')
+            return False
         if rel.split(os.sep)[0] == '..':
             return True
         differ = tracked_differences(checkout, repo, rel)
@@ -752,13 +820,13 @@ def deploy_binds(config, checkout, repo):
         for mount in spec.get('volumes') or []:
             if mount.get('type') != 'bind':
                 continue
-            rel, new = moved_source(mount.get('source') or '', checkout, repo, root)
-            if rel is not None and check(f'{service} binds', rel):
+            rel, new, why = moved_source(mount.get('source') or '', base, repo, roots)
+            if rel is not None and check(f'{service} binds', rel, new, why):
                 moved.setdefault(service, []).append({**mount, 'source': new})
     for kind in ('secrets', 'configs'):
         for name, spec in sorted((config.get(kind) or {}).items()):
-            rel, new = moved_source((spec or {}).get('file') or '', checkout, repo, root)
-            if rel is not None and check(f'{kind[:-1]} {name} reads', rel):
+            rel, new, why = moved_source((spec or {}).get('file') or '', base, repo, roots)
+            if rel is not None and check(f'{kind[:-1]} {name} reads', rel, new, why):
                 files[(kind, name)] = new
     return moved, files, refusals
 
@@ -780,15 +848,22 @@ def binds_override(moved, files=None):
     return '\n'.join(lines) + '\n'
 
 
-def cmd_deploy_binds(project, checkout, repo, override, options):
-    """Prints the compose options of a deploy from a checkout of main, its binds moved to the repo by an override."""
+def cmd_deploy_binds(project, checkout, repo, override, root, options):
+    """Prints the compose options of a deploy from a checkout of main, its binds moved to the repo by an override.
+    root: the workspace; a source may lead into it or into its projects/ (a link included), nowhere else."""
     checkout, repo = os.path.realpath(checkout), os.path.realpath(repo)
+    roots = [os.path.realpath(root), os.path.realpath(os.path.join(root, 'projects'))]
     files, rest = split_compose_options(checkout, options, os.environ)
     args = [item for name in files for item in ('-f', name)]
-    code, out, err = run(['docker', 'compose', '-p', project, *args, *rest, 'config', '--format', 'json'], cwd=checkout)
+    base = os.path.relpath(os.path.dirname(os.path.join(checkout, files[0])), checkout)
+    code, out, err = run(
+        ['docker', 'compose', '-p', project, *args, *rest, 'config', '--no-path-resolution', '--format', 'json'],
+        cwd=checkout,
+    )
     if code != 0:
         raise Refused(f'docker compose config failed: {first_line(err or out)}')
-    moved, files, refusals = deploy_binds(load_json(out, 'docker compose config'), checkout, repo)
+    config = load_json(out, 'docker compose config')
+    moved, files, refusals = deploy_binds(config, checkout, repo, roots, '' if base == '.' else base)
     if refusals:
         raise Refused('main cannot be deployed from a checkout: ' + '; '.join(refusals))
     if moved or files:
@@ -922,9 +997,11 @@ def main(argv):
                 raise ValueError('destroy [--under <path>]... [<group>...]')
             return cmd_destroy(plain, found['--under'])
         if command == 'deploy-binds':
-            if len(rest) < 4 or (len(rest) > 4 and rest[4] != '--'):
-                raise ValueError('deploy-binds <project> <checkout> <repo> <override> [-- <docker compose options>...]')
-            return cmd_deploy_binds(*rest[:4], rest[5:])
+            if len(rest) < 5 or (len(rest) > 5 and rest[5] != '--'):
+                raise ValueError(
+                    'deploy-binds <project> <checkout> <repo> <override> <workspace> [-- <docker compose options>...]'
+                )
+            return cmd_deploy_binds(*rest[:5], rest[6:])
         if command == 'bound-under':
             if len(rest) != 1:
                 raise ValueError('bound-under <path>')

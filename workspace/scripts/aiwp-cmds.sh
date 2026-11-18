@@ -39,7 +39,8 @@ Commands:
   status [<work>]
         Per clone: branch, base, commits ahead of the base, commits not on the remote, files changed not committed;
         then one "copy:" line per Docker group of the clone (its agent_ group, by the compose folder label or its
-        override file): state, host ports and networks=<service>:edge|internal. Docker not reachable: one line "Docker: not reachable", same exit code.
+        override file): state, host ports and networks=<service>:edge|internal. Docker not reachable: one line
+        "Docker: not reachable", same exit code.
   push <work>/<clone>
         Pushes the branch now (what a failed automatic push left behind), with the pre-push checks.
   close <work> [--discard]
@@ -56,9 +57,13 @@ Commands:
         built service the group's own image (<group>-<service>), drops a fixed container_name and a fixed network or
         volume name (compose !reset), and moves every published port to a random free host port in 61000-65535 (on
         Linux free in /proc/net, in docker ps and by a bind test; elsewhere by docker ps and the bind test); the port
-        of the last up is kept while it is free. An external network or volume, or network_mode host or container:,
-        cannot be isolated: refused, nothing started. Every network of the copy is internal (internal: true, no way
-        out of Docker); a service that publishes a port also joins <group>_edge (compose key agent-edge, labeled
+        of the last up is kept while it is free. Refused, nothing started, with the reason: Docker Engine older than
+        28; an external network or volume; a network that is not a bridge; a local volume on a host path; a service
+        with network_mode other than service:<x>, privileged, cap_add, devices, security_opt, device_cgroup_rules,
+        pid/ipc/uts/cgroup/userns_mode host, a container runtime socket, or a bind outside the clone (a named
+        volume of the group is fine). Every network of the copy is internal (internal: true, and driver_opts
+        com.docker.network.bridge.gateway_mode_ipv4 and _ipv6 set to isolated, so not even its gateway, the host,
+        answers); a service that publishes a port also joins <group>_edge (compose key agent-edge, labeled
         com.docker.compose.project=<group> like the others), the copy's only network that is not internal, so its
         port answers on the host; service names and aliases keep resolving. Prints "network: <service> edge",
         "internal" or "shares <service>" per service. Then docker compose up -d --build in the group. Prints
@@ -76,9 +81,10 @@ Commands:
         main when it can be fetched, else the local one) in tmp/deploy/<clone name>-main/, with the repo's .env and
         local.settings.json files and -p forced to the final stack's name; the compose files are those compose would
         read there (-f given, else COMPOSE_FILE of the environment, of --env-file or of the repo's .env, else the
-        default names). Every bind, secret file and config file whose source lies under tmp/deploy/ (in the checkout,
-        or above it through ..) is taken from the same relative path of projects/<repo> instead (an override next to
-        the checkout; each mount whole, only its source changed), so the stack keeps the data developer uses. When main
+        default names). Every relative bind, secret file and config file, as the compose files write it (in the
+        checkout, or above it through .., at any depth), is taken from the same relative path of projects/<repo>
+        instead (an override next to the checkout; each mount whole, only its source changed), so the stack keeps the
+        data developer uses; one that leads outside the workspace (or its projects/) is refused. When main
         or projects/<repo> tracks a file under such a path, every file there (tracked by main, or by projects/<repo>,
         or not ignored there) must be the same on both sides, else the deploy is refused, nothing deployed. The
         checkout is removed afterwards, and never while a container binds a path in it (then the deploy is refused
@@ -786,7 +792,7 @@ cmd_deploy() {
     copy_env_files "$src" "$folder"
     # Every bind of the checkout is mounted from projects/<repo> (an override outside the checkout): the stack's data
     # stays where developer keeps it, and the checkout can go. Tracked files that differ there are refused.
-    opts="$(agent_copy deploy-binds "$project" "$folder" "$src" "$override" -- "$@")" ||
+    opts="$(agent_copy deploy-binds "$project" "$folder" "$src" "$override" "$root" -- "$@")" ||
       { rm -rf "${folder:?}" "$override"; die 1 "nothing deployed (above)"; }
     while IFS= read -r line; do [ -z "$line" ] || deploy_opts+=("$line"); done <<<"$opts"
   fi

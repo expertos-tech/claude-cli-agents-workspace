@@ -27,6 +27,11 @@ SPEC.loader.exec_module(ac)
 
 GROUP = 'agent_1118-add-export'
 REAL_RUN = subprocess.run
+# What every internal network of a copy carries: no gateway to the host.
+ISOLATED = (
+    '    driver_opts:\n      com.docker.network.bridge.gateway_mode_ipv4: "isolated"\n'
+    '      com.docker.network.bridge.gateway_mode_ipv6: "isolated"\n'
+)
 LOGIN_SIMULATOR = MODULE_PATH.parent.parent / 'tools' / 'login-simulator' / 'compose.yaml'
 
 
@@ -87,6 +92,7 @@ class FakeDocker:
         self.config_text = None
         self.ports_text = ''
         self.git_files = {}
+        self.version = '28.4.0'
         self.networks = []
         self.git_fails = set()
 
@@ -123,7 +129,7 @@ class FakeDocker:
             raise FileNotFoundError(args[0])
         sub = args[1]
         if sub == 'version':
-            return (0, '28.0\n', '') if self.up else (1, '', 'cannot connect')
+            return (0, f'{self.version}\n', '') if self.up else (1, '', 'cannot connect')
         if sub == 'ps':
             return self.ps(args)
         if sub == 'inspect':
@@ -329,8 +335,8 @@ class HelperTests(unittest.TestCase):
         self.assertIn('published: "61003"\n        host_ip: "127.0.0.1"\n        protocol: "tcp"', text)
         self.assertIn('published: "61002"\n        protocol: "udp"', text)
         self.assertIn(
-            'networks:\n  "default":\n    name: !reset null\n    internal: true\n  "plain":\n    internal: true\n'
-            f'  "agent-edge":\n    name: "{GROUP}_edge"\n    internal: false\n'
+            f'networks:\n  "default":\n    name: !reset null\n    internal: true\n{ISOLATED}  "plain":\n'
+            f'    internal: true\n{ISOLATED}  "agent-edge":\n    name: "{GROUP}_edge"\n    internal: false\n'
             'volumes:\n  "data":\n    name: !reset null',
             text,
         )
@@ -393,9 +399,11 @@ class ReviewFindingTests(unittest.TestCase):
             '    networks:\n      "login":\n        ipv4_address: !reset null\n        ipv6_address: !reset null', text
         )
         self.assertIn(
-            'networks:\n  "default":\n    internal: true\n  "login":\n    name: !reset null\n    ipam: !reset {}', text
+            f'networks:\n  "default":\n    internal: true\n{ISOLATED}  "login":\n    name: !reset null\n'
+            '    ipam: !reset {}',
+            text,
         )
-        self.assertIn('  "plain":\n    internal: true', text)
+        self.assertIn(f'  "plain":\n    internal: true\n{ISOLATED}', text)
         self.assertNotIn('agent-edge', text)
         dropped, notes = ac.fixed_addresses(data)
         self.assertEqual(dropped, {'172.31.250.10', 'fd00::10', '172.31.250.0/24'})
@@ -432,6 +440,13 @@ class ReviewFindingTests(unittest.TestCase):
         network = merged['networks']['login-simulator']
         self.assertEqual(network['name'], f'{GROUP}_login-simulator')
         self.assertTrue(network['internal'])
+        self.assertEqual(
+            network['driver_opts'],
+            {
+                'com.docker.network.bridge.gateway_mode_ipv4': 'isolated',
+                'com.docker.network.bridge.gateway_mode_ipv6': 'isolated',
+            },
+        )
         self.assertEqual(merged['networks']['agent-edge']['name'], f'{GROUP}_edge')
         self.assertFalse(merged['networks']['agent-edge'].get('internal'))
         self.assertEqual(sorted(merged['services']['login-simulator']['networks']), ['agent-edge', 'login-simulator'])
@@ -499,6 +514,92 @@ class InternalNetworkTests(CopyTestCase):
         self.assertEqual(ac.internal_networks(set()), {})
 
 
+class EscapeTests(CopyTestCase):
+    """up refuses what would let a copy reach the host: the engine, the service options, the mounts."""
+
+    def test_an_engine_older_than_28_is_refused(self):
+        for version, shown in (('27.5.1', '27'), ('weird', 'unknown')):
+            self.fake.version = version
+            code, _, err = self.up()
+            self.assertEqual(code, 1)
+            self.assertIn('a copy needs Docker Engine 28 or later', err)
+            self.assertIn(f'this one is {shown}', err)
+        self.assertFalse(self.fake.called('up -d'))
+        self.fake.up = False
+        self.assertEqual(ac.engine_major(), 0)
+
+    def test_every_way_out_is_refused_and_named(self):
+        spec = {
+            'privileged': True,
+            'cap_add': ['NET_ADMIN'],
+            'devices': ['/dev/kvm'],
+            'security_opt': ['apparmor:unconfined'],
+            'device_cgroup_rules': ['c 1:3 mr'],
+            'pid': 'host',
+            'ipc': 'host',
+            'uts': 'host',
+            'cgroup': 'host',
+            'userns_mode': 'host',
+            'volumes': [
+                {'type': 'bind', 'source': '/var/run/docker.sock', 'target': '/var/run/docker.sock'},
+                {'type': 'bind', 'source': '/etc', 'target': '/host-etc'},
+                {'type': 'bind', 'source': f'{self.clone}/data', 'target': '/data'},
+                {'type': 'volume', 'source': 'data', 'target': '/v'},
+                {'type': 'volume', 'source': 'sock', 'target': '/run/containerd.sock'},
+            ],
+        }
+        data = {
+            'services': {'bad': spec, 'side': {'network_mode': 'service:bad'}},
+            'networks': {'ovl': {'driver': 'overlay'}, 'plain': {'driver': 'bridge'}},
+            'volumes': {'hostpath': {'driver_opts': {'type': 'none', 'o': 'bind', 'device': '/srv'}}, 'data': {}},
+        }
+        refusals = ac.isolation_refusals(data, self.clone)
+        joined = '\n'.join(refusals)
+        for expected in (
+            'network ovl uses the driver overlay',
+            'volume hostpath mounts the host path /srv',
+            'service bad is privileged',
+            'service bad sets cap_add',
+            'service bad sets devices',
+            'service bad sets security_opt',
+            'service bad sets device_cgroup_rules',
+            'service bad uses the host pid',
+            'service bad uses the host ipc',
+            'service bad uses the host uts',
+            'service bad uses the host cgroup',
+            'service bad uses the host userns_mode',
+            'service bad mounts a container runtime socket (/var/run/docker.sock)',
+            'service bad binds /etc, outside the clone',
+            'service bad mounts a container runtime socket (/run/containerd.sock)',
+        ):
+            self.assertIn(expected, joined)
+        self.assertEqual(len(refusals), 15)
+        for mode in ('host', 'bridge', 'none', 'container:x'):
+            found = ac.isolation_refusals({'services': {'s': {'network_mode': mode}}})
+            self.assertEqual(found, [f'service s uses network_mode {mode}: a copy runs on its own networks only'])
+
+    def test_binds_inside_the_clone_or_the_configuration_folder_pass(self):
+        os.makedirs(os.path.join(self.root, 'installed'))
+        link = os.path.join(self.clone, 'escape')
+        os.symlink('/etc', link)
+        mounts = [
+            {'type': 'bind', 'source': f'{self.clone}/data', 'target': '/d'},
+            {'type': 'bind', 'source': f'{self.root}/installed/config.json', 'target': '/c'},
+        ]
+        data = {'services': {'s': {'volumes': mounts}}}
+        self.assertEqual(ac.isolation_refusals(data, self.clone, [f'{self.root}/installed']), [])
+        self.assertEqual(len(ac.isolation_refusals(data, self.clone)), 1)
+        data['services']['s']['volumes'] = [{'type': 'bind', 'source': link, 'target': '/e'}]
+        self.assertIn('binds', ac.isolation_refusals(data, self.clone)[0])
+        # Through up: a bind outside the clone, nothing started.
+        self.fake.config = config()
+        self.fake.config['services']['db']['volumes'] = [{'type': 'bind', 'source': '/srv/acme', 'target': '/s'}]
+        code, _, err = self.up()
+        self.assertEqual(code, 1)
+        self.assertIn('service db binds /srv/acme, outside the clone', err)
+        self.assertFalse(self.fake.called('up -d'))
+
+
 class DeployBindsTests(CopyTestCase):
     """deploy main: the binds, secrets and configs of the checkout come from the repo; a bound checkout is never
     deleted."""
@@ -520,26 +621,28 @@ class DeployBindsTests(CopyTestCase):
                     'volumes': [
                         {
                             'type': 'bind',
-                            'source': f'{self.checkout}/pgdata',
+                            'source': './pgdata',
                             'target': '/data',
                             'bind': {'create_host_path': True, 'selinux': 'Z', 'propagation': 'rprivate'},
                             'consistency': 'cached',
                         },
-                        {'type': 'bind', 'source': f'{self.checkout}/conf', 'target': '/n', 'read_only': True},
-                        {'type': 'bind', 'source': f'{self.root}/tmp/deploy/shared', 'target': '/shared'},
+                        {'type': 'bind', 'source': './conf', 'target': '/n', 'read_only': True},
+                        {'type': 'bind', 'source': '../shared', 'target': '/shared'},
                         {'type': 'bind', 'source': '/srv/acme', 'target': '/srv'},
                         {'type': 'volume', 'source': 'data', 'target': '/v'},
                     ]
                 },
                 'web': {},
             },
-            'secrets': {'pw': {'file': f'{self.checkout}/pw'}, 'ext': {'external': True}},
-            'configs': {'site': {'file': f'{self.checkout}/conf/nginx.conf'}, 'far': {'file': '/srv/acme.conf'}},
+            'secrets': {'pw': {'file': './pw'}, 'ext': {'external': True}},
+            'configs': {'site': {'file': 'conf/nginx.conf'}, 'far': {'file': '/srv/acme.conf'}},
         }
 
     def deploy(self, *options):
         """Runs main deploy-binds; returns (exit code, stdout, stderr)."""
-        return self.quiet(ac.main, ['deploy-binds', 'billing-api', self.checkout, self.repo, self.override, *options])
+        return self.quiet(
+            ac.main, ['deploy-binds', 'billing-api', self.checkout, self.repo, self.override, self.root, *options]
+        )
 
     def mounts(self):
         """Returns the volumes lines of the override, parsed (each is a JSON flow mapping)."""
@@ -565,10 +668,14 @@ class DeployBindsTests(CopyTestCase):
         self.assertIn(f'configs:\n  "site":\n    file: "{self.repo}/conf/nginx.conf"', text)
         self.assertNotIn('/srv/acme', text)
         self.assertNotIn('"ext"', text)
-        self.assertTrue(self.fake.called(r'^docker compose -p billing-api -f compose.yaml --profile full config'))
+        self.assertTrue(
+            self.fake.called(
+                r'^docker compose -p billing-api -f compose.yaml --profile full config --no-path-resolution'
+            )
+        )
 
     def test_only_a_secret_still_writes_the_override(self):
-        self.fake.config = {'services': {}, 'secrets': {'pw': {'file': f'{self.checkout}/pw'}}}
+        self.fake.config = {'services': {}, 'secrets': {'pw': {'file': './pw'}}}
         code, out, _ = self.deploy()
         self.assertEqual((code, out.splitlines()), (0, ['-f', 'compose.yaml', '-f', self.override]))
         self.assertIn('services: {}', Path(self.override).read_text(encoding='utf-8'))
@@ -608,14 +715,50 @@ class DeployBindsTests(CopyTestCase):
         self.assertEqual(self.deploy()[0], 0)
 
     def test_failures(self):
-        self.fake.fail['config --format json'] = 1
+        self.fake.fail['config --no-path-resolution'] = 1
         self.assertIn('docker compose config failed', self.deploy()[2])
         self.fake.fail = {}
         self.fake.git_fails.add(self.checkout)
         with self.assertRaisesRegex(ac.Refused, 'git ls-files failed in'):
             ac.tracked_differences(self.checkout, self.repo, 'conf')
-        self.assertEqual(self.quiet(ac.main, ['deploy-binds', 'a', 'b', 'c'])[0], 2)
-        self.assertEqual(self.quiet(ac.main, ['deploy-binds', 'a', 'b', 'c', 'd', 'e'])[0], 2)
+        self.assertEqual(self.quiet(ac.main, ['deploy-binds', 'a', 'b', 'c', 'd'])[0], 2)
+        self.assertEqual(self.quiet(ac.main, ['deploy-binds', 'a', 'b', 'c', 'd', 'e', 'f'])[0], 2)
+
+    def test_a_nested_repo_climbs_to_the_same_place_and_never_leaves_the_workspace(self):
+        repo = os.path.join(self.root, 'projects', 'acme', 'billing-api')
+        os.makedirs(repo)
+        Path(repo, 'compose.yaml').write_text('services: {}\n', encoding='utf-8')
+        self.fake.config = {
+            'services': {
+                'db': {
+                    'volumes': [
+                        {'type': 'bind', 'source': '../../shared/pgdata', 'target': '/d'},
+                        {'type': 'bind', 'source': 'sub/../data', 'target': '/e'},
+                    ]
+                }
+            }
+        }
+        code, _, err = self.quiet(
+            ac.main, ['deploy-binds', 'billing-api', self.checkout, repo, self.override, self.root]
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual([m['source'] for m in self.mounts()], [f'{self.root}/projects/shared/pgdata', f'{repo}/data'])
+        self.fake.config['services']['db']['volumes'] = [{'type': 'bind', 'source': '../../../../etc', 'target': '/x'}]
+        code, _, err = self.quiet(
+            ac.main, ['deploy-binds', 'billing-api', self.checkout, repo, self.override, self.root]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn(f'db binds ../../../../etc leads to {os.path.normpath(repo + "/../../../../etc")}, outside', err)
+        # The compose file in a subfolder: its relative paths start there.
+        moved, _, _ = ac.deploy_binds(
+            {'services': {'a': {'volumes': [{'type': 'bind', 'source': './data', 'target': '/d'}]}}},
+            self.checkout,
+            repo,
+            [self.root],
+            'deploy',
+        )
+        self.assertEqual(moved['a'][0]['source'], f'{repo}/deploy/data')
+        self.assertEqual(ac.moved_source('~/x', '', repo, [self.root]), (None, None, ''))
 
     def test_compose_file_from_the_checkout_env(self):
         Path(self.checkout, 'compose.prod.yaml').write_text('services: {}\n', encoding='utf-8')

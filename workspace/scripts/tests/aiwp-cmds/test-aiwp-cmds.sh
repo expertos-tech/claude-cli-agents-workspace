@@ -299,7 +299,7 @@ case "$*" in
     ;;
   "image ls --format "*) printf 'rollback-20260101-000001\nrollback-20260102-000001\nrollback-20260103-000001\nrollback-20260104-000001\npublished-20260105-000001-abc1234\nlatest\n' ;;
   "image inspect app-web:rollback-latest") [ -z "${NO_ROLLBACK:-}" ]; exit ;;
-  compose*" config --format json"*) cat "$STUB/config.json" ;;
+  compose*" config --format json"* | compose*" config --no-path-resolution --format json"*) cat "$STUB/config.json" ;;
   compose*" config --images"*) echo app-web ;;
   compose*" ps -aq"*) [ -n "${STACK_DOWN:-}" ] || echo c1 ;;
   compose*" up -d --build"*)
@@ -569,8 +569,7 @@ test_deploy_main_binds_the_data_of_projects_and_never_deletes_a_bound_checkout()
   git -C "$app" branch -f main developer
   git -C "$app" push -q origin main developer
   mkdir -p "$app/pgdata"
-  printf '{"name":"app","services":{"db":{"image":"postgres:16","volumes":[{"type":"bind","source":"%s/pgdata","target":"/var/lib/postgresql/data","bind":{"create_host_path":true}},{"type":"bind","source":"%s/nginx.conf","target":"/etc/nginx.conf","read_only":true},{"type":"bind","source":"/srv/acme","target":"/srv"}]}}}\n' \
-    "$co" "$co" >"$STUB/config.json"
+  printf '{"name":"app","services":{"db":{"image":"postgres:16","volumes":[{"type":"bind","source":"./pgdata","target":"/var/lib/postgresql/data","bind":{"create_host_path":true}},{"type":"bind","source":"./nginx.conf","target":"/etc/nginx.conf","read_only":true},{"type":"bind","source":"/srv/acme","target":"/srv"}]}}}\n' >"$STUB/config.json"
   dock deploy app main
   rc_is 0
   grep -q "^docker compose -p app -f compose.yaml -f compose.prod.yaml -f $co.binds.compose.yaml up -d --build$" "$DOCKER_LOG"
@@ -734,9 +733,36 @@ YAML
   [ -n "$nets" ]; check "db has networks" $?
   for net in $nets; do
     eq "db network $net internal" "true $g" "$(docker network inspect -f '{{.Internal}} {{index .Labels "com.docker.compose.project"}}' "$net")"
+    eq "db network $net has no gateway to the host" "isolated isolated" \
+      "$(docker network inspect -f '{{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv6"}}' "$net")"
   done
   eq "db has no route out of Docker" "" "$(docker exec "$db_id" ip route | grep '^default')"
   docker exec "$web_id" ip route | grep -q '^default'; check "web has its way out, through edge" $?
+  # Nor any way to the host: a listener on every address of the host answers the host itself, never the db, whether
+  # through the gateway of the db's own networks or the host's address on edge.
+  local hostport listener addr
+  hostport="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("0.0.0.0", 0)); print(s.getsockname()[1])')"
+  timeout 120 python3 -I -c '
+import socket, sys
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("0.0.0.0", int(sys.argv[1])))
+s.listen(5)
+while True:
+    c, _ = s.accept()
+    c.sendall(b"hello\n")
+    c.close()
+' "$hostport" &
+  listener=$!
+  sleep 1
+  eq "the host listener answers the host" hello "$(python3 -I -c 'import socket, sys; print(socket.create_connection(("127.0.0.1", int(sys.argv[1])), 5).recv(16).decode().strip())' "$hostport" 2>&1)"
+  # shellcheck disable=SC2086  # $nets is the list of the db's networks
+  for addr in $(docker network inspect -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' $nets "${g}_edge"); do
+    eq "db cannot reach the host at $addr" "" "$(docker exec "$db_id" sh -c "nc -w 3 $addr $hostport </dev/null" 2>/dev/null)"
+  done
+  kill "$listener" 2>/dev/null
+  wait "$listener" 2>/dev/null
+  eq "edge keeps its gateway" "" "$(docker network inspect -f '{{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}}' "${g}_edge")"
   eq "web on edge" "false $g" "$(docker network inspect -f '{{.Internal}} {{index .Labels "com.docker.compose.project"}}' "${g}_edge")"
   docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$web_id" | grep -q "${g}_edge"; check "web joined edge" $?
   eq "the published port answers" ok "$(python3 -I -c 'import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1], timeout=10).read().decode().strip())' "http://127.0.0.1:$copy_port/" 2>&1)"
