@@ -29,6 +29,7 @@
 | Reusable scripts in `scripts/` | `script-engineer` | claude-sonnet-5-5 | medium |
 | Running checks and returning only the result lines | `verifier` | claude-haiku-5-5 | low |
 | The four analysts of `/normalize-projects` (read only) | `code-explorer` | claude-opus-5-5 (`model: opus` in the call) | high |
+| The four analysts and the conflict check of `/normalize-rules` (read only) | `code-explorer` | claude-opus-5-5 (`model: opus` in the call) | high |
 
 ## Effort of a step
 
