@@ -13,8 +13,10 @@ Runs the gate of the repository, from any cwd:
      --i18n-pending: translation findings are reported as pending and pass, until the release),
      judging the product in workspace/ only;
   2. repo-terms: no file of the repository, tracked or untracked, outside or inside workspace/, matches a line of
-     the terms list (extended regex, any case; blank and # lines ignored). Nothing is exempt here: no history, no
-     changelog. No terms list prints SKIP.
+     the terms list (extended regex, any case; blank and # lines ignored) the owner has not accepted. Nothing is
+     exempt here: no history, no changelog. No terms list prints SKIP. A line the owner kept after the warning of a
+     work clone's push (bash tests/caw-work.sh push <work> --accept-terms, recorded in <terms list>.accepted) is
+     skipped: PASS says how many matching lines it skipped, never the term.
   3. caw-layers: every maintenance skill with a product counterpart is a layer over it (CLAUDE.md "Layout").
   4. caw-work: tests/test-caw-work.sh, the scenarios of tests/caw-work.sh (work clones under tmp/work/ and their
      git hooks), in a throwaway repository with a local remote; it never touches this repository.
@@ -24,8 +26,9 @@ Terms list (company terms that must never reach the public repository), the firs
   2. $AIWP_WORKSPACE/custom/core-terms.txt, the custom layer of a work workspace;
      AIWP_WORKSPACE defaults to $HOME/Development/ai-workspace;
   3. workspace/custom/core-terms.txt (git-ignored), the product gate's own lookup.
-The list found is passed to the product gate as AIWP_TERMS_FILE. Matching lines are printed: never paste them
-into an issue, a commit or a pull request.
+The list found is passed to the product gate as AIWP_TERMS_FILE; with accepted terms, a private temporary copy of the
+list without them is passed instead. Matching lines are printed: never paste them into an issue, a commit or a pull
+request.
 
 Exit codes: 0 every check passed; 1 a check failed; 2 usage error.
 
@@ -87,12 +90,22 @@ check_caw_layers() {
 
 list="$(terms_list "$repo")" || { echo "error: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2; exit 1; }
 failed=0
+# The terms a scan reports (active) and the ones the owner accepted (tests/lib/terms.sh), in private temporary files.
+active="$(mktemp)"
+accepted="$(mktemp)"
+trap 'rm -f "$active" "$accepted"' EXIT
+if [ -n "$list" ]; then
+  terms_active "$list" >"$active"
+  terms_accepted "$list" >"$accepted"
+fi
 
 echo "== product gate (workspace/)"
-if [ -n "$list" ]; then
-  AIWP_TERMS_FILE="$list" bash "$gate" "$@"
-else
+if [ -z "$list" ]; then
   bash "$gate" "$@"
+elif [ -s "$accepted" ]; then
+  AIWP_TERMS_FILE="$active" bash "$gate" "$@"
+else
+  AIWP_TERMS_FILE="$list" bash "$gate" "$@"
 fi
 rc=$?
 [ "$rc" -eq 2 ] && exit 2
@@ -114,27 +127,31 @@ else
 fi
 if [ -z "$list" ]; then
   echo "SKIP repo-terms: no terms list (set AIWP_TERMS_FILE or AIWP_WORKSPACE)"
+elif [ ! -s "$active" ] && [ ! -s "$accepted" ]; then
+  echo "SKIP repo-terms: the terms list holds no term"
 else
-  patterns="$(mktemp)"
-  trap 'rm -f "$patterns"' EXIT
-  terms_patterns "$list" >"$patterns"
-  if [ ! -s "$patterns" ]; then
-    echo "SKIP repo-terms: the terms list holds no term"
-  else
+  grc=1
+  if [ -s "$active" ]; then
     grc=0
-    git -C "$repo" grep -n -I -i -E --untracked -f "$patterns" -- . ':(exclude)workspace/custom/' || grc=$?
-    case "$grc" in
-      1) echo "PASS repo-terms" ;;
-      0)
-        echo "FAIL repo-terms: the lines above hold a company term; say it without the name"
-        failed=1
-        ;;
-      *)
-        echo "FAIL repo-terms: the search failed (git grep $grc)"
-        failed=1
-        ;;
-    esac
+    git -C "$repo" grep -n -I -i -E --untracked -f "$active" -- . ':(exclude)workspace/custom/' || grc=$?
   fi
+  note=""
+  if [ -s "$accepted" ]; then
+    skipped="$(git -C "$repo" grep -c -I -i -E --untracked -f "$accepted" -- . ':(exclude)workspace/custom/' 2>/dev/null |
+      awk -F: '{ s += $NF } END { print s + 0 }')"
+    note=" (skipped $skipped matching line(s) of company terms the owner accepted)"
+  fi
+  case "$grc" in
+    1) echo "PASS repo-terms$note" ;;
+    0)
+      echo "FAIL repo-terms: the lines above hold a company term; say it without the name$note"
+      failed=1
+      ;;
+    *)
+      echo "FAIL repo-terms: the search failed (git grep $grc)"
+      failed=1
+      ;;
+  esac
 fi
 
 exit "$failed"

@@ -35,6 +35,8 @@
     ],
     "ask": [
       "Bash(git push *)",
+      "Bash(bash tests/caw-work.sh push * --accept-terms*)",
+      "Bash(bash tests/caw-work.sh *--accept-terms*)",
       "Bash(gh release *)",
       "Bash(gh pr merge *)"
     ]

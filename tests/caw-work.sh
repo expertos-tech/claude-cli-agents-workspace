@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Work clones of the maintenance of this repository: each change is made in a local clone under tmp/work/, on its own
 # branch from origin/developer, and pushed at every commit by the clone's git hooks once the company-terms scan of
-# what leaves passes. Writes only under tmp/work/. Modeled on workspace/scripts/aiwp-cmds.sh.
+# what leaves passes; a company term is a warning the owner confirms (push --accept-terms), never a refusal. Writes
+# only under tmp/work/, and the owner's accepted terms next to the terms list. Modeled on
+# workspace/scripts/aiwp-cmds.sh.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -46,10 +48,18 @@ Commands:
         Accepted limit: a script file run through bash, sh or python3 (or a config file a listed tool executes, such
         as .markdownlint-cli2.cjs) does whatever it holds, a file that run's own commands wrote included; run checks
         the command line, never what a script does. The terms scan of push and of the hooks still judges what leaves.
-  push <work>[/<clone>]
-        Pushes the branch now, exactly as the hooks do (what a failed automatic push left behind): the terms scan of
-        what leaves runs first, in this script, then git push (never forced) through the clone's pre-push hook, which
-        scans again; a removed hook or another hooks path never lets a term out. Exit 1 when it is not pushed.
+        A command with --accept-terms is refused: the owner confirms it as a plain command (below).
+  push <work>[/<clone>] [--accept-terms]
+        Pushes the branch now, exactly as the hooks do (what an automatic push left behind): the terms scan of what
+        leaves runs first, in this script, then git push (never forced) through the clone's pre-push hook, which
+        scans again; a removed hook or another hooks path never lets a term out. A company term in what leaves is a
+        WARNING, not an error: nothing is pushed, the commit stays in the clone, and the warning says where each
+        match is and how to keep it. Exit 1 when it is not pushed.
+        --accept-terms: the owner keeps the company terms that match now (the settings ask the owner before this
+        runs): their lines of the terms list are recorded in <terms list>.accepted, next to the list (created 600;
+        refused inside this repository unless git ignores it), never printed, then the branch is pushed. Later scans,
+        and tests/check.sh repo-terms, skip an accepted term, so it is not asked again; a new term warns again.
+        Delete a line of that file to be warned about the term again.
   status [<work>]
         Fetches origin (--prune), then one line per clone: branch, commits ahead of origin/developer, commits not on
         the remote, files not committed, and whether the branch is in origin/developer; then one "copy:" line per
@@ -84,16 +94,19 @@ part of any repository). They call this script by the absolute path it had when 
                              <branch>, never forced. Nothing on a detached HEAD, during a rebase, or with another
                              branch checked out.
   post-rewrite               the same at the end of a rebase; an amend is pushed by post-commit.
-                             A failed push says what to do and never fails the commit: the commit stays in the clone.
+                             A push not made (a company term's WARNING, or a refusal) says what to do and never fails
+                             the commit: the commit stays in the clone.
   pre-push                   reads every ref line first, then refuses the whole push of developer, main, a tag or any
                              ref outside refs/heads/, and a push that is not a fast-forward (a force push: an amend or
                              a rebase of pushed commits). A deletion of another branch passes. Then it scans what
                              leaves, the commits the remote does not have (git ls-remote): every version of a file
                              they add or change, the paths of those files, their messages, and their author and
                              committer names and e-mails, against the terms list (tests/lib/terms.sh, the
-                             lookup of tests/check.sh --help). A match refuses the push and prints
-                             <commit>:<path>:<line>:<text>; never paste those lines into an issue, a commit or a pull
-                             request. AIWP_TERMS_FILE naming no file refuses; no terms list prints
+                             lookup of tests/check.sh --help) less the accepted terms. A match stops the push with a
+                             WARNING (the repository is public; keep the term with push --accept-terms, or rewrite the
+                             commits not on the remote) after the lines <commit>:<path>:<line>:<text>; never paste
+                             those lines into an issue, a commit or a pull request. AIWP_TERMS_FILE naming no file
+                             and a remote that cannot be read refuse; no terms list prints
                              "SKIP terms scan: no terms list" and the push goes.
 
 Internal: _autopush <clone> [<post-rewrite kind>], _prepush <clone> <remote> (the ref lines on stdin).
@@ -108,6 +121,7 @@ Examples:
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- git status --short
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- bash tests/check.sh --base origin/developer --i18n-pending
   bash tests/caw-work.sh push 2026-11-18-autonomous-work
+  bash tests/caw-work.sh push 2026-11-18-autonomous-work --accept-terms   # the owner keeps the term warned about
   bash tests/caw-work.sh status
   bash tests/caw-work.sh publish 2026-11-18-autonomous-work
   bash tests/caw-work.sh close 2026-11-18-autonomous-work
@@ -420,6 +434,8 @@ def main():
     gitdirs = {os.path.realpath(sys.argv[2]), os.path.join(clone, ".git")}
     remotes = set(sys.argv[3].split())
     argv = sys.argv[4:]
+    if "--accept-terms" in argv:
+        print("  --accept-terms: the owner confirms it: run it as a plain command (the settings ask the owner)")
     for arg in argv[1:]:
         for value in candidates(arg):
             why = path_reason(clone, gitdirs, value)
@@ -663,9 +679,10 @@ force_refused() {
 }
 
 # Pushes the recorded branch of a clone, never forced, after its own terms scan of what leaves and through the
-# clone's pre-push hook. Returns 0 when it is pushed, 1 when not, with the reason and what to do on stderr.
+# clone's pre-push hook; with <accept> 1 the company terms that match are accepted first (scan_leaving). Returns 0
+# when it is pushed, 1 when not, with the reason or the warning and what to do on stderr.
 push_branch() {
-  local clone="$1" branch current pushed
+  local clone="$1" accept="${2:-0}" branch current pushed rc=0
   branch="$(clone_branch "$clone")" || { echo "caw-work: not a clone made by open: $clone" >&2; return 1; }
   [[ "$branch" =~ $branch_re ]] || { echo "caw-work: refused: the recorded branch $branch is not a work branch" >&2; return 1; }
   current="$(git -C "$clone" symbolic-ref -q --short HEAD)" || current=""
@@ -682,10 +699,18 @@ push_branch() {
   fi
   # The scan runs here, before git push, so a pre-push hook removed or bypassed in the clone never lets a term out;
   # the hook scans again as a second check.
-  if ! scan_leaving "$clone" origin "$(git -C "$clone" rev-parse HEAD)"; then
-    echo "caw-work: NOT pushed: the commit stays only in this clone; fix what the lines above say, then commit again or push: bash tests/caw-work.sh push ${clone#"$work_root"/}" >&2
-    return 1
-  fi
+  scan_leaving "$clone" origin "$(git -C "$clone" rev-parse HEAD)" "$accept" || rc=$?
+  case "$rc" in
+    0) ;;
+    3)
+      echo "caw-work: NOT pushed, waiting for the owner (a warning, not an error): the commit stays only in this clone" >&2
+      return 1
+      ;;
+    *)
+      echo "caw-work: NOT pushed: the commit stays only in this clone; fix what the lines above say, then commit again or push: bash tests/caw-work.sh push ${clone#"$work_root"/}" >&2
+      return 1
+      ;;
+  esac
   if with_timeout 120 git -C "$clone" -c "core.hooksPath=$(git -C "$clone" rev-parse --absolute-git-dir)/hooks" \
     push -q origin "HEAD:refs/heads/$branch"; then
     echo "caw-work: pushed $branch $(git -C "$clone" rev-parse --short HEAD)"
@@ -747,10 +772,53 @@ scan_commits() {
   return "$found"
 }
 
+# Records the patterns <new> (one per line) as accepted for the terms list <list>, in its private file
+# <list>.accepted (terms_accepted_file), created 600: only the ones not there yet, never printed. Refuses a file inside
+# this repository that git does not ignore, and a path that is not a regular file. Returns 1 when it could not record.
+accept_terms() {
+  local list="$1" new="$2" file dir existing p count=0 why=""
+  file="$(terms_accepted_file "$list")"
+  if ! dir="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)"; then
+    echo "caw-work: refused: the folder of the terms list cannot be read" >&2
+    return 1
+  fi
+  file="$dir/$(basename "$file")"
+  case "$file" in
+    "$root"/*)
+      git -C "$root" check-ignore -q -- "$file" 2>/dev/null ||
+        why="the accepted terms would be written inside this repository, in a file git does not ignore (${file#"$root"/}); keep the terms list outside it (AIWP_TERMS_FILE)"
+      ;;
+  esac
+  if [ -z "$why" ] && { [ -L "$file" ] || { [ -e "$file" ] && [ ! -f "$file" ]; }; }; then
+    why="$file is not a regular file"
+  fi
+  if [ -z "$why" ] && [ ! -e "$file" ]; then
+    (umask 077 && printf '# Company terms the owner kept after the warning of tests/caw-work.sh push --accept-terms: lines of\n# the terms list next to this file, skipped by the terms scans. Delete a line to be warned about it again.\n' >"$file") ||
+      why="could not write $file"
+  fi
+  [ -n "$why" ] || chmod 600 "$file" || why="could not make $file private (600)"
+  existing="$(terms_patterns "$file" 2>/dev/null)"
+  while [ -z "$why" ] && IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if [ -n "$existing" ] && printf '%s\n' "$existing" | grep -qxF -e "$p"; then continue; fi
+    printf '%s\n' "$p" >>"$file" || why="could not write $file"
+    existing+=$'\n'"$p"
+    count=$((count + 1))
+  done <<<"$new"
+  if [ -n "$why" ]; then
+    echo "caw-work: refused: $why" >&2
+    return 1
+  fi
+  echo "caw-work: accepted by the owner: $count company term(s) of the lines above, recorded in $file (not printed); no scan reports them again" >&2
+}
+
 # Scans what pushing <sha> to <remote> sends: the commits of <sha> the remote does not have (git ls-remote, never the
-# tracking refs). Returns 0 when it may leave (no match, or no terms list: SKIP), 1 when refused, with the reason.
+# tracking refs), against the terms list less the accepted terms (terms_active). With <accept> 1, the terms that match
+# are recorded as accepted (accept_terms) and it may leave. Returns 0 when it may leave (no match, only accepted terms,
+# no terms list: SKIP), 1 when refused (AIWP_TERMS_FILE naming no file, the remote unreadable, the scan failed, the
+# accepted terms not recorded), 3 when a company term would leave: the WARNING is printed, after the matching lines.
 scan_leaving() {
-  local clone="$1" remote="$2" local_sha="$3" list patterns remote_list known=() sha rc=0
+  local clone="$1" remote="$2" local_sha="$3" accept="${4:-0}" list patterns remote_list known=() sha rc=0 p matched=""
   list="$(terms_list "$root")" || {
     echo "caw-work: refused: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2
     return 1
@@ -759,11 +827,12 @@ scan_leaving() {
     echo "SKIP terms scan: no terms list" >&2
     return 0
   fi
-  patterns="$(terms_patterns "$list")"
-  if [ -z "$patterns" ]; then
+  if [ -z "$(terms_patterns "$list")" ]; then
     echo "SKIP terms scan: the terms list holds no term" >&2
     return 0
   fi
+  patterns="$(terms_active "$list")"
+  [ -n "$patterns" ] || return 0
   remote_list="$(with_timeout 60 git -C "$clone" ls-remote "$remote" 'refs/heads/*' 2>/dev/null)" || {
     echo "caw-work: refused: the remote cannot be read to know what is already there" >&2
     return 1
@@ -774,15 +843,30 @@ scan_leaving() {
   scan_commits "$clone" "$patterns" "$local_sha" --not ${known[@]+"${known[@]}"} >&2 || rc=$?
   case "$rc" in
     0) return 0 ;;
-    1)
-      echo "caw-work: refused: the lines above hold a company term (<commit>:<path>, <commit>:message, path or identity, then :<line>:<text>); never paste them into an issue, a commit or a pull request. Rewrite the commits not on the remote without it (git commit --amend, or git reset --soft to the pushed commit and commit again), then push." >&2
-      return 1
-      ;;
+    1) ;;
     *)
       echo "caw-work: refused: the terms scan failed" >&2
       return 1
       ;;
   esac
+  if [ "$accept" -ne 1 ]; then
+    echo "WARNING: a company term in what this push would send (the lines above: <commit>:<path>, <commit>:message, path or identity, then :<line>:<text>; never paste them into an issue, a commit or a pull request) — this repository is public: once pushed, anyone can read it — keep it: bash tests/caw-work.sh push ${clone#"$work_root"/} --accept-terms (the owner confirms; that term is not asked again), or rewrite the commits not on the remote without it (git commit --amend, or git reset --soft to the pushed commit and commit again)" >&2
+    return 3
+  fi
+  # The lines of the list that matched: each pattern scanned on its own, so only a term seen above is accepted.
+  while IFS= read -r p; do
+    rc=0
+    scan_commits "$clone" "$p" "$local_sha" --not ${known[@]+"${known[@]}"} >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      0) ;;
+      1) matched+="$p"$'\n' ;;
+      *)
+        echo "caw-work: refused: the terms scan failed" >&2
+        return 1
+        ;;
+    esac
+  done <<<"$patterns"
+  accept_terms "$list" "$matched"
 }
 
 # _prepush: the pre-push hook. Reads every "<local ref> <local sha> <remote ref> <remote sha>" line first, then refuses
@@ -836,9 +920,14 @@ case "$command" in
   publish) cmd_publish "$@" ;;
   close) cmd_close "$@" ;;
   push)
-    [ $# -eq 1 ] || die 2 "usage: push <work>[/<clone>]"
+    accept=0
+    case "$#:${2:-}" in
+      1:) ;;
+      2:--accept-terms) accept=1 ;;
+      *) die 2 "usage: push <work>[/<clone>] [--accept-terms]" ;;
+    esac
     clone="$(clone_path "$1")"
-    push_branch "$clone"
+    push_branch "$clone" "$accept"
     ;;
   _autopush)
     [ $# -ge 1 ] || die 2 "usage: _autopush <clone> [<post-rewrite kind>]"

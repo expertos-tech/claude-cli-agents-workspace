@@ -102,6 +102,7 @@ fixture() {
   git -C "$R" remote add origin "$REMOTE"
   git -C "$R" push -q origin main developer
   printf '\xEF\xBB\xBF# company terms of the tests\n\n  acmecorp  \n' >"$BASE/terms.$CURRENT.txt"
+  rm -f "$BASE/terms.$CURRENT.txt.accepted"
   export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
   C="$R/tmp/work/$W/claude-cli-agents-workspace"
 }
@@ -229,14 +230,16 @@ test_a_term_in_a_file_is_not_pushed() {
   commit_in notes.txt "made for ACMECORP inc"
   rc_is 0
   has "notes.txt:1:made for ACMECORP inc"
-  has "refused: the lines above hold a company term"
-  has "NOT pushed"
-  has "bash tests/caw-work.sh push $W/claude-cli-agents-workspace"
+  has "WARNING: a company term"
+  has "this repository is public"
+  has "NOT pushed, waiting for the owner (a warning, not an error)"
+  has "bash tests/caw-work.sh push $W/claude-cli-agents-workspace --accept-terms"
+  hasnt "refused"
   eq "remote unchanged" "$pushed" "$(remote_sha "heads/$B")"
   eq "commit stays" "change notes.txt" "$(git -C "$C" log -1 --format=%s)"
   # Removing it in a later commit is not enough: the first one would still leave.
   commit_in notes.txt "made for a customer"
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   eq "still not pushed" "$pushed" "$(remote_sha "heads/$B")"
   # Rewriting the commits not on the remote is: the push is a fast-forward.
   git -C "$C" reset -q --soft "$pushed"
@@ -780,7 +783,7 @@ test_a_missing_pre_push_still_blocks_a_term() {
   # Removed by hand (an editor, a script): push_branch scans on its own.
   rm "$C/.git/hooks/pre-push"
   commit_in notes.txt "acmecorp"
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   has "NOT pushed"
   eq "not pushed without pre-push" "$pushed" "$(remote_sha "heads/$B")"
   run push "$W"
@@ -792,7 +795,7 @@ test_a_missing_pre_push_still_blocks_a_term() {
   commit_in notes.txt "acmecorp again"
   run push "$W"
   rc_is 1
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   eq "still not pushed" "$pushed" "$(remote_sha "heads/$B")"
   # A clean commit still goes.
   git -C "$C" reset -q --hard "$pushed"
@@ -825,7 +828,7 @@ test_push_command() {
   pushed="$(remote_sha "heads/$B")"
   run push "$W"
   rc_is 1
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   eq "a term is not pushed" "$pushed" "$(remote_sha "heads/$B")"
   git -C "$C" switch -q -c other
   run push "$W"
@@ -837,6 +840,202 @@ test_push_command() {
   rc_is 2
   run push 2026-01-01-missing
   rc_is 1
+}
+
+# The lines of the accepted file that are terms (no comment), sorted.
+accepted_terms() {
+  grep -v '^#' "$AIWP_TERMS_FILE.accepted" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//'
+}
+
+test_accept_terms_keeps_a_term_and_pushes() {
+  fixture
+  printf 'globex\n' >>"$AIWP_TERMS_FILE"
+  run open "$B"
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  commit_in notes.txt "made for acmecorp"
+  rc_is 0
+  has "WARNING: a company term"
+  has "NOT pushed, waiting for the owner"
+  eq "a warned term is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  [ ! -e "$AIWP_TERMS_FILE.accepted" ]
+  check "nothing accepted by the warning" $?
+  # A direct git push stops at the pre-push hook with the same warning.
+  in_clone push -q origin "HEAD:refs/heads/$B"
+  rc_not 0
+  has "WARNING: a company term"
+  eq "pre-push keeps it" "$pushed" "$(remote_sha "heads/$B")"
+  # The owner keeps it: recorded, private, outside the repository, then pushed.
+  run push "$W" --accept-terms
+  rc_is 0
+  has "accepted by the owner: 1 company term(s)"
+  has "caw-work: pushed $B"
+  hasnt "WARNING"
+  eq "pushed after the confirmation" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  eq "only the matching line of the list is accepted" "acmecorp" "$(accepted_terms)"
+  [ -n "$(find "$AIWP_TERMS_FILE.accepted" -prune -perm 600)" ]
+  check "the accepted file is 600" $?
+  eq "nothing new in the root" "" "$(git -C "$R" status --porcelain)"
+  eq "nothing new in the clone" "" "$(git -C "$C" status --porcelain)"
+  # The same term again: pushed with no warning.
+  commit_in more.txt "acmecorp again"
+  has "caw-work: pushed $B"
+  hasnt "WARNING"
+  eq "an accepted term is pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  # A new term warns again, and only it is reported.
+  pushed="$(remote_sha "heads/$B")"
+  commit_in other.txt "globex deal"
+  has "WARNING: a company term"
+  has "other.txt:1:globex deal"
+  hasnt "more.txt"
+  eq "a new term is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  run push "$W/claude-cli-agents-workspace" --accept-terms
+  rc_is 0
+  eq "both kept" "acmecorp globex" "$(accepted_terms)"
+  eq "pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  # Nothing to accept: it just pushes, and the file keeps each term once.
+  commit_in clean.txt clean
+  run push "$W" --accept-terms
+  rc_is 0
+  eq "no term twice" "acmecorp globex" "$(accepted_terms)"
+  # A term the owner removes from the accepted file warns again.
+  printf 'globex\n' >"$AIWP_TERMS_FILE.accepted"
+  pushed="$(remote_sha "heads/$B")"
+  commit_in last.txt "acmecorp"
+  has "WARNING: a company term"
+  eq "warned again" "$pushed" "$(remote_sha "heads/$B")"
+}
+
+test_accept_terms_keeps_the_hard_refusals() {
+  fixture
+  run open "$B"
+  local pushed
+  commit_in a.txt one
+  pushed="$(remote_sha "heads/$B")"
+  # A force push stays refused, with or without the confirmation.
+  printf 'acmecorp\n' >>"$C/a.txt"
+  OUT="$(git -C "$C" commit -q -am amended --amend 2>&1)"
+  has "force push"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "that is a force push"
+  eq "remote unchanged by the amend" "$pushed" "$(remote_sha "heads/$B")"
+  [ ! -e "$AIWP_TERMS_FILE.accepted" ]
+  check "nothing accepted on a force push" $?
+  git -C "$C" reset -q --hard "$pushed"
+  commit_in b.txt acmecorp
+  # AIWP_TERMS_FILE naming no file is a misconfiguration, not a term.
+  export AIWP_TERMS_FILE="$BASE/missing.txt"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "AIWP_TERMS_FILE names no file"
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  # The remote that cannot be read.
+  git -C "$C" remote set-url origin "$BASE/nowhere.git"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "the remote cannot be read"
+  git -C "$C" remote set-url origin "$REMOTE"
+  # A terms list inside the repository, where git does not ignore the accepted file.
+  cp "$AIWP_TERMS_FILE" "$R/terms.txt"
+  export AIWP_TERMS_FILE="$R/terms.txt"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "inside this repository"
+  [ ! -e "$R/terms.txt.accepted" ]
+  check "no accepted file in the repository" $?
+  # An accepted file that is a symbolic link.
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  ln -s "$BASE/elsewhere" "$AIWP_TERMS_FILE.accepted"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "is not a regular file"
+  [ ! -e "$BASE/elsewhere" ]
+  check "nothing written through the link" $?
+  rm -f "$AIWP_TERMS_FILE.accepted"
+  eq "nothing pushed by a refusal" "$pushed" "$(remote_sha "heads/$B")"
+  # Inside the repository where git ignores it (tmp/): accepted and pushed.
+  mkdir -p "$R/tmp"
+  cp "$AIWP_TERMS_FILE" "$R/tmp/terms.txt"
+  export AIWP_TERMS_FILE="$R/tmp/terms.txt"
+  run push "$W" --accept-terms
+  rc_is 0
+  has "caw-work: pushed $B"
+  [ -f "$R/tmp/terms.txt.accepted" ]
+  check "accepted next to an ignored list" $?
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  # The usage, and run never confirms for the owner.
+  run push "$W" --accept
+  rc_is 2
+  run push "$W" --accept-terms extra
+  rc_is 2
+  run push --accept-terms "$W"
+  rc_is 2
+  run run "$W" -- bash tests/caw-work.sh push "$W" --accept-terms
+  rc_is 1
+  has "--accept-terms: the owner confirms it"
+  # developer, main and a tag stay refused after a term is accepted.
+  in_clone push -q origin HEAD:developer
+  rc_not 0
+  has "never pushes developer"
+  in_clone push -q origin HEAD:main
+  rc_not 0
+  has "never pushes main"
+  git -C "$C" tag v9.9.8
+  in_clone push -q origin v9.9.8
+  rc_not 0
+  has "never pushes a tag"
+}
+
+# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work suite are stubs (the gate
+# copies the terms list it gets to GATE_TERMS_OUT).
+test_check_repo_terms_skips_accepted_terms() {
+  local k="$BASE/check.$CURRENT" list="$BASE/terms.$CURRENT.txt"
+  rm -rf "$k"
+  mkdir -p "$k/tests/lib" "$k/workspace/scripts"
+  cp "$HERE/check.sh" "$k/tests/check.sh"
+  cp "$HERE/lib/terms.sh" "$k/tests/lib/terms.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-work.sh"
+  cat >"$k/workspace/scripts/check-workspace.sh" <<'STUB'
+#!/usr/bin/env bash
+cp "$AIWP_TERMS_FILE" "$GATE_TERMS_OUT"
+STUB
+  export GATE_TERMS_OUT="$BASE/gate-terms.$CURRENT"
+  git init -q "$k"
+  printf 'made for acmecorp\n' >"$k/notes.md"
+  git -C "$k" add -A
+  git -C "$k" commit -q -m base
+  printf 'acmecorp\nglobex\n' >"$list"
+  rm -f "$list.accepted"
+  export AIWP_TERMS_FILE="$list"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 1
+  has "FAIL repo-terms"
+  eq "the gate gets the whole list" "acmecorp globex" "$(tr '\n' ' ' <"$GATE_TERMS_OUT" | sed 's/ $//')"
+  # The owner kept acmecorp: skipped, counted, never printed.
+  printf '# kept\nacmecorp\n' >"$list.accepted"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 0
+  has "PASS repo-terms (skipped 1 matching line(s) of company terms the owner accepted)"
+  hasnt "acmecorp"
+  eq "the gate gets the list without the accepted term" "globex" "$(cat "$GATE_TERMS_OUT")"
+  # A new term fails.
+  printf 'globex deal\n' >"$k/more.md"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 1
+  has "more.md:1:globex deal"
+  has "FAIL repo-terms"
+  hasnt "notes.md"
+  # Every term accepted: passes.
+  printf 'acmecorp\nglobex\n' >"$list.accepted"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 0
+  has "PASS repo-terms (skipped 2 matching line(s)"
+  unset GATE_TERMS_OUT
 }
 
 test_status() {
@@ -1090,6 +1289,7 @@ test_usage() {
   has "Usage: bash tests/caw-work.sh"
   has "open <type>/<slug>"
   has "run <work>[/<clone>] -- <command>..."
+  has "push <work>[/<clone>] [--accept-terms]"
   run
   rc_is 2
   run nope
