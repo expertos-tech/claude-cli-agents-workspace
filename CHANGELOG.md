@@ -44,8 +44,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `maintainers/requests/done/`: delivered requests, and every plan the owner approves, recorded at approval.
 - `maintainers/requests/qa/`: the requests on `developer` not released yet, each with what each merge did; the
   backlog becomes pending requests (`idea` or `ready`).
-- `tests/check.sh` checks every `caw-*` layer, whatever its name: the target of its `@` line exists and its three
-  sections are there; a `caw-<name>` with no `@` line next to a product skill `<name>` fails.
+- `tests/check.sh` checks every `caw-*` layer, whatever its name: its `@` line names an existing product skill (the
+  same-named one when there is one) and its three sections are there; a `caw-<name>` with no `@` line next to a
+  product skill `<name>` fails.
 - `/caw-merge --hotfix <description>`: a fix of the released product from `main`, as a patch version with its tag
   and GitHub release when the owner says to publish, then `main` merged into `developer` (`--down` resumes it); a
   maintenance-only fix is not a hotfix. `/caw-merge` and `/caw-request` refuse to start while `main` is not in
