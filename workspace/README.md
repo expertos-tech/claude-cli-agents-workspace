@@ -24,7 +24,7 @@ From zero to the first merged work, in six steps.
 
 - **Linux.** On Windows, only through **WSL2**: install a Linux distribution (Ubuntu, for example) and do everything inside it, with the same layout as on Linux. The workspace, the projects, Docker and `claude` live in the WSL file system (`~/...`), never in `/mnt/c`. There is no native Windows version.
 - The Claude Code CLI installed and logged in: `claude` opens a session.
-- `git`, Docker Engine, `bash` and `python3`.
+- `git`, Docker Engine (28 or later for a task's Docker copy), `bash` and `python3`.
 - **Optional, but very important: the observability stack** (`tools/observability/`, a local Grafana on <http://localhost:3000>). The workspace works without it, but it is what shows what each session costs, in tokens, time and model, and `scripts/performance/measure.py` only measures with it up. Without measuring, there is no way to know whether a change to the rules made the work better or worse. Once your session is open (step 4), run `/run-tools` and tick Observability, then follow its README to turn on the Claude Code telemetry.
 - **Recommended: [Claude in Chrome](https://claude.com/chrome)**, the extension that lets Claude open pages in your Chrome, click, read the console and take screenshots. With it, Claude checks layouts and screen flows on its own, as a person would by hand (`/pilot auto`). Install the extension in Chrome and connect it to the session with `/chrome` ([how to use it](https://code.claude.com/docs/en/chrome)). It does not work in WSL: on Windows, those tests stay with you (`/pilot manual`).
 
