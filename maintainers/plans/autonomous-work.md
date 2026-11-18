@@ -1,6 +1,6 @@
 # Autonomous work in the work branch
 
-Status: approved design (2026-11-18). Request: `maintainers/requests/autonomous-work.md`.
+Status: built (2026-11-18); request in `maintainers/requests/qa/autonomous-work.md`, with what the build decided beyond this plan in its Execution block.
 
 ## 1. Problem
 
