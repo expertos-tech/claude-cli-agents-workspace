@@ -54,10 +54,10 @@ terms_list() {
 }
 
 # Checks the maintenance skills that are layers over a product skill (CLAUDE.md "Layout"). A layer is any
-# .claude/skills/caw-*/SKILL.md whose body starts with "@<path>", whatever its name: the path, relative to the
-# repository root, must name an existing file, and the body must hold the sections "Ignore from the product skill",
-# "Mapping" and "CAW rules". A caw-<name> with no "@" line next to a product skill workspace/rules/skills/<name>/
-# fails too: a maintenance skill with a product counterpart must be a layer over it.
+# .claude/skills/caw-*/SKILL.md whose body starts with "@<path>", whatever its name: the path must be an existing
+# workspace/rules/skills/<skill>/SKILL.md, and the body must hold the sections "Ignore from the product skill",
+# "Mapping" and "CAW rules". A caw-<name> next to a product skill workspace/rules/skills/<name>/ must be a layer over
+# that one: its "@" line names it, and a missing "@" line fails.
 # Prints one line per problem; returns 1 when there is any.
 check_caw_layers() {
   local dir name product body first target bad=0 section
@@ -75,8 +75,14 @@ check_caw_layers() {
       continue
     fi
     target="${first#@}"
-    if [ -z "$target" ] || [ ! -f "$repo/$target" ]; then
-      echo "  $name: the target of its @ line does not exist: ${target:-<empty>}"
+    if [ -f "$repo/$product" ] && [ "$target" != "$product" ]; then
+      echo "  $name: the first line of its body must be @$product"
+      bad=1
+    elif [[ ! "$target" =~ ^workspace/rules/skills/[^/]+/SKILL\.md$ ]] || [[ "$target" == *..* ]]; then
+      echo "  $name: the target of its @ line is not a product skill: ${target:-<empty>}"
+      bad=1
+    elif [ ! -f "$repo/$target" ]; then
+      echo "  $name: the target of its @ line does not exist: $target"
       bad=1
     fi
     for section in "## Ignore from the product skill" "## Mapping" "## CAW rules"; do
@@ -103,7 +109,7 @@ echo "== repository"
 if check_caw_layers; then
   echo "PASS caw-layers"
 else
-  echo "FAIL caw-layers: a caw-* layer must point at an existing skill and hold its three sections (CLAUDE.md)"
+  echo "FAIL caw-layers: a caw-* layer must point at an existing product skill and hold its three sections (CLAUDE.md)"
   failed=1
 fi
 if [ -z "$list" ]; then
