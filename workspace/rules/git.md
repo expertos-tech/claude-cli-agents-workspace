@@ -111,5 +111,5 @@ A request goes through three folders of `custom/requests/`, one per state of its
 ## Return points
 
 - The work branch is on the remote at every commit: that is the return point of the work. Before a normalization, the checkpoint tags ("Authorization") are the return point of `developer` and `main`. Before rewriting a branch whose commits matter (a rebase that drops commits), an annotated local tag `backup/<yyyy-mm-dd>-<kebab-description>` in the clone. Never push it.
-- A local Docker publication always has its checkpoint: `bash scripts/aiwp-cmds.sh up` tags the images it replaces, and `rollback` returns to them.
+- The final local stack always has its checkpoint: `/docker-deploy` (`bash scripts/aiwp-cmds.sh deploy`) tags the images it replaces, and `rollback <repo>` returns to them. A task's copy needs none: it lives in its own `agent_` group and is destroyed at the merge or at `close --discard`.
 - Deleting a whole project, POC or tool: `AGENTS.md` "Safety".
