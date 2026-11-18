@@ -61,6 +61,9 @@ and image tags), and the hook asked before deleting any Docker volume, so a test
 
 - Neither the hook nor the scripts see what an interpreter builds at run time, inside a container or on another host:
   the goal is to stop a hallucination visible on the command line, not to sandbox the agent.
+- The same holds for project files: a compose file written on purpose to escape the copy's checks (for example a path
+  that interpolates differently when `up` runs) is out of scope. The local Docker is the developer's own machine; the
+  checks stop a mistake, not a deliberate escape (the owner's decision after the third return review).
 - A project with a database is strongly recommended a test seed, so a copy starts with its database rebuilt
   (`rules/quality.md` "Test seed").
 - `aiwp-cmds.sh up <repo>` for the final stack gives way to `/docker-deploy`.
