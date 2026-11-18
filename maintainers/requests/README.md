@@ -62,7 +62,6 @@ Small adjustments, effort low unless noted.
 | `clone-path-findings-loop.md` | Requests made of findings loop the clone path of `/caw-merge` |
 | `caw-layers-missing-target.md` | The `caw-layers` check passes a layer whose product skill is missing |
 | `merge-project-name.md` | `<project>` for a plain folder of repos with no root repo |
-| `old-names-leftovers.md` | Old names in a decision record and in pending requests |
 | `review-effort-wording.md` | Texts still say every review is effort high |
 | `review-docs-only-scope.md` | `CLAUDE.md`, `AGENTS.md` and templates count as documentation and skip the review |
 | `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
@@ -102,7 +101,7 @@ Independent of the rounds above; each runs whenever the owner asks.
 | `qa/project-docs.md` | f9ba9cf | All proven |
 | `qa/readme-get-involved-first.md` | f9ba9cf | All proven |
 | `qa/review-and-translation-cadence.md` | fb442c1 | All proven |
-| `qa/request-lifecycle.md` | this merge | AC-1, AC-2, AC-4 and part of AC-3 pending; AC-5, AC-6 failed in part (requests) |
+| `qa/request-lifecycle.md` | this merge | AC-1, AC-2, AC-4 and part of AC-3 pending; AC-5 met by `qa/old-names-leftovers.md`; AC-6 failed in part (requests) |
 | `qa/merge-release-step-reference.md` | this merge | Met |
 | `qa/review-final-brief-unreleased.md` | this merge | Met |
 | `qa/run-tools.md` | this merge | AC-2, AC-3, AC-5, AC-6 proven; AC-1 by a real run; AC-4 and RN-8 in a session pending |
@@ -111,6 +110,7 @@ Independent of the rounds above; each runs whenever the owner asks.
 | `qa/hotfix-from-main.md` | this merge | AC-1, AC-6, AC-8 proven; AC-4, AC-7 at script level; AC-2, AC-3, AC-5, AC-9 and the session run of AC-10 pending |
 | `qa/process-merge-check-command.md` | this merge | Met |
 | `qa/2026-11-18-maintenance-closing-board.md` | this merge | Met |
+| `qa/old-names-leftovers.md` | this merge | Met |
 
 ## Done
 
