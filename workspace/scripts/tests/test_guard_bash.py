@@ -1838,7 +1838,7 @@ class CloneApprovalTests(unittest.TestCase):
 
 # The Docker groups of that work (BR-7): the work's group and the group of its second clone.
 GROUP = 'agent_1118-add-export'
-WEB_GROUP = GROUP + '-billing-web'
+WEB_GROUP = GROUP + '--billing-web'
 LABEL = 'com.docker.compose.project'
 
 
@@ -1863,6 +1863,7 @@ class TrailTestCase(unittest.TestCase):
             self.root + '/.history/merge-orders', self.root + '/projects/x',
         ):  # fmt: skip
             Path(folder).mkdir(parents=True)
+        Path(self.root, 'scripts', guard.ORDER_SCRIPT).write_text('', encoding='utf-8')
         Path(self.work, 'agent-billing-api.compose.yaml').write_text('services: {}\n', encoding='utf-8')
         Path(self.root, 'tools/observability/.data/grafana.db').write_text('x', encoding='utf-8')
         self.run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS))
@@ -1886,10 +1887,15 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' down -v', 'docker compose --project-name ' + GROUP + ' up -d --build',
             'docker compose --project-name=' + WEB_GROUP + ' ps', 'docker compose -p' + GROUP + ' logs app',
             'docker compose -p ' + GROUP + ' -f compose.yaml -f ../agent-billing-api.compose.yaml up -d',
-            'docker compose --dry-run -p ' + GROUP + ' --env-file src/x.env rm -fsv',
+            'docker compose --dry-run -p ' + GROUP + ' --env-file src/x.env down --remove-orphans -t 5 -v',
             'docker compose -p ' + GROUP + ' exec -T db psql -U app -c "DROP TABLE users"',
-            'docker compose -p ' + GROUP + ' run --rm -v ./src:/app/src -e A=1 -w /app app pytest /app/tests',
+            'docker compose -p ' + GROUP + ' exec -it -e A=1 -w /app app pytest /app/tests',
+            'docker compose -p ' + GROUP + ' exec -eA=1 -u root db dropdb app',
+            'docker compose -p ' + GROUP + ' down -vt5',
+            'docker compose -p ' + GROUP + ' exec --index=2 --user=root app ls',
+            'docker compose -p ' + GROUP + ' stop app',
             'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
+            'docker compose -p ' + GROUP + ' restart', 'docker compose -p ' + GROUP + ' port app 80',
             'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' up -d',
             'docker volume rm ' + GROUP + '_db', 'docker volume rm -f ' + GROUP + '_db ' + WEB_GROUP + '_db',
             'docker volume inspect --format "{{.Mountpoint}}" ' + GROUP + '_db', 'docker rm -fv c1',
@@ -1910,6 +1916,10 @@ class DockerGroupTests(TrailTestCase):
             'DOCKER_HOST=tcp://example.com:2375 docker compose -p ' + GROUP + ' down -v',
             'docker compose -p agent_1118-other exec db psql -c "DROP TABLE x"', 'psql -c "DROP TABLE x"',
             'docker volume rm "$V"', 'sudo docker volume rm ' + GROUP + '_db', 'podman volume rm ' + GROUP + '_db',
+            'docker compose -p ' + GROUP + ' rm -fsv', 'docker compose -p ' + GROUP + ' down -v --rmi all',
+            'docker compose -p ' + GROUP + ' run --rm -v billing-api_pgdata:/d app psql -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec --privileged db psql -c "DROP TABLE x"',
+            'docker compose -p agent_1118-add-export-billing-web down -v',
         ):  # fmt: skip
             self.assertEqual(self.decided(command), 'ask', command)
         self.assertEqual(self.decided('docker compose -p ' + GROUP + ' down -v', self.root), 'ask')
@@ -1927,7 +1937,18 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' --unknown up', 'docker compose -p ' + GROUP,
             'docker compose -p ' + GROUP + ' run -v /:/host app ls', 'docker compose up -d',
             'docker compose -p ' + GROUP + ' run -v .:/w app rm -rf /w/.git',
-            'docker compose -p ' + GROUP + ' run -v ./src/..:/w app ls',
+            'docker compose -p ' + GROUP + ' run --rm -dv /:/host app rm -rf /host/x',
+            'docker compose -p ' + GROUP + ' run --mount type=bind,source=/,target=/h app ls',
+            'docker compose -p ' + GROUP + ' run -v billing-api_pgdata:/d app ls',
+            'docker compose -p ' + GROUP + ' run --rm -v ./src:/app/src app pytest',
+            'docker compose -p ' + GROUP + ' create', 'docker compose -p ' + GROUP + ' attach app',
+            'docker compose -p ' + GROUP + ' watch', 'docker compose -p ' + GROUP + ' exec -itz app ls',
+            'docker compose -p ' + GROUP + ' exec --privileged app sh',
+            'docker compose -p ' + GROUP + ' exec -x app sh',
+            'docker compose -p ' + GROUP + ' exec --detach=true app ls',
+            'docker compose -p ' + GROUP + ' down --rmi all',
+            'docker compose -p ' + GROUP + ' down ../x', 'docker run --rm -v ./src:/s alpine ls',
+            'docker create alpine', 'docker compose -p agent_1118-add-export-billing-web ps',
             'docker compose -p ' + GROUP + ' run --volume=$HOME:/h app ls',
             'docker compose -p ' + GROUP + ' --env-file /etc/x.env up',
             'docker compose -p ' + GROUP + ' exec app curl https://example.com',
@@ -1940,7 +1961,16 @@ class DockerGroupTests(TrailTestCase):
         self.assertIsNone(self.decided('docker compose -p ' + GROUP + ' up -d', self.root))
 
     def test_helpers(self):
-        self.assertEqual(guard.own_groups(self.clone), {GROUP, GROUP + '-billing-api', WEB_GROUP})
+        self.assertEqual(guard.own_groups(self.clone), {GROUP, GROUP + '--billing-api', WEB_GROUP})
+        # A clone's group never takes the base name of another work: 2026-11-18-fix/billing-api is not fix-billing-api.
+        fix = os.path.join(self.root, 'tmp', 'work', '2026-11-18-fix', 'billing-api')
+        Path(fix).mkdir(parents=True)
+        self.assertEqual(guard.own_groups(fix), {'agent_1118-fix', 'agent_1118-fix--billing-api'})
+        self.assertIsNone(self.decided('docker compose -p agent_1118-fix-billing-api ps', fix))
+        self.assertEqual(guard.pflag_operands(['-it', 'app', '-x'], *guard.EXEC_OPTIONS, interspersed=False),
+                         ['app', '-x'])  # fmt: skip
+        self.assertEqual(guard.pflag_operands(['--', '-v'], *guard.DOWN_OPTIONS), ['-v'])
+        self.assertIsNone(guard.pflag_operands(['-q'], *guard.DOWN_OPTIONS))
         self.assertEqual(guard.own_groups(os.path.join(self.root, 'tmp', 'work', '2026-11-18-gone', 'c')),
                          {'agent_1118-gone'})  # fmt: skip
         self.assertEqual(guard.option_value(['-pX'], 0), ('-p', 'X', 1))
@@ -1972,6 +2002,9 @@ class ProtectedFolderTests(TrailTestCase):
             ('sed -i s/a/b/ tools/observability/.data/grafana.db', ''),
             ('python3 -c "import shutil; shutil.rmtree(\'tools/observability/.data\')"', ''),
             ('rm -rf "$UNKNOWN/tools/observability/.data"', ''), ('ssh host rm -rf /srv/tools/observability/.data', ''),
+            ('docker run --rm -v "$PWD/tools/observability/.data:/d" alpine rm -rf /d', ''),
+            ('docker run --rm -v "$PWD/../../../../tools/observability/.data:/d" alpine rm -rf /d', 'clone'),
+            ('docker compose -p ' + GROUP + ' run -dv ' + '../../../../tools/observability/.data:/g app ls', 'clone'),
             ('rm -rf ../../../../tools/observability/.data', 'clone'), ('rm -rf ../../../../tools', 'clone'),
             ('cd ../../../.. && rm -rf tools/observability/.data', 'clone'),
         ):  # fmt: skip
@@ -2034,6 +2067,7 @@ class ProtectedFolderTests(TrailTestCase):
             ("ssh localhost 'echo order >> ws/.history/merge-orders/abc'", ''),
             ('bash -c "echo order >> .history/merge-orders/abc"', ''), ('find .history -name x -delete', ''),
             ('ls .history/merge-orders | xargs rm', ''), ('vim .history/merge-orders/abc', ''),
+            ('docker run --rm -v "$PWD/.history/merge-orders:/m" alpine sh', ''),
             ('echo order >> ../../../../.history/merge-orders/abc', 'clone'),
             ('npm test && echo order >> ../../../../.history/merge-orders/abc', 'clone'),
         ):  # fmt: skip
@@ -2054,14 +2088,19 @@ class ProtectedFolderTests(TrailTestCase):
             'printf \'{"session_id":"abc","prompt":"/merge"}\' | python3 -I scripts/session-title.py .',
             'python3 scripts/session-title.py .', 'cp scripts/session-title.py /tmp/t.py',
             'uv run python scripts/session-title.py .', 'python3 -c "exec(open(\'scripts/session-title.py\').read())"',
-            './scripts/session-title.py .',
+            './scripts/session-title.py .', "python3 scripts/session-title?py . <<< '{}'",
+            'python3 scripts/session-t*.py', 'python3 scripts/session-title.p[y]', 'python3 < scripts/session-title.py',
+            'cat scripts/session-title.py | python3 -', 'python3 scripts/session-{title,x}.py', 'python3 scripts/s*',
+            'python3 scripts/s*e.py', 'cd scripts && python3 *-title.py', 'cat scripts/session-title.py',
         ):  # fmt: skip
             result = self.result(command, self.root)
             self.assertEqual(result and result['permissionDecision'], 'deny', command)
             self.assertIn('session-title.py', result['permissionDecisionReason'], command)
+        self.assertEqual(self.decided('python3 ../../../../scripts/s*e.py'), 'deny')
+        self.assertEqual(self.decided('ls src/*.py'), 'allow')
         for command in (
             'cat .history/merge-orders/abc', 'ls .history/merge-orders', 'grep -r order .history/merge-orders',
-            'cat scripts/session-title.py', 'git log -- scripts/session-title.py', 'find .history -name x',
+            'git log -- scripts/session-title.py', 'find .history -name x', 'cat scripts/other.py',
             'python3 scripts/prompt-log.py sync',
         ):  # fmt: skip
             self.assertNotEqual(self.decided(command, self.root), 'deny', command)
@@ -2109,7 +2148,9 @@ class ReviewOfTheTrailTests(TrailTestCase):
         for command in (
             'uv tool install ruff', 'python3 -m pip install --user x', 'gem install rails', 'gem update',
             'dotnet tool install -g x', 'dotnet tool install --global x', 'composer global require x', 'npm link',
-            'yarn global add x', 'pnpm add -g x',
+            'yarn global add x', 'pnpm add -g x', 'gem i x', 'python3 -mpip install --user x',
+            'npm install --location=global x', 'npm install --location global x', 'bundle install --system',
+            'conda install x', 'mamba install x', 'pipx install x', 'brew install x', 'uv pip install --system x',
         ):  # fmt: skip
             self.assertIsNone(self.result(command), command)
         for command in ('uv tool run ruff check src', 'dotnet tool restore', 'composer install', 'gem list'):

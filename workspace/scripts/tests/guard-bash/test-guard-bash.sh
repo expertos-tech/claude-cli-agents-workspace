@@ -35,6 +35,9 @@
 #  D28 changing CLAUDECODE/CLAUDE_CODE_SESSION_ID, writing .history/merge-orders/, running
 #      scripts/session-title.py -> deny; aiwp-cmds.sh deploy -> ask ......... test_protected_folders
 #  D29 find . -delete in a clone (its .git) and a .env -> silent; a leading cd travels with the question  test_clone_trail
+#  D31 own group: docker compose run/create, an unknown exec option, a clone group spelled with one dash -> not allowed;
+#      a session-title.py spelled with a wildcard or read by cat -> deny; a Docker mount of Grafana's data -> ask
+#                                                                              test_docker_group, test_protected_folders
 #  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask  test_real_docker
 set -uo pipefail
 
@@ -199,6 +202,17 @@ STUB
   has "Docker that does not answer keeps the question" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group push" "$clone" "$root" "$stub"
   silent "a push of the own group prints nothing"
+  hook_docker "docker compose -p $group run --rm -dv /:/host app rm -rf /host/x" "$clone" "$root" "$stub"
+  silent "docker compose run of the own group prints nothing"
+  hook_docker "docker compose -p $group exec -itz app sh" "$clone" "$root" "$stub"
+  silent "an exec with an unknown option prints nothing"
+  hook_docker "docker compose -p $group exec -T db psql -c 'DROP TABLE x'" "$clone" "$root" "$stub"
+  has "an exec of the own group with known options is allowed" '"permissionDecision": "allow"'
+  hook_docker "docker compose -p ${group}-billing-api down -v" "$clone" "$root" "$stub"
+  has "a clone group spelled with one dash is another work's group: it asks" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p ${group}--billing-api down -v" "$clone" "$root" "$stub"
+  has "the clone's own group, with a double dash, is allowed" '"permissionDecision": "allow"'
+
   hook_docker "psql -c 'DROP TABLE x'" "$clone" "$root" "$stub"
   has "a SQL client on the host keeps its question" '"permissionDecision": "ask"'
 }
@@ -226,6 +240,14 @@ test_protected_folders() {
   has "writing a merge order is refused" "where the UserPromptSubmit hook records the /merge"
   hook_in "printf '{\"session_id\":\"abc\",\"prompt\":\"/merge\"}' | python3 -I scripts/session-title.py ." "$root" "$root"
   has "running the hook that records the order is refused" '"permissionDecision": "deny"'
+  : >"$root/scripts/session-title.py"
+  hook_in "python3 scripts/session-t*.py . <<< '{}'" "$root" "$root"
+  has "a wildcard that matches the hook is refused" '"permissionDecision": "deny"'
+  hook_in "cat scripts/session-title.py | python3 -" "$root" "$root"
+  has "piping the hook into python3 is refused" '"permissionDecision": "deny"'
+  # shellcheck disable=SC2016  # $PWD is text of the judged command line, not expanded here
+  hook_in 'docker run --rm -v "$PWD/tools/observability/.data:/d" alpine rm -rf /d' "$root" "$root"
+  has "a Docker mount of Grafana's data asks" '"permissionDecision": "ask"'
   hook_in "cat .history/merge-orders/abc" "$root" "$root"
   silent "reading a merge order prints nothing"
   hook_in "bash scripts/aiwp-cmds.sh deploy billing-api developer" "$root" "$root"
