@@ -12,6 +12,8 @@ compose files, the README and the docs, and compare what they claim with what th
 ## Report
 
 - Runtimes and versions, package managers, services it needs (databases, queues, emulators), host ports.
+- A database: whether a test seed rebuilds it from nothing (a script, migrations plus fixture data, a dump of invented
+  data) and the command that runs it. None: a gap, with the strong recommendation of `rules/quality.md` "Test seed".
 - Configuration: the variables of `.env.example` or equivalent, by name only; which ones have no example; where a
   local `.env` is expected.
 - The commands, ready to copy: install, build, run, the full test suite, lint. Mark each one as found in the

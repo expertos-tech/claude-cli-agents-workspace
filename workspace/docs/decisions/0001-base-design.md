@@ -1,6 +1,6 @@
 # 0001 Base design
 
-Status: partly superseded by 0003
+Status: partly superseded by 0003 and 0004
 
 ## Context
 
@@ -34,3 +34,4 @@ Claude CLI Agents Workspace is a folder where Claude Code works on a person's pr
 ## Change history
 
 - 2026-11-17 — the own rules move from `custom/rules/` to `custom/my-rules/`, the custom layer can turn optional core rules, skills and agents off, and the mandatory core is declared in `rules/manifest.json` (`/request` in place of `/prompt`, plus the agents `reviewer` and `verifier`) — configurable rules — the owner (0003)
+- 2026-11-18 — in a clone `guard-bash` approves lines that stay in it, each task publishes a Docker copy in its own group, `/merge` runs only on the person's order, and the review asks three questions by content — work in the clone without prompts — the owner (0004)

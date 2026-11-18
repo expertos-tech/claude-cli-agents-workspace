@@ -64,6 +64,10 @@ paths:
 - A check that passes on empty results proves nothing: assert behavior with fixtures and confirm it fails when the bug is restored.
 - Intermittent failure: MUST find the cause and keep its logs. NEVER rerun until green.
 
+## Test seed
+
+- A project with a database SHOULD, strongly recommended, have a test seed: one command that rebuilds the database from nothing with invented data (`rules/security.md` "Test and example data"), named in the README "How to test". Each task's Docker copy (`aiwp-cmds.sh up <work>/<clone>`) then starts with its database rebuilt, and its volumes can be thrown away freely. `/normalize-projects` reports a project without one as a gap.
+
 ## Verification mode
 
 Who runs a check a human could do by hand (running the app, a browser, a screenshot): the agent (`auto`) or the human (`manual`). `/pilot` sets it for the session.
