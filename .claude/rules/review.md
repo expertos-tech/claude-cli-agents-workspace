@@ -3,49 +3,35 @@
 ## When
 
 - **Merge into `developer`** (`/caw-merge`): only the difference that enters, `origin/developer..<sha>`; what is already
-  on `developer` was reviewed by the merge that brought it. Effort by risk:
-  - `high`: the range changes a hook, the installer, `setup-claude.sh`, a gate script, a permission or deny rule, or
-    anything that handles secrets or file modes;
-  - `medium`: any other code or rule;
-  - none: documentation only (`*.md` outside `.claude/` and `workspace/rules/`, `docs/`, `i18n/`, `maintainers/`);
-    the final review covers it.
-- **Merge into `main`** (`/caw-merge --main`, the release): the final review, below, on everything since the last tag.
-- When the owner asks.
+  on `developer` was reviewed by the merge that brought it.
+- **Merge into `main`** (`/caw-merge --main`, the release, and `--hotfix`): everything since the last tag, widened to
+  what the reviewer judges necessary (callers, dependents, the docs of what changed).
+- The independent review of a stage (hooks, the installer, security, `process.md` step 4), and when the owner asks.
+
+## Effort, by content
+
+- Code and configuration: scripts, hooks, tests, settings, `.claude/` (rules, skills, agents), `CLAUDE.md`,
+  `AGENTS.md`, `workspace/rules/`, `workspace/templates/`, `install.sh`: effort `xhigh`, the only use of it.
+- Documents: every other `*.md` (`docs/`, `workspace/docs/`, `i18n/`, `maintainers/`, READMEs, changelogs): effort
+  `high`.
+- A merge with both: two `reviewer` subagents (claude-opus-5-5) in parallel, each with its part of the range.
 
 ## How
 
-- The `reviewer` subagent with a clean context: it did not write the change. Give it the code and the range, the
-  requests the range delivers (`maintainers/requests/qa/`) or the owner's words, and what the suite already proved.
+- The `reviewer` subagent with a clean context: it did not write the change. Give it the code and its part of the
+  range, the requests the range delivers (`maintainers/requests/qa/`, with their Execution blocks, and at a release
+  every one of them) or the owner's words, the changelog sections of the range, and what the suite already proved.
   Never give it your conclusion.
-- It reports only: a correctness defect; a security or data-loss problem with a concrete path; an acceptance criterion
-  not met or not proven by a test; a protection that got weaker. Each with `path:line`, the failure scenario and the
-  fix.
+- It asks only three questions, the same at every merge (`workspace/rules/review.md` "How"):
+  1. what was asked against what was done: each business rule and acceptance criterion, pending ones included, done
+     and proven, done and not proven, or not done; an Execution block the code contradicts; a changelog entry with no
+     change behind it, or a change a user would notice with no entry;
+  2. what went beyond the request: each change with no request behind it, CONSEQUENCE (of what) or UNEXPLAINED;
+  3. what existed and was lost: behavior, a test, a protection (a hook, a deny rule, the gate, a file mode) or a
+     documented promise removed or weakened with no request behind it.
+- It reports only defects, each with `path:line`, the failure scenario and the fix. UNEXPLAINED changes and losses
+  are BLOCKERs; at a hotfix, so is every change beyond the error.
 - A security finding counts only when a second clean-context review confirms it from the code.
-
-## Final review
-
-Two reviews, in this order, on `<last tag>..<release clone HEAD>`, after the translations, the version and dates
-commit, and the strict suite from the last tag. The same applies to the product's `/merge --main` (`workspace/rules/skills/merge/SKILL.md`).
-
-1. **What enters and what leaves** (`reviewer`, claude-opus-5-5, effort `high`). Brief: the range, every request of
-   `maintainers/requests/qa/` with its Execution blocks, the changelog sections of the version being released, the
-   suite's result. It answers, item by item:
-   - an inventory of the range: what was added, changed and removed (files, commands, options, functions, tests,
-     rules, hooks, deny rules, documented behavior), each with the request or business rule that asked for it, or
-     CONSEQUENCE (of what), or UNEXPLAINED;
-   - every qa request with no change behind it, every Execution block the code contradicts, and every acceptance
-     criterion of every qa request, pending ones included: proven or not;
-   - regression: everything removed or changed that worked at the last tag and that no request asks to remove or
-     change; a test removed, skipped or weakened; a protection that got weaker;
-   - intent: a change that does not do what its request asked, does more than it asked, or reads the request wrong;
-     an acceptance criterion not met or not proven;
-   - the changelogs: an entry with no change behind it, or a change a user would notice with no entry.
-
-   UNEXPLAINED removals and regressions are BLOCKERs.
-2. **General** (`reviewer`, claude-opus-5-5, effort `medium`). Brief: the whole tree at the release clone, and the
-   range. It reads everything once for: rules that contradict each other, docs that contradict the code, references to
-   things that no longer exist, translations that say something other than the English, leftovers (TODO, debug output,
-   temporary files). It reports BLOCKER only for a contradiction that changes behavior; the rest is RECOMMENDED.
 
 ## Findings
 
