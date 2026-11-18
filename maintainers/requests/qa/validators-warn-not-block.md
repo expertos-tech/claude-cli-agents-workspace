@@ -119,3 +119,66 @@ this repository.
   owner's words.
 - Open: an ask of `guard-bash` that is not in BR-2 (for example `docker volume rm` of another group). Decided: it
   becomes a warning in the output, not a question, unless the owner keeps it in BR-2 in the run.
+
+---
+
+## Execution — 2026-11-18, merged into developer
+
+Done, by step:
+
+- Step 1, the rule (high): `24e753b` the product's hard rules (`rules/security.md`), BLOCKER/WARNING criteria,
+  authorizations in the brief, the warning format and the review effort by base (`rules/review.md`, `AGENTS.md`,
+  `models.md`, `git.md`, `request-writing.md`, the `reviewer` agent, `/merge`); `f84feec` the maintenance mirror
+  (`.claude/rules/security.md`, `review.md`, `process.md`, `models.md`, `CLAUDE.md`, the `reviewer` agent,
+  `/caw-merge`); `0986d25` a vulnerability is a warning, and the core hard rule covers every write in the core.
+- Step 2, hooks and scripts (high): `f2b895f` `guard-bash` warns instead of asking for `aiwp-cmds.sh deploy`,
+  `checkpoint`, `developer --create`, `gate --untested`, and auto-allows `exec` in the copy only in a container
+  labelled `com.aiwp.copy.safe=true`; `3faa81e` the gate's phase 1 refuses only the hard checks, other failing checks
+  of `validate.sh` are warnings in the audit, trivy's secret scanner moves into `secrets`, and `up` starts an unsafe
+  service with a warning and `safe=false`; `ac7ebdd` a company term in a work clone's push is a warning confirmed by
+  `push --accept-terms` (an ask prompt).
+- Step 3, warnings gathered once (medium): `4cf53ee` `/draft-request` Flow step 9 and "Authorizations", the `/merge`
+  summary and the closing board "Warnings:"; `6fdb214` the maintenance closing board.
+- Step 4, docs (medium): `aec2668` decision record 0005, 0004 partly superseded, `overview`, `usage`,
+  `scripts/README`, `docs/maintenance`, `docs/releases`; the changelogs `6a706ba`.
+
+Decisions taken while running (the owner, 2026-11-18):
+
+- Deleting a database outside the task's group still asks (BR-2 item 5), against the request's example.
+- The gate's non-secret checks of `validate.sh` become warnings; tests, secrets, env files and scope rules refuse.
+- `deploy`, `checkpoint`, `developer --create` and `gate --untested` become printed warnings.
+- An unsafe service of the copy starts with a warning and loses the auto-allow (an allowlist label, not a key list).
+- `volumes_from` of a container outside the compose files stays refused; of a service of the same files, a warning.
+- The maintenance pre-push refuses `developer` and `main`, not `master`, as before.
+- Assumed: reading a secret into the session belongs to hard rule 1 (keeps the `.env` deny rules); every write in
+  the installed core is a hard rule (`product.md`); a warning of the review becomes a request only when the owner
+  chooses it; a security BLOCKER of the maintenance still needs a second review to count.
+
+Deviations: none from the request; `guard-subagent-model` was outside the steps' list and is unchanged.
+
+Acceptance criteria:
+
+- AC-1: at script level (the four commands warn; the company term warns, then pushes after `--accept-terms`); the
+  session part pending.
+- AC-2: the hooks' suites prove the kept refusals and asks (git writes, Terraform, `--no-verify`, the merge order,
+  database and Grafana asks, release, hotfix, `close --discard`, secrets in the gate); the review fixture diff per
+  BR-2 item pending.
+- AC-3, AC-4: written in the rules and the briefs; proven by the review of this merge.
+- AC-5: the `/merge` summary lists the warnings; proven by this merge's summary.
+- AC-6: written (`rules/review.md` "When"); proven by this merge's review brief.
+- AC-7: the suites hold; the texts were aligned by hand, with no automatic check of their agreement (pending).
+- AC-8: no rule or skill names `xhigh` (grep); the reviews of this merge ran at `medium`.
+- AC-9: proven by this run: no independent review ran during the stages, each closed with its own tests.
+
+Checks: `tests/check.sh --base origin/developer --i18n-pending` PASS; guard-bash 138 + 341, aiwp-gate 54, aiwp-cmds
+34, check-workspace 829, unittest 396, test-caw-work 29; `tests/test-install.sh` 23 PASS from a local clone of the
+branch with no hooks.
+
+Warnings:
+
+- `tests/test-install.sh` does not run inside a work clone: the clone's pre-push refuses to push `main` to the
+  throwaway bare repository.
+- A secret below HIGH that only trivy finds passes `secrets`, as it passed `vuln` before.
+- The session parts of AC-1 and AC-5 and the ask of `--accept-terms` over the allow are not proven in a live session.
+
+Left: nothing of the steps.

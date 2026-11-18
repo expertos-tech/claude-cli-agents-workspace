@@ -24,7 +24,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
-0. First, before round 2: `validators-warn-not-block` (validators block only real errors), then `assisted-mode`.
+0. First, before round 2: `assisted-mode` (`validators-warn-not-block` is in qa).
 1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
    (except `measure-quality-indicators`, which waits for `import-from-fork`).
 2. Round 2: `normalize-rules` first (the owner needs it to migrate the final project), then `fork-my-rules`,
@@ -40,7 +40,6 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 | Round | Request | Notes |
 | --- | --- | --- |
-| 0 | `validators-warn-not-block.md` | Right after `autonomous-work`: validators block only real errors; the rest is a warning and the person decides |
 | 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
 | 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
@@ -81,6 +80,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/validators-warn-not-block.md` | this merge | AC-8, AC-9 proven; AC-1, AC-2 at script level; AC-3 to AC-6 by this merge's review and summary; AC-7 in part |
 | `qa/merge-versioned-changelog.md` | 8e01d75 | AC-1 to AC-3 pending (end-to-end run) |
 | `qa/autonomous-work.md` | this merge | AC-2, AC-4, AC-6 to AC-9, AC-14 proven; AC-1, AC-3, AC-5, AC-10 at script level, their session part pending; AC-11 to AC-13, AC-15 in part |
 | `qa/caw-merge-two-changelogs.md` | d4c22bd | AC-3 and AC-4 pending (first release) |
