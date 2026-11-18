@@ -65,8 +65,9 @@ Commands:
         clone; an env_file, a bind, or a secret or config file outside the clone (links followed) or of a container
         runtime socket; a volume the files do not declare, or one with driver_opts or a driver other than local; a
         network that is external, not a bridge or with driver_opts; security_opt other than no-new-privileges; pid,
-        ipc, uts, cgroup or network_mode other than service:<x> of the same files; deploy other than resources (no
-        devices); a log driver other than json-file, local or none; an extra host on host-gateway. Every network of
+        ipc, uts, cgroup or network_mode other than service:<x> of the same files (ipc private or shareable and cgroup
+        private pass); deploy other than resources (no devices), replicas, restart_policy, update_config; a log driver
+        other than json-file, local or none; an extra host on host-gateway. Every network of
         the copy is internal (internal: true, and driver_opts com.docker.network.bridge.gateway_mode_ipv4 and _ipv6
         set to isolated, so not even its gateway, the host, answers); a service that publishes a port also joins
         <group>_edge (compose key agent-edge, labeled com.docker.compose.project=<group> like the others), the copy's

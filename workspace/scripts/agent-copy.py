@@ -371,9 +371,17 @@ SERVICE_KEYS = {
     # Limits, the extra groups of the container user, a terminal, the pull policy and the platform: nothing of the host.
     'cpus', 'cpu_shares', 'mem_limit', 'mem_reservation', 'memswap_limit', 'pids_limit', 'group_add', 'stdin_open',
     'tty', 'pull_policy', 'platform',
+    # Names and lifecycle of the service itself: links between its own services, DNS settings, compose watch, hooks.
+    'links', 'dns', 'dns_search', 'develop', 'post_start', 'pre_stop',
 }  # fmt: skip
-BUILD_KEYS = {'context', 'dockerfile', 'args', 'target', 'cache_from', 'tags', 'labels'}
-NETWORK_KEYS = {'name', 'ipam', 'internal', 'driver', 'labels', 'enable_ipv6'}
+BUILD_KEYS = {
+    'context', 'dockerfile', 'args', 'target', 'cache_from', 'tags', 'labels', 'pull', 'no_cache', 'platforms',
+    'dockerfile_inline',
+}  # fmt: skip
+DEPLOY_KEYS = {'resources', 'replicas', 'restart_policy', 'update_config'}
+# The modes of pid, ipc, uts and cgroup a copy may set besides service:<x> of the same files: none reaches the host.
+PRIVATE_MODES = {'ipc': {'private', 'shareable'}, 'cgroup': {'private'}}
+NETWORK_KEYS = {'name', 'ipam', 'internal', 'driver', 'labels', 'enable_ipv6', 'attachable'}
 VOLUME_KEYS = {'name', 'driver', 'labels'}
 FILE_KEYS = {'name', 'file', 'environment', 'content'}
 SECURITY_OPTS = {'no-new-privileges', 'no-new-privileges:true', 'no-new-privileges=true'}
@@ -446,18 +454,20 @@ def mount_refusals(service, spec, volumes, roots, remap):
 
 def option_refusals(service, spec, services):
     """Returns why a service's options may not run in a copy: security_opt other than no-new-privileges, a namespace
-    or network_mode that is not service:<x> of the file, a deploy other than resources (no devices), a log driver that
-    sends elsewhere, an extra host on the host gateway."""
+    or network_mode that is not service:<x> of the file (nor a mode of PRIVATE_MODES), a deploy key off DEPLOY_KEYS or
+    reserved devices, a log driver that sends elsewhere, an extra host on the host gateway."""
     refusals = []
     for option in spec.get('security_opt') or []:
         if option not in SECURITY_OPTS:
             refusals.append(f'service {service} sets security_opt {option}')
     for key in ('pid', 'ipc', 'uts', 'cgroup', 'network_mode'):
         value = str(spec.get(key) or '')
+        if value in PRIVATE_MODES.get(key, ()):
+            continue
         if value and not (value.startswith('service:') and value.split(':', 1)[1] in services):
             refusals.append(f'service {service} sets {key} {value}: only service:<x> of the same files')
     deploy = spec.get('deploy') or {}
-    refusals += unknown_keys(f'service {service} deploy', deploy, {'resources'})
+    refusals += unknown_keys(f'service {service} deploy', deploy, DEPLOY_KEYS)
     if ((deploy.get('resources') or {}).get('reservations') or {}).get('devices'):
         refusals.append(f'service {service} reserves devices')
     driver = (spec.get('logging') or {}).get('driver') or ''
@@ -731,7 +741,7 @@ def cmd_up(group, folder, override, fallback, env_files, custom_root, options, a
         raise Refused(f'docker compose config failed: {first_line(err or out)}')
     config = load_json(out, 'docker compose config')
     custom = custom_dir()
-    roots = [folder, *allow_roots] if allow_roots else [folder, *([custom] if custom else [])]
+    roots = [folder, *([custom] if custom else []), *allow_roots]
 
     def remap(path):
         """Returns where a bind is really read from: under custom_root, the same path of AIWP_CUSTOM_DIR."""

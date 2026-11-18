@@ -584,6 +584,40 @@ class EscapeTests(CopyTestCase):
     def test_the_allowed_forms_pass(self):
         self.assertEqual(ac.isolation_refusals(self.valid(), [self.clone]), [])
 
+    def test_private_modes_and_the_harmless_keys_of_normal_projects_pass(self):
+        data = self.valid()
+        data['services']['db'].pop('ipc')
+        data['services']['web'].pop('pid')
+        data['services']['web'].update(
+            {
+                'ipc': 'shareable',
+                'cgroup': 'private',
+                'links': ['db:database'],
+                'dns': ['10.0.0.2'],
+                'dns_search': ['acme.example.com'],
+                'develop': {'watch': [{'action': 'sync', 'path': './src', 'target': '/src'}]},
+                'post_start': [{'command': 'true'}],
+                'pre_stop': [{'command': 'true'}],
+                'deploy': {'replicas': 2, 'restart_policy': {'condition': 'on-failure'}, 'update_config': {}},
+            }
+        )
+        data['services']['db']['ipc'] = 'service:web'
+        data['services']['worker'] = {'image': 'acme/worker', 'ipc': 'private'}
+        data['services']['web']['build'].update(pull=True, no_cache=True, platforms=['linux/amd64'])
+        data['networks'] = {'default': {'name': f'{GROUP}_default', 'attachable': True}}
+        self.assertEqual(ac.isolation_refusals(data, [self.clone]), [])
+        inline = self.valid()
+        inline['services']['web']['build'] = {'context': self.clone, 'dockerfile_inline': 'FROM scratch'}
+        self.assertEqual(ac.isolation_refusals(inline, [self.clone]), [])
+        for key, value in (('ipc', 'host'), ('cgroup', 'host'), ('pid', 'private'), ('uts', 'private')):
+            data = self.valid()
+            data['services']['db'].pop('ipc')
+            data['services']['web'][key] = value
+            self.assertEqual(
+                ac.isolation_refusals(data, [self.clone]),
+                [f'service web sets {key} {value}: only service:<x> of the same files'],
+            )
+
     def test_every_other_form_is_refused_and_named(self):
         sock = '/var/run/docker.sock'
         cases = [
@@ -696,6 +730,15 @@ class EscapeTests(CopyTestCase):
         self.assertEqual(self.up('--allow-root', installed)[0], 0)
         with mock.patch.dict(os.environ, {ac.CUSTOM_DIR_VAR: installed}):
             self.assertEqual(self.up()[0], 0)
+            # --allow-root adds to the folder and AIWP_CUSTOM_DIR, never replaces them.
+            other = os.path.join(self.root, 'other')
+            os.makedirs(other)
+            self.fake.config['services']['db']['volumes'].append({'type': 'bind', 'source': other, 'target': '/o'})
+            self.fake.config['services']['db']['volumes'].append(
+                {'type': 'bind', 'source': f'{self.clone}/data', 'target': '/d'}
+            )
+            self.assertEqual(self.up('--allow-root', other)[0], 0)
+            self.assertIn(f'binds {other}, outside the clone', self.up()[2])
 
 
 class ProductToolTests(unittest.TestCase):
