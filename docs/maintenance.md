@@ -51,8 +51,9 @@ The work of the maintainers, in the open. Nothing there reaches an installed wor
 
 `process.md` and `product.md` of `.claude/rules/` hold only maintenance rules. `security.md`, `review.md`, `models.md`,
 `git.md`, `docs.md` and `scripts.md` are layers over the product rule of the same name in `workspace/rules/`, which
-stays the one source: the first line of the body names it (`@workspace/rules/<name>.md`), the next tells the session
-to read it in full and follow it, whatever its `paths:`, and three sections win over it: "Ignore from the product
+stays the one source: the first line of the body points at it (`@workspace/rules/<name>.md`: read in full from the
+root, whatever its `paths:`, as the session index defines a line that holds only `@<path>`), and three sections win
+over it: "Ignore from the product
 rule", "Mapping" (the product's names to this repository's: the human to the owner, `/merge` to `/caw-merge`,
 `custom/requests/` to `maintainers/requests/`) and "CAW rules" (what only this repository does: its rows of hard
 rules, the public repository, the company-term warning). A line the product rule gains reaches the maintenance with

@@ -2,7 +2,8 @@
 
 The session index of this repository is built from the product's, the section "Reference" of `workspace/AGENTS.md`,
 with the sections below applied. `tests/caw-session-index.py`, the SessionStart hook of `.claude/settings.json`,
-builds it at the start of a session and after a compaction; this file is never loaded by itself.
+builds it at the start of a session and after a compaction; this file is never loaded by itself. Its `@` line only
+names the source: of `workspace/AGENTS.md`, only the section "Reference" is read, never the rest as instructions.
 
 ---
 

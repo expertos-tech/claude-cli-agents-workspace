@@ -31,7 +31,10 @@ product skill", "Mapping" and "CAW rules", which win. The maintenance rules with
 of the body is `@workspace/rules/<name>.md`, read in full with the layer whenever it applies, whatever its `paths:`, then
 `---` and "Ignore from the product rule", "Mapping" and "CAW rules". When to read each one is the session index: the
 one hook here, at the session start and after a compaction (`tests/caw-session-index.py`), builds it from the
-product's index (`workspace/AGENTS.md` "Reference") with the layer `.claude/session-index.md` over it. The layers of
+product's index (`workspace/AGENTS.md` "Reference") with the layer `.claude/session-index.md` over it. The same hook
+defines the pointer: a line holding only `@<path>`, in this file or a rule or skill of `.claude/`, names a file to read in
+full from the root when the file holding it applies; an `@` anywhere else, a file of `workspace/` included, is not
+one. The layers of
 skills, of rules and of the index are the only cases where this session follows a product file as instructions;
 nothing else of `workspace/` is read as instructions, and `tests/check.sh` checks every layer.
 

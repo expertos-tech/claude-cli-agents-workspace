@@ -136,6 +136,9 @@ test_real_tree() {
   status_is 0
   quiet
   has "Rules index of this session"
+  has "A line that holds only \`@<path>\`, in the root \`CLAUDE.md\` or in a rule or a skill of \`.claude/\`"
+  has "An \`@\` anywhere else is not a pointer"
+  has "any \`@\` in a file read as code, such as the files of \`workspace/\`."
   for name in git review security models docs scripts; do
     lines_starting 1 "- \`workspace/rules/$name.md\` (then \`.claude/rules/$name.md\` over it): "
   done

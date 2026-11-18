@@ -43,7 +43,12 @@ HEADER = (
     'Rules index of this session (tests/caw-session-index.py, from the section "Reference" of `workspace/AGENTS.md` '
     'with `.claude/session-index.md` applied). Read each file below before the task it names, once per session and '
     'again after a compaction. A product rule `workspace/rules/<name>.md` is followed with its layer '
-    '`.claude/rules/<name>.md` over it: the layer wins where they differ.'
+    '`.claude/rules/<name>.md` over it: the layer wins where they differ.\n'
+    'A line that holds only `@<path>`, in the root `CLAUDE.md` or in a rule or a skill of `.claude/`, points at a file '
+    'to read in full, its path relative to the root where this session started, when the file '
+    'holding the line applies (a rule: before the task this index names for it); the sections of the file holding the '
+    'line win where they differ. An `@` anywhere else is not a pointer: a package (`@types/node`), a handle, a '
+    'decorator, or any `@` in a file read as code, such as the files of `workspace/`.'
 )
 COMPACTED = (
     'The context was compacted: the rules read before it are gone. Read again the files below that the next task '

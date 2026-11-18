@@ -9,9 +9,7 @@ paths:
 
 @workspace/rules/scripts.md
 
-Read that file in full before the task the session index names for it (`.claude/session-index.md`, given at the
-session start), and follow it with the sections below over it: they win where they differ. Its `paths:` do not
-limit it here.
+The sections below win where they differ; its `paths:` do not limit it here.
 
 ---
 
