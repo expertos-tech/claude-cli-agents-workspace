@@ -65,6 +65,7 @@ Copy:       <group agent_<MMDD>-<slug>: each address with its port | none: no co
 Test:       <one item per acceptance criterion: what to do on the copy and what to see>
 Left:       <next steps, with effort | nothing: the plan is over>
 Pending:    <refused push | none>
+Warnings:   <each one in the format of rules/security.md "Warnings", gathered during the wave, never asked one by one | none>
 Request:    custom/requests/<file>.md | none
 ➜ Approved: /merge <work>/<clone>   Not approved: bash scripts/aiwp-cmds.sh close <work> --discard
 ➜ You can clear the context and start a new session[: /request <file>.md]
