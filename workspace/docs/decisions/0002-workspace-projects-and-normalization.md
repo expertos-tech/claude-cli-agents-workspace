@@ -51,7 +51,7 @@ cheap, and bringing its code to the standard, which is a product decision.
   merged into `claudeMdExcludes` by `setup-claude.sh`).
 - **The steps that touch `projects/` are script commands.** `aiwp-cmds.sh developer` (switch only when nothing is
   stranded; `--create` pushes `developer`), `checkpoint` (never moves a tag) and `bring` (`--from`), next to `gate`,
-  `release` and `apply`. `guard-bash` asks before `checkpoint`, `developer --create` and `release`. The checkpoint tags
+  `release` and `apply`. `guard-bash` asks before `release` (and, until 0005, before `checkpoint` and `developer --create`, which now print a warning and leave the decision to the permission mode). The checkpoint tags
   are the one case where the workspace pushes a tag.
 - **The gate judges a normalization on what it adds.** On `feat/ai-workspace-migration`, and only for a project that
   needs it (no marker or out of date), the gate requires the marker of the workspace version, refuses any added or

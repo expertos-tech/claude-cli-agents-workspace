@@ -44,10 +44,10 @@ Both follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semant
    `reviewer` with a clean context asks the three questions (what was asked against what was done, every acceptance
    criterion and Execution block included; what went beyond the request, each change traced to its request or a
    consequence; what existed and was lost, so nothing that works is removed without a request), and checks the
-   changelogs. Effort `xhigh` for code and configuration, `high` for documents; a release has both, so two reviewers run
-   in parallel. There is no separate general round.
-7. The findings, once, in one list: per finding, fix now in the release clone or a request; a BLOCKER sent to a
-   request stops the release.
+   changelogs. Effort `high`; a range too large for one context is split in parts, reviewed in parallel. There is no separate
+   general round.
+7. The findings, once, in one list: a BLOCKER is fixed in the release clone, or sent to a request, which stops the
+   release; a WARNING is the owner's to decide: fix now, a request or leave as is.
 8. The clone enters `developer`, at the commit the suite and the review judged.
 9. Each public step is confirmed by the owner, one by one: `main` (a fast-forward from `developer`, or a pull request
    when refused), the tag `vX.Y.Z` (never moved or deleted) and the GitHub release, with the product changelog section

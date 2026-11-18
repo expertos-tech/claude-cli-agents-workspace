@@ -27,8 +27,8 @@ Detail in `.claude/rules/process.md`. A typo fix may skip plan and request.
 2. **Plan** in `maintainers/plans/`: the problem, options, a recommendation and numbered decisions for the owner.
 3. **Request**, with the owner's answers, in `maintainers/requests/`: objective, BR-n, AC-n, out of scope, and the stages
    with effort.
-4. **Execute** in stages, with subagents when worth it, always with explicit model and effort, and an independent
-   clean-context review of hooks and security.
+4. **Execute** in stages, with subagents when worth it, always with explicit model and effort; the agent's own tests
+   and the suite close each stage, and the review comes once, at the merge.
 5. **Prove**: `bash tests/check.sh --base origin/developer --i18n-pending` on every change (only what changed; the
    release runs it strict); `/caw-test-install` when the installer, a hook or
    `setup-claude.sh` changes.
@@ -72,12 +72,12 @@ counterpart and are complete skills.
 ## Subagents
 
 Every subagent call states its model and its effort; a call that would inherit them is a mistake. Effort `high` for
-hooks, the installer, security and risky actions (`.claude/rules/models.md`); a review follows its content (`xhigh` for code and configuration, `high` for documents).
+hooks, the installer, security and risky actions (`.claude/rules/models.md`); a review's effort follows its base (`medium` into `developer`, `high` into `main`).
 
 | Task | Agent | Model | Effort |
 | --- | --- | --- | --- |
 | Gaps of a plan or request | `requirements-analyst` | claude-opus-5-5 | high |
-| Independent review | `reviewer` | claude-opus-5-5 | by content: xhigh or high ([reviews](#reviews)) |
+| Independent review | `reviewer` | claude-opus-5-5 | medium into `developer`, high into `main` ([reviews](#reviews)) |
 | Scripts, hooks and their tests | `script-engineer` | claude-opus-5-5 | high for hooks and the installer, else medium |
 | Docs in English | `docs-writer` | claude-sonnet-5-5 | medium |
 | The pt-BR and es translations, once per release | `docs-writer`, one call | claude-sonnet-5-5 | medium |
@@ -117,11 +117,15 @@ A `reviewer` subagent with a clean context, which did not write the change (`.cl
 - **Three questions:** what was asked against what was done, what went beyond the request, what existed and was lost.
 - **Merge into `developer`:** only the difference that enters; what is already on `developer` was reviewed.
 - **Merge into `main`** (the release, a hotfix): everything since the last tag, widened as needed ([releases](releases.md)).
-- **Effort by content:** `xhigh` for code and configuration, `high` for documents; a merge with both runs two
-  reviewers in parallel, each with its part.
-- **Findings:** a BLOCKER is fixed before the merge and the fix is reviewed. A RECOMMENDED never blocks: at a merge into
-  `developer` it becomes a `ready` request, fixed when the owner asks; at the release the owner chooses per finding:
-  fix now or a request.
+- **Effort by base:** `medium` into `developer`, `high` into `main`; a range too large for one context is split in
+  parts, each to its own reviewer, in parallel. There is no independent review of a stage.
+- **Findings:** a BLOCKER is only a hard rule, a correctness defect, a change outside the request's scope, a risk a
+  mistake reaches or a proof the request requires now; it is fixed before the merge and the fix is reviewed. Everything
+  else is a WARNING: it never blocks, the owner decides what to do with each. The brief carries the owner's
+  authorizations, and what they cover is no finding.
+- **Company terms:** a company term in what a work clone pushes is a warning, not a refusal: the push waits, and
+  `bash tests/caw-work.sh push <work> --accept-terms` (a prompt: the owner's confirmation) records it privately next to
+  the terms list and pushes.
 
 It never merges with a failing check or an open BLOCKER, and never rewrites `developer` or `main`.
 
@@ -138,4 +142,4 @@ This repository is public: everything committed, including `maintainers/`, can b
 - `.env` files are never read or edited; `.env.example` templates are.
 - Examples and fixtures use invented data (`acme`, `example.com`, `billing-api`).
 - A change that weakens a protection of the product (a hook, a deny rule, the gate, a file mode) needs the owner's
-  explicit approval and an independent review.
+  explicit approval and the review at its merge.
