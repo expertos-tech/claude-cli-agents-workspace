@@ -115,7 +115,7 @@ content of `VERSION`.
    the number of security alerts. It creates nothing.
 7. **Marker, last:** line 1 of `README.md` becomes `<!-- AI-WORKSPACE-PROJECT <version> -->` (replacing an older
    marker; a project without `README.md` gets one with the name and "How to test"). Its own commit.
-8. **Merge.** `/merge <date>-normalize-<name>/<name>` with the plan as the request. The gate sees the normalization
+8. **Merge.** Ask the person to type `/merge <date>-normalize-<name>/<name>`, with the plan as the request: the merge runs only on the person's order (`rules/skills/merge/SKILL.md`), never invoked by you. The gate sees the normalization
    branch and judges what it adds: that the project needs it, the marker, only documentation and its kin changed, lint on the changed files,
    secrets in the added lines (one already in the base does not block; a new one does). Its test command is the
    "How to test" of `README.md`; `--untested` only when the person chose that in step 5 (`guard-bash` asks before it). The branch stays on the
