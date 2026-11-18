@@ -65,14 +65,6 @@ Small adjustments, effort low unless noted.
 | `review-docs-only-scope.md` | `CLAUDE.md`, `AGENTS.md` and templates count as documentation and skip the review |
 | `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
 
-### Ready: product fixes
-
-Independent of the rounds above; each runs whenever the owner asks.
-
-| Request | What it fixes |
-| --- | --- |
-| `accordion-motion.md` | The Compose groups and the job dock of the container consoles open and close without motion |
-
 ### Ideas
 
 | Round | Request | What is missing |
@@ -103,6 +95,7 @@ Independent of the rounds above; each runs whenever the owner asks.
 | `qa/merge-release-step-reference.md` | this merge | Met |
 | `qa/review-final-brief-unreleased.md` | this merge | Met |
 | `qa/run-tools.md` | this merge | AC-2, AC-3, AC-5, AC-6 proven; AC-1 by a real run; AC-4 and RN-8 in a session pending |
+| `qa/accordion-motion.md` | this merge | AC-2, AC-5, AC-7, AC-8 proven; AC-1 measured; AC-3, AC-4 in part; AC-6 and the owner's visual run pending |
 | `qa/hotfix-from-main.md` | this merge | AC-1, AC-6, AC-8 proven; AC-4, AC-7 at script level; AC-2, AC-3, AC-5, AC-9 and the session run of AC-10 pending |
 
 ## Done

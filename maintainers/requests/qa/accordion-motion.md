@@ -76,3 +76,42 @@ The tools have no automated tests: each criterion is a manual test in a browser,
 | 1. docker-ce: `--motion-ui` token and switch label, rotating chevron, height animation of the groups, rotating dock chevron; `make check`; manual tests in `docs/manual-tests.md` | medium | A bug in existing UI code, no security or data |
 | 2. colima: the same in its own `DataTable` and `JobDock`; `make check` | medium | Same change on a different structure |
 | 3. The owner runs AC-1 to AC-7 in the browser (`make build` and the binary of each tool) | low | Visual behavior only a person can judge |
+
+## Execution — 2026-11-18, merged into developer (this merge)
+
+- **Done:** stage 1, `container-console-docker-ce`: the `--motion-ui` token and the switch renamed "Animations", one
+  rotating chevron, the height animation of the group rows, the rotating dock chevron, and the "Compose groups"
+  manual tests (f824586); the column widths kept (c502181); stage 2, the same in `container-console-colima` on its own
+  accordion (ebb1b82). Stage 3, the owner's visual run, is left.
+- **Decisions taken while running:** each cell of a group row wraps its content in a grid whose single row goes from
+  `1fr` to `0fr`, with the cell's vertical padding and bottom border going to zero; the wrapper is clipped with
+  `overflow: visible clip`, because `overflow: hidden` made it a scroll container, which the table layout reads as
+  having no minimum width (the state column of the Colima console shrank from 110 to 94 px and cut its badge), and
+  4 px above and below keep the focus ring whole; a closed group turns `visibility: hidden` only after its transition
+  and is `inert` at once; the groups a click toggled since the filter last changed are the only ones with transitions,
+  which is how the first render, the filter and the live rows stay instant; `Button` takes a `className`, used by the
+  dock's chevron; in the Colima console the rows of a closed group are now rendered (hidden) instead of unmounted, and
+  `inert` goes on each row, since its header shares their `<tbody>`.
+- **Deviations:** none from the business rules. In the Colima console the groups still start open and the filter
+  still does not open a closed group (BR-7 keeps its behavior), so the filter part of AC-4 applies to docker-ce only.
+- **Acceptance criteria:**
+  - AC-1: proven in Chrome on both built consoles, with the transitions paused at fixed times: closing, the group's
+    height 645 → 205 → 1 px (docker-ce) and 840 → 312 → 67 px, its header (Colima), at 0, 100 and 200 ms, the
+    opacity 1 → 0 and the chevron 0° → −90°, and the reverse on opening; the real-time look is the owner's run.
+  - AC-2: proven: a link of a closed group cannot take the focus, and the rows compute `visibility: hidden` once
+    collapsed; with the group open they take it. The DevTools tree itself was not opened.
+  - AC-3: proven for the groups with the menu switch off (no transition runs); the system's reduced motion and the
+    dock: pending, the owner's run (the same token).
+  - AC-4: the filter proven (no transition when it opens or closes the groups); the reload and the live rows: no
+    transition is declared on a first render or on a new row, not run.
+  - AC-5: proven at 400 and 700 px of table width, both consoles.
+  - AC-6: pending (needs a job in the dock).
+  - AC-7: proven for AC-1, AC-2, AC-3 (groups) and AC-5, the Colima console built and run on Linux against docker-ce.
+  - AC-8: proven: `make check` passes in both tools; the manual tests are in `docs/manual-tests.md`; the two
+    translations are pending for the release.
+- **Checks:** `make check` in both tools (gofmt, go vet, go build, tsc); `tests/check.sh --base origin/developer
+  --i18n-pending`; the column widths of the Colima console against a build of its previous code (220, 110, 255, 121,
+  313, 116, 192 px, equal).
+- **Left:** stage 3, the owner's visual run of the "Compose groups" manual tests (AC-3 reduced motion, AC-6); outside
+  this request, `make check` of both consoles passes although `npm audit --audit-level=high` reports 4 high
+  vulnerabilities (picomatch, under vite), because the Makefile ignores the audit's exit code.
