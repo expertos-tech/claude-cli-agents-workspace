@@ -63,5 +63,7 @@ medium
   `make build` built both tools and changed no tracked file. The screen was not loaded: the front-end did not change.
 - **Checks:** `bash tests/check.sh --base origin/developer --i18n-pending` passed (translations pending, as before;
   repo-terms skipped: no terms list).
+- **Review** (`reviewer`, effort medium: the Makefiles are code, no hook or security): APPROVED, no finding; every
+  change REQUESTED or a CONSEQUENCE of it, no protection weaker.
 - **Left:** the `web` target joins `npm ci`, the cleanup and the build with `;` too, so a failed `npm ci` does not stop
   it; not in this request.
