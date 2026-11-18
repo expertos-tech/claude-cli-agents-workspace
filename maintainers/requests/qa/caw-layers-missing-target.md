@@ -43,5 +43,6 @@ low
 - **Review** (`reviewer`, effort high, the gate script): REJECTED with one BLOCKER: the first version accepted any
   existing file as the target, so a same-named layer pointing at another skill passed, which the old check caught.
   Fixed: the same-named target is required again, and any other target must be a product skill; the fix reviewed
-  again (below). A RECOMMENDED on the wording of this block and of the changelog is met by the fix.
+  again: APPROVED, no finding (the BLOCKER closed, no case of the old check now passes, the texts match the code).
+  A RECOMMENDED on the wording of this block and of the changelog is met by the fix.
 - **Left:** nothing.
