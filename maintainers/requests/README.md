@@ -40,6 +40,10 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 | Round | Request | Notes |
 | --- | --- | --- |
+| 0 | `rules-as-product-layers.md` | The maintenance rules as layers over the product rules; ends the drift of the hard rules' mirror |
+| 0 | `validators-follow-ups.md` | Review fixtures per hard rule, warnings with "Run it alone", the test installation from a work clone |
+| 0 | `warnings-board.md` | After `rules-as-product-layers`; the numbered warnings board, with risk levels, before the closing board and in the merge summary; product and maintenance |
+| 0 | `preferred-language.md` | After `rules-as-product-layers`; the reply language as the `language` setting, asked at install and by a root hook; design: `plans/preferred-language.md` |
 | 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
 | 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
