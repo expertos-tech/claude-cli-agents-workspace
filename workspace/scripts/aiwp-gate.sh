@@ -40,7 +40,9 @@ gate <work>/<clone> [--test "<command>" | --docs-only | --untested]
 gate --merge <work>/<clone> <sha>
       Phase 2, merge. Only the sha phase 1 passed, still the clone's HEAD and on the remote, and only when the base did
       not move: fetches the branch from the remote into the source repo, merge --ff-only, pushes the base, deletes the
-      remote work branch (a normalization branch stays on the remote, as its record). The review against the request
+      remote work branch (a normalization branch stays on the remote, as its record), then destroys the clone's
+      Docker copy groups (aiwp-cmds.sh _destroy-copies: by label, agent_ names only; a failure is reported and the
+      merge stands). The review against the request
       and the human's answers happen between the two phases. Refuses a hotfix clone (its command is hotfix) and, like
       phase 1, a clone of developer while a hotfix waits to be merged down.
       The person's order, first of all: inside a Claude Code session (CLAUDECODE set) it runs only when the person
@@ -49,7 +51,10 @@ gate --merge <work>/<clone> <sha>
       line there. It needs an order newer than the last merge, not newer than phase 1, because /merge runs phase 1
       itself: the order always comes first. One /merge covers the clones of one work, each merged once (the repos of
       one request, of one release); a clone already merged under it, or a clone of another work, needs a new /merge.
-      Refused with no session id or no such order. Outside Claude Code (the person in a terminal) it runs as above.
+      The order expires after 12 hours (MERGE_ORDER_TTL). The hook records what the person typed with /merge: a
+      <work> or <work>/<clone> limits the order to that work; --main or --hotfix <project> to the repos of
+      projects/<project> (the repo itself or one inside it); an argument that names neither is refused; no argument:
+      the clone of the session, any work. Refused with no session id or no such order. Outside Claude Code (the person in a terminal) it runs as above.
 release <repo> [--pr-if-refused] [--tag vX.Y.Z]
       developer -> main of projects/<repo>: pushes the developer commit to main of the remote (a fast-forward), then
       moves the local main ref (the checkout stays on developer). A remote that refuses the push (a protected main)
@@ -135,6 +140,8 @@ NORMALIZATION_FILES_RE='(\.(md|mmd|png|jpe?g|gif|svg|webp)|(^|/)\.gitignore|(^|/
 MERGE_ORDERS="$root/.history/merge-orders"
 SESSION_ID_RE='^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
 REFUSED_ORDER="refused: the merge happens only when the person types /merge in this session"
+# An order older than this many seconds is spent: a /merge typed hours ago, refused or declined, is no order now.
+MERGE_ORDER_TTL=43200
 ORDER_FILE=""
 
 # Prints an error and exits with the given code.
@@ -529,31 +536,50 @@ cmd_gate_check() {
 # "order" line (a /merge the person typed, recorded by the UserPromptSubmit hook) newer than its last merge. Newer
 # than the last merge and not than phase 1: /merge runs phase 1 itself, so its order always comes before phase 1. Each
 # "merged" line after the last order binds that order to its work: one /merge takes the clones of one work in (the
-# repos of a request, of a release), each once; another work, or the same clone again, needs a new /merge. Sets
-# ORDER_FILE for record_merge.
+# repos of a request, of a release), each once; another work, or the same clone again, needs a new /merge. The last
+# order must be younger than MERGE_ORDER_TTL, and when the person typed a target with it (session-title.py: "work
+# <work>", "main <project>", "hotfix <project>"), the clone must be of that work, or its repo that project or inside
+# it; an argument that named neither ("text") is refused. Sets ORDER_FILE for record_merge.
 require_merge_order() {
-  local work="$1" name="$2" id="${CLAUDE_CODE_SESSION_ID:-}" file verdict
+  local work="$1" name="$2" src="$3" id="${CLAUDE_CODE_SESSION_ID:-}" file verdict rel
   ORDER_FILE=""
   [ -n "${CLAUDECODE:-}" ] || return 0
   [ -n "$id" ] || die 1 "$REFUSED_ORDER (no CLAUDE_CODE_SESSION_ID in this environment); never ask the person to let you run it: offer /merge"
   [[ "$id" =~ $SESSION_ID_RE ]] || die 1 "$REFUSED_ORDER (CLAUDE_CODE_SESSION_ID is not a session id)"
   file="$MERGE_ORDERS/$id"
   { [ -f "$file" ] && [ ! -L "$file" ]; } || die 1 "$REFUSED_ORDER: no /merge from this session yet; never ask the person to let you run it: offer /merge"
-  verdict="$(awk -F '\t' -v work="$work" -v clone="$work/$name" '
-    $1 == "order" { orders++; bound = ""; next }
+  rel="${src#"$root"/projects/}"
+  [ "$rel" != "$src" ] || rel=""
+  verdict="$(awk -F '\t' -v work="$work" -v clone="$work/$name" -v repo="$rel" -v now="$(date -u +%s)" -v ttl="$MERGE_ORDER_TTL" '
+    # Seconds since 1970 of a UTC time yyyy-mm-ddThh:mm:ssZ (days from the civil date), -1 when it is not one.
+    function epoch(t,  y, m, d) {
+      if (t !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) return -1
+      y = substr(t, 1, 4) + 0; m = substr(t, 6, 2) + 0; d = substr(t, 9, 2) + 0
+      if (m <= 2) { y--; m += 12 }
+      return (365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + d - 719469) * 86400 \
+        + substr(t, 12, 2) * 3600 + substr(t, 15, 2) * 60 + substr(t, 18, 2)
+    }
+    $1 == "order" { orders++; bound = ""; at = $2; kind = $3; target = $4; next }
     $1 == "merged" && orders {
       if (bound == "") { bound = $3; sub(/\/.*/, "", bound) }
       merged[$3] = orders
     }
     END {
       if (!orders) print "none"
+      else if (epoch(at) < 0 || now - epoch(at) > ttl) print "expired " at
       else if (merged[clone] == orders) print "used"
+      else if (kind == "text") print "text"
+      else if (kind == "work" && target != work) print "target the work " target
+      else if ((kind == "main" || kind == "hotfix") && target != "" && repo != target && index(repo, target "/") != 1) print "target the project " target
       else if (bound != "" && bound != work) print "other " bound
       else print "ok"
     }' "$file")" || die 1 "$REFUSED_ORDER: could not read .history/merge-orders/$id"
   case "$verdict" in
     ok) ORDER_FILE="$file" ;;
     none) die 1 "$REFUSED_ORDER: no /merge from this session yet; never ask the person to let you run it: offer /merge" ;;
+    expired\ *) die 1 "$REFUSED_ORDER: the last /merge (${verdict#expired }) is older than $((MERGE_ORDER_TTL / 3600)) hours; a merge now needs a new /merge from the person" ;;
+    text) die 1 "$REFUSED_ORDER: the last /merge named neither a work nor a project; the person types /merge, /merge <work>[/<clone>], /merge --main <project> or /merge --hotfix <project>" ;;
+    target\ *) die 1 "$REFUSED_ORDER: the last /merge was for ${verdict#target }, not $work/$name; this merge needs its own /merge from the person" ;;
     used) die 1 "$REFUSED_ORDER: the last /merge already merged $work/$name; another merge needs a new /merge from the person" ;;
     other\ *) die 1 "$REFUSED_ORDER: the last /merge took in the work ${verdict#other }; $work is another work and needs a new /merge from the person" ;;
     *) die 1 "$REFUSED_ORDER: could not read .history/merge-orders/$id" ;;
@@ -575,8 +601,8 @@ cmd_gate_merge() {
   clone="$(clone_path "$given")"
   work="$(basename "$(dirname "$clone")")"
   name="$(basename "$clone")"
-  require_merge_order "$work" "$name"
   src="$(git -C "$clone" config --get aiwp.source)"
+  require_merge_order "$work" "$name" "$src"
   base="$(git -C "$clone" config --get aiwp.base)"
   branch="$(git -C "$clone" config --get aiwp.branch)"
   record="$work_root/$work/.gate-$name"
@@ -616,6 +642,10 @@ cmd_gate_merge() {
     git -C "$src" branch -q -d "$branch" 2>/dev/null || true
   fi
   rm -f "$record"
+  # The task's Docker copy served its purpose: its groups go, by label and agent_ name only. A failure is said and
+  # never undoes or fails the merge.
+  bash "$cmds" _destroy-copies "$work/$name" ||
+    echo "attention: a Docker copy group of $work/$name was not destroyed (above); the merge stands; bash scripts/aiwp-cmds.sh close $work destroys it"
   echo "next: bash scripts/aiwp-cmds.sh close $work"
 }
 

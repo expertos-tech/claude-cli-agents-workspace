@@ -43,6 +43,8 @@ MACHINE_TOOLS = [
         'os': 'Darwin',
     },
 ]
+CUSTOM_DIR_VAR = 'AIWP_CUSTOM_DIR'
+OVERRIDE_FILE = 'tmp/run-tools/custom-dir.compose.yaml'
 INCLUDE_LINE = re.compile(r"""^\s*-\s*(?:path:\s*)?["']?([a-z0-9][a-z0-9-]*)/compose\.ya?ml["']?\s*$""")
 NAME_LINE = re.compile(r"""^name:\s*["']?([a-z0-9][a-z0-9_-]*)["']?\s*$""")
 
@@ -127,11 +129,37 @@ def read_env_file(path):
     return values
 
 
+def custom_dir(root):
+    """Returns the folder the tools' configuration comes from: AIWP_CUSTOM_DIR (the custom/ of another workspace, for
+    the maintenance of the product, which has none) when set, else custom/ of the root."""
+    value = os.environ.get(CUSTOM_DIR_VAR, '')
+    if not value:
+        return os.path.join(root, 'custom')
+    if not os.path.isdir(value):
+        raise Refused(f'{CUSTOM_DIR_VAR} is not a folder: {value}')
+    return os.path.realpath(value)
+
+
+def shown_custom(root, *parts):
+    """Returns a path of the configuration as the person reads it: custom/... of the root, else absolute."""
+    path = os.path.join(custom_dir(root), *parts)
+    return os.path.relpath(path, root) if path.startswith(root + os.sep) else path
+
+
+def moved_source(root, source):
+    """Returns where a bind source under custom/ of the root is read from (AIWP_CUSTOM_DIR); other paths unchanged."""
+    own = os.path.join(root, 'custom')
+    source = os.path.normpath(source)
+    if source == own or source.startswith(own + os.sep):
+        return os.path.normpath(os.path.join(custom_dir(root), os.path.relpath(source, own)))
+    return source
+
+
 def env_args(root, ids):
-    """Returns the --env-file arguments of every included tool that has custom/env/<tool>.env."""
+    """Returns the --env-file arguments of every included tool that has an env file in the configuration folder."""
     args = []
     for tool_id in ids:
-        path = os.path.join(root, 'custom', 'env', f'{tool_id}.env')
+        path = os.path.join(custom_dir(root), 'env', f'{tool_id}.env')
         if os.path.isfile(path):
             args += ['--env-file', path]
     return args
@@ -236,10 +264,16 @@ def compose_tool(root, group, ids, tool_id):
         for port in service.get('ports') or []:
             if port.get('published'):
                 ports.append({'host_ip': port.get('host_ip') or '', 'port': int(str(port['published']).split('-')[0])})
-        needed, named = [], []
+        needed, named, moved = [], [], []
         for mount in service.get('volumes') or []:
+            source = mount.get('source', '')
+            if mount.get('type') == 'bind' and source and moved_source(root, source) != os.path.normpath(source):
+                source = moved_source(root, source)
+                moved.append(
+                    {'source': source, 'target': mount.get('target', ''), 'read_only': bool(mount.get('read_only'))}
+                )
             if mount.get('type') == 'bind' and not (mount.get('bind') or {}).get('create_host_path'):
-                needed.append(mount.get('source', ''))
+                needed.append(source)
             elif mount.get('type') == 'volume' and mount.get('source'):
                 named.append(mount['source'])
         tool['services'].append(
@@ -250,6 +284,7 @@ def compose_tool(root, group, ids, tool_id):
                 'ports': ports,
                 'needed_files': needed,
                 'named_volumes': named,
+                'moved_binds': moved,
                 'grace': grace_seconds(service.get('stop_grace_period')),
             }
         )
@@ -279,14 +314,14 @@ def check_configuration(root, ids, tool):
     if tool['requires']:
         values = {}
         for tool_id in ids:
-            values.update(read_env_file(os.path.join(root, 'custom', 'env', f'{tool_id}.env')))
+            values.update(read_env_file(os.path.join(custom_dir(root), 'env', f'{tool_id}.env')))
         values.update(os.environ)
-        env_rel = f'custom/env/{tool["id"]}.env'
+        env_rel = shown_custom(root, 'env', f'{tool["id"]}.env')
         for name in tool['requires']:
             if not values.get(name):
                 hint = (
                     ''
-                    if os.path.isfile(os.path.join(root, env_rel))
+                    if os.path.isfile(os.path.join(custom_dir(root), 'env', f'{tool["id"]}.env'))
                     else f'; create it with /local-env tools/{tool["id"]}'
                 )
                 tool['missing'].append(f'configuration missing: {name} in {env_rel}{hint}')
@@ -732,6 +767,33 @@ def stop_machine(root, tool):
         run(['launchctl', 'bootout', f'gui/{os.getuid()}/{COLIMA_LABEL}'], root)
 
 
+def custom_override(root, tools):
+    """Writes tmp/run-tools/custom-dir.compose.yaml when AIWP_CUSTOM_DIR moves a bind of the tools, and returns its -f
+    arguments (compose merges a service's volumes by target); nothing to move: no file, no argument."""
+    lines = []
+    for tool in tools:
+        for service in tool['services']:
+            if not service.get('moved_binds'):
+                continue
+            lines += [f'  {json.dumps(service["name"])}:', '    volumes:']
+            for bind in service['moved_binds']:
+                lines += [
+                    '      - type: bind',
+                    f'        source: {json.dumps(bind["source"])}',
+                    f'        target: {json.dumps(bind["target"])}',
+                ]
+                if bind['read_only']:
+                    lines.append('        read_only: true')
+    if not lines:
+        return []
+    path = os.path.join(root, OVERRIDE_FILE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(f'# Written by run-tools.py: the configuration binds read from {CUSTOM_DIR_VAR}.\nservices:\n')
+        handle.write('\n'.join(lines) + '\n')
+    return ['-f', OVERRIDE_FILE]
+
+
 def cmd_up(root, ids):
     """Starts the tools named: refuses each one that lacks configuration or a port, tags the rollback, moves a tool
     from its old project, builds and starts the rest of the group, then prints the table of what was asked."""
@@ -772,6 +834,7 @@ def cmd_up(root, ids):
                 *env_args(root, include),
                 '-f',
                 GROUP_FILE,
+                *custom_override(root, ready),
                 'up',
                 '-d',
                 '--build',

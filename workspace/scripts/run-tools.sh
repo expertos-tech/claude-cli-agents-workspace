@@ -13,7 +13,9 @@ the container console shows them as one group; title, description and URL come f
 tool's main service. The container console of this machine is a machine service, not a container:
 container-console-docker-ce on Linux and WSL with Docker Engine (docker-ce), container-console-colima on macOS with
 colima installed. A tool's configuration comes from custom/: custom/env/<tool>.env (passed with --env-file) and
-custom/config/<tool>/.
+custom/config/<tool>/. AIWP_CUSTOM_DIR names another custom/ folder to read it from instead (the maintenance of the
+product, which has no custom/, reads an installed workspace's): its env/<tool>.env files, and every bind of a tool
+under custom/ is mounted from that folder through tmp/run-tools/custom-dir.compose.yaml, written at up.
 
   list [--json]  The tools of this machine: id, title, description, URL, kind (compose or machine), state (up, stopped,
                  not installed), the project a container tool still runs in, ports, and what keeps it from starting

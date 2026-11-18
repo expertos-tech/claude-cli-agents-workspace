@@ -7,9 +7,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT="$(cd "$HERE/../.." && pwd)/aiwp-cmds.sh"
+SCRIPT_DIR="$(cd "$HERE/../.." && pwd)"
+SCRIPT="$SCRIPT_DIR/aiwp-cmds.sh"
 BASE="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$BASE"' EXIT
+trap 'real_cleanup; rm -rf "$BASE"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -40,6 +41,7 @@ fixture() {
   mkdir -p "$R/scripts/lib" "$R/projects" "$R/tmp"
   cp "$SCRIPT" "$R/scripts/aiwp-cmds.sh"
   cp "$(dirname "$SCRIPT")/lib/projects.sh" "$R/scripts/lib/"
+  cp "$(dirname "$SCRIPT")/agent-copy.py" "$R/scripts/"
   git init -q --bare -b main "$BASE/remote.$CURRENT.git"
   git init -q -b main "$R/projects/app"
   printf '.env\n' >"$R/projects/app/.gitignore"
@@ -257,63 +259,412 @@ test_open_custom_for_a_poc() {
   eq "pushed to custom itself" "$(git -C "$c" rev-parse HEAD)" "$(git -C "$R/custom" rev-parse refs/heads/poc/sample)"
 }
 
-# Fake docker on PATH: records every call; answers ps, inspect, image ls, image inspect and compose config.
+# Fake docker on PATH: records every call in DOCKER_LOG. The state it answers from lives in $STUB: containers/<project>
+# (one line: the compose folder; the container is c-<project>, running, web 80/tcp on host port 61500),
+# res/<kind>.<project> (the lines of docker <kind> ls for that label), config.json (docker compose config --format json).
 docker_stub() {
-  mkdir -p "$BASE/bin"
+  STUB="$BASE/stub.$CURRENT"
+  rm -rf "$STUB"
+  mkdir -p "$BASE/bin" "$STUB/containers" "$STUB/res"
+  export STUB
   cat >"$BASE/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >>"$DOCKER_LOG"
+label="com.docker.compose.project"
 case "$*" in
-  compose*" ps -aq"*) [ -n "${STACK_DOWN:-}" ] || echo c1 ;;
+  "version "*) [ -z "${DOCKER_DOWN:-}" ] || exit 1; echo 28.0 ;;
+  "ps -aq --filter label=$label="*) p="${4##*=}"; [ ! -f "$STUB/containers/$p" ] || echo "c-$p" ;;
+  "ps -aq --filter label=$label") for f in "$STUB"/containers/*; do [ -f "$f" ] && echo "c-${f##*/}"; done ;;
+  "ps --format "*) [ -z "${BUSY:-}" ] || echo "0.0.0.0:$BUSY->80/tcp" ;;
   "inspect -f "*) echo "app-web sha256:aaa" ;;
-  "image ls "*) printf 'rollback-20260101-000001\nrollback-20260102-000001\nrollback-20260103-000001\nrollback-20260104-000001\npublished-20260105-000001-abc1234\nlatest\n' ;;
-  compose*" config --images"*) echo app-web ;;
+  "inspect "*)
+    shift
+    sep=""
+    printf '['
+    for id in "$@"; do
+      p="${id#c-}"
+      printf '%s{"Id":"%s","Config":{"Labels":{"%s":"%s","%s.working_dir":"%s","com.docker.compose.service":"web"}},"State":{"Running":true},"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"61500"}]}}}' \
+        "$sep" "$id" "$label" "$p" "$label" "$(cat "$STUB/containers/$p")"
+      sep=","
+    done
+    printf ']\n'
+    ;;
+  "network ls --filter label=$label="* | "volume ls --filter label=$label="* | "image ls --filter label=$label="*)
+    kind="${1}"
+    p="${4#label="$label"=}"
+    [ ! -f "$STUB/res/$kind.$p" ] || cat "$STUB/res/$kind.$p"
+    ;;
+  "image ls --format "*) printf 'rollback-20260101-000001\nrollback-20260102-000001\nrollback-20260103-000001\nrollback-20260104-000001\npublished-20260105-000001-abc1234\nlatest\n' ;;
   "image inspect app-web:rollback-latest") [ -z "${NO_ROLLBACK:-}" ]; exit ;;
+  compose*" config --format json"*) cat "$STUB/config.json" ;;
+  compose*" config --images"*) echo app-web ;;
+  compose*" ps -aq"*) [ -n "${STACK_DOWN:-}" ] || echo c1 ;;
+  compose*" up -d --build"*) echo "cwd $PWD" >>"$DOCKER_LOG"; [ -z "${UP_FAILS:-}" ] || exit 1 ;;
 esac
 exit 0
 STUB
   chmod +x "$BASE/bin/docker"
   export DOCKER_LOG="$BASE/docker.$CURRENT.log"
   : >"$DOCKER_LOG"
+  unset DOCKER_DOWN BUSY STACK_DOWN NO_ROLLBACK UP_FAILS
 }
 
-test_up_tags_the_last_publication_first() {
+# The compose config of the app with the docker stub: a built web with a fixed image and container name, a database
+# and a worker on the web's image, a fixed network and volume name. $1 = external: the volume is external.
+stub_config() {
+  local volume='{"name":"app-data"}' name="${2:-agent_1116-sample-change}"
+  [ "${1:-}" != external ] || volume='{"name":"shared-data","external":true}'
+  printf '{"name":"%s","services":{"web":{"build":{"context":"."},"image":"app-web","container_name":"app-web","ports":[{"target":80,"published":"8080","protocol":"tcp","host_ip":"127.0.0.1"}]},"db":{"image":"postgres:16","ports":[{"target":5432,"published":"5432","protocol":"tcp"}]},"worker":{"image":"app-web"}},"networks":{"default":{"name":"app-net"}},"volumes":{"data":%s}}\n' \
+    "$name" "$volume" >"$STUB/config.json"
+}
+
+dock() { # aiwp-cmds.sh with the docker stub first on PATH; output in OUT
+  OUT="$(cd "$R" && PATH="$BASE/bin:$PATH" bash scripts/aiwp-cmds.sh "$@" 2>&1)"
+  RC=$?
+}
+
+test_up_publishes_the_copy_in_its_own_group() {
+  fixture
+  docker_stub
+  stub_config
+  run open "$W" app
+  printf 'services: {}\n' >"$(clone)/compose.yaml"
+  dock up "$W/app"
+  rc_is 0
+  local g=agent_1116-sample-change ov="$R/tmp/work/$W/agent-app.compose.yaml" web db
+  has "group: $g"
+  has "published: $g"
+  web="$(printf '%s\n' "$OUT" | sed -n 's|^port: web 80/tcp -> \([0-9]*\) http://localhost:[0-9]* AGENT_PORT_WEB_80$|\1|p')"
+  db="$(printf '%s\n' "$OUT" | sed -n 's|^port: db 5432/tcp -> \([0-9]*\) .*AGENT_PORT_DB_5432$|\1|p')"
+  [ -n "$web" ] && [ "$web" -ge 61000 ] && [ "$web" -le 65535 ]; check "web port in 61000-65535: [$web]" $?
+  [ -n "$db" ] && [ "$db" -ge 61000 ] && [ "$db" -le 65535 ] && [ "$db" != "$web" ]; check "db port in range, its own: [$db]" $?
+  grep -q "^docker compose -p $g -f compose.yaml -f $ov up -d --build$" "$DOCKER_LOG"; check "up in the group with the override" $?
+  grep -qx "cwd $(clone)" "$DOCKER_LOG"; check "from the clone" $?
+  ! grep -q '^docker tag ' "$DOCKER_LOG"; check "no rollback tag for a copy" $?
+  ! grep -q -- 'down\|volume rm\|rm -f' "$DOCKER_LOG"; check "nothing removed" $?
+  grep -qx "name: \"$g\"" "$ov"; check "override names the group" $?
+  [ "$(grep -c "image: \"$g-web\"" "$ov")" -eq 2 ]; check "web and its worker run the group's image" $?
+  ! grep -q 'postgres' "$ov"; check "a pulled image stays" $?
+  grep -q 'container_name: !reset null' "$ov"; check "fixed container name dropped" $?
+  [ "$(grep -c '^    name: !reset null' "$ov")" -eq 2 ]; check "fixed network and volume names dropped" $?
+  grep -q "published: \"$web\"" "$ov" && grep -q 'host_ip: "127.0.0.1"' "$ov"; check "web port moved, host ip kept" $?
+  grep -q "AGENT_PORT_WEB_80: \"$web\"" "$ov"; check "port variable in the environment" $?
+  eq "ports file" "AGENT_GROUP=$g AGENT_PORT_DB_5432=$db AGENT_PORT_WEB_80=$web" "$(sort "$R/tmp/work/$W/agent-app.ports.env" | tr '\n' ' ' | sed 's/ $//')"
+  [ -z "$(git -C "$(clone)" status --porcelain -- . ':!compose.yaml')" ]; check "nothing written in the clone" $?
+  # Again: the same group and the same ports while they are free.
+  dock up "$W/app"
+  rc_is 0
+  has "port: web 80/tcp -> $web "
+  # Closing the work: refused with work not merged, so no group is destroyed; --discard destroys it.
+  run close "$W"
+  rc_is 1
+  hasnt "agent-app"
+  hasnt "not a clone made by open"
+}
+
+test_a_second_clone_or_another_folder_gets_its_own_group() {
+  fixture
+  docker_stub
+  stub_config
+  run open "$W" app
+  printf 'services: {}\n' >"$(clone)/compose.yaml"
+  printf 'name: "agent_1116-sample-change"\n' >"$R/tmp/work/$W/agent-api.compose.yaml"
+  # The base group of another work, 2026-11-16-sample-change-app, is never this clone's: the clone's name follows --.
+  echo /elsewhere/sample-change-app >"$STUB/containers/agent_1116-sample-change-app"
+  dock up "$W/app"
+  rc_is 0
+  has "group: agent_1116-sample-change--app"
+  rm "$R/tmp/work/$W/agent-api.compose.yaml" "$R/tmp/work/$W/agent-app.compose.yaml"
+  # The work's group runs from another folder: this clone takes its own name.
+  echo /elsewhere/api >"$STUB/containers/agent_1116-sample-change"
+  dock up "$W/app"
+  rc_is 0
+  has "group: agent_1116-sample-change--app"
+  hasnt "group: agent_1116-sample-change"$'\n'
+}
+
+test_up_refuses_what_it_cannot_isolate_and_the_final_stack() {
+  fixture
+  docker_stub
+  stub_config external
+  run open "$W" app
+  printf 'services: {}\n' >"$(clone)/compose.yaml"
+  dock up "$W/app"
+  rc_is 1
+  has "volume data is external (shared-data)"
+  ! grep -q 'up -d' "$DOCKER_LOG"; check "nothing started" $?
+  dock up app
+  rc_is 1
+  has "/docker-deploy"
+  has "deploy app [developer|main]"
+  stub_config
+  dock up "$W/app" -- -p other
+  rc_is 1
+  has "drop -p/--project-name"
+  DOCKER_DOWN=1 dock up "$W/app"
+  rc_is 1
+  has "Docker: not reachable"
+  rm "$(clone)/compose.yaml"
+  dock up "$W/app"
+  rc_is 1
+  has "no compose file in"
+}
+
+test_down_stops_the_group_and_keeps_volumes() {
+  fixture
+  docker_stub
+  stub_config
+  run open "$W" app
+  printf 'services: {}\n' >"$(clone)/compose.yaml"
+  dock up "$W/app"
+  dock down "$W/app"
+  rc_is 0
+  has "down: agent_1116-sample-change (volumes and images kept)"
+  grep -qx 'docker compose -p agent_1116-sample-change down' "$DOCKER_LOG"; check "compose down of the group, no -v" $?
+  dock down app
+  rc_is 2
+}
+
+test_status_lists_the_groups_of_each_clone() {
   fixture
   docker_stub
   run open "$W" app
-  OUT="$(cd "$R" && PATH="$BASE/bin:$PATH" bash scripts/aiwp-cmds.sh up "$W/app" -- -f compose.yaml 2>&1)"
+  clone >"$STUB/containers/agent_1116-sample-change"
+  echo /elsewhere >"$STUB/containers/agent_0101-other"
+  dock status
+  rc_is 0
+  has "copy: agent_1116-sample-change running 1/1 ports=web:80->61500"
+  hasnt "agent_0101-other"
+  printf 'name: "agent_1116-sample-change--app"\n' >"$R/tmp/work/$W/agent-app.compose.yaml"
+  dock status "$W"
+  has "copy: agent_1116-sample-change--app down ports=-"
+  DOCKER_DOWN=1 dock status
+  rc_is 0
+  has "Docker: not reachable"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'Docker: not reachable')" -eq 1 ]; check "said once" $?
+}
+
+test_close_destroys_only_the_copy_groups_by_label() {
+  fixture
+  docker_stub
+  run open "$W" app
+  local g=agent_1116-sample-change
+  clone >"$STUB/containers/$g"
+  # A project that is not a copy, started by hand in the clone: never touched.
+  clone >"$STUB/containers/app"
+  echo "${g}_default" >"$STUB/res/network.$g"
+  echo "${g}_data" >"$STUB/res/volume.$g"
+  printf 'sha256:bbb %s-web:latest\nsha256:ccc other-name:latest\nsha256:ddd <none>:<none>\n' "$g" >"$STUB/res/image.$g"
+  echo "app_data" >"$STUB/res/volume.app"
+  dock close "$W" --discard
+  rc_is 0
+  has "destroyed: $g (1 containers, 1 networks, 1 volumes, 2 images)"
+  has "kept: app (not a copy group)"
+  has "kept: other-name:latest"
+  grep -qx "docker rm -f c-$g" "$DOCKER_LOG"; check "containers by label" $?
+  grep -qx "docker network rm ${g}_default" "$DOCKER_LOG"; check "networks" $?
+  grep -qx "docker volume rm -f ${g}_data" "$DOCKER_LOG"; check "volumes" $?
+  grep -qx "docker image rm $g-web:latest" "$DOCKER_LOG"; check "built image" $?
+  grep -qx "docker image rm sha256:ddd" "$DOCKER_LOG"; check "untagged image of the group" $?
+  grep -q 'other-name\|c-app\|app_data\|label=com.docker.compose.project=app ' "$DOCKER_LOG" &&
+    ! grep -q 'rm .*\(other-name\|c-app\|app_data\)' "$DOCKER_LOG"; check "another project removed" $?
+  [ ! -e "$R/tmp/work/$W" ]; check "folder closed" $?
+}
+
+test_a_name_that_is_not_a_copy_group_is_never_destroyed() {
+  fixture
+  docker_stub
+  echo /x >"$STUB/containers/app"
+  echo "app_data" >"$STUB/res/volume.app"
+  local name
+  for name in app agent_1116 agent_11-x AGENT_1116-x agent_1116-X agent_1116--x/.. claude-cli-agents-tools; do
+    OUT="$(PATH="$BASE/bin:$PATH" python3 -I "$R/scripts/agent-copy.py" destroy "$name" 2>&1)"
+    RC=$?
+    rc_is 1
+    has "refused: $name is not a copy group"
+  done
+  ! grep -q '^docker \(rm\|network rm\|volume rm\|image rm\)' "$DOCKER_LOG"; check "nothing removed" $?
+  OUT="$(PATH="$BASE/bin:$PATH" python3 -I "$R/scripts/agent-copy.py" destroy agent_1116-x 2>&1)"
   RC=$?
+  rc_is 0
+  has "nothing to destroy: agent_1116-x"
+  OUT="$(DOCKER_DOWN=1 PATH="$BASE/bin:$PATH" python3 -I "$R/scripts/agent-copy.py" destroy agent_1116-x 2>&1)"
+  RC=$?
+  rc_is 1
+  has "Docker: not reachable: nothing destroyed"
+}
+
+test_deploy_developer_tags_the_last_publication_first() {
+  fixture
+  docker_stub
+  stub_config "" app
+  dock deploy app
   rc_is 0
   local log first_up rollback published
   log="$(cat "$DOCKER_LOG")"
   rollback="$(grep -n 'tag sha256:aaa app-web:rollback-latest' "$DOCKER_LOG" | head -1 | cut -d: -f1)"
-  first_up="$(grep -n 'compose -f compose.yaml up -d --build' "$DOCKER_LOG" | head -1 | cut -d: -f1)"
+  first_up="$(grep -n 'compose -p app up -d --build' "$DOCKER_LOG" | head -1 | cut -d: -f1)"
   published="$(grep -n 'tag sha256:aaa app-web:published-' "$DOCKER_LOG" | head -1 | cut -d: -f1)"
   [ -n "$rollback" ] && [ -n "$first_up" ] && [ "$rollback" -lt "$first_up" ]; check "rollback tag before the build" $?
   [ -n "$published" ] && [ "$published" -gt "$first_up" ]; check "published tag after the build" $?
   case "$log" in *"image rm app-web:rollback-20260101-000001"*) check "keeps the newest 3" 0 ;; *) check "keeps the newest 3" 1 ;; esac
   case "$log" in *"rm app-web:rollback-20260104"*) check "newest tag removed" 1 ;; *) check "newest tag kept" 0 ;; esac
-  case "$log" in *volume*|*"down -v"*) check "no volume touched" 1 ;; *) check "no volume touched" 0 ;; esac
-  OUT="$(cd "$R" && PATH="$BASE/bin:$PATH" bash scripts/aiwp-cmds.sh up app 2>&1)"
-  RC=$?
+  case "$log" in *volume*|*"down"*) check "no volume touched" 1 ;; *) check "no volume touched" 0 ;; esac
+  grep -qx "cwd $R/projects/app" "$DOCKER_LOG"; check "built from projects/app" $?
+  has "deployed: app from projects/app developer at $(git -C "$R/projects/app" rev-parse --short developer)"
+  # The stack is down: the checkpoint is the newest published tag.
+  : >"$DOCKER_LOG"
+  STACK_DOWN=1 dock deploy app developer
   rc_is 0
-  has "published: projects/app"
+  has "rollback: app-web:rollback-latest (published-20260105-000001-abc1234)"
+  grep -q 'tag app-web:published-20260105-000001-abc1234 app-web:rollback-latest' "$DOCKER_LOG"; check "checkpoint from the published tag" $?
 }
 
-test_rollback_points_back_and_never_builds() {
+test_deploy_main_builds_a_checkout_of_main_under_the_final_name() {
+  fixture
+  docker_stub
+  stub_config "" app
+  printf 'v2\n' >"$R/projects/app/app.txt"
+  git -C "$R/projects/app" commit -q -am "developer only"
+  dock deploy app main
+  rc_is 0
+  grep -q "^cwd $R/tmp/deploy/app-main$" "$DOCKER_LOG"; check "built from the checkout of main" $?
+  grep -q 'compose -p app up -d --build' "$DOCKER_LOG"; check "-p forced to the final name" $?
+  has "deployed: app from projects/app main at $(git -C "$R/projects/app" rev-parse --short main)"
+  has "copied: .env"
+  [ ! -e "$R/tmp/deploy/app-main" ]; check "checkout removed" $?
+  eq "projects/app stays on developer" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
+}
+
+test_deploy_refuses_a_moved_checkout_a_copy_and_a_clone() {
+  fixture
+  docker_stub
+  stub_config "" app
+  printf 'dirty\n' >>"$R/projects/app/app.txt"
+  dock deploy app
+  rc_is 1
+  has "has changes in its checkout"
+  git -C "$R/projects/app" checkout -q -- app.txt
+  git -C "$R/projects/app" switch -q main
+  dock deploy app developer
+  rc_is 1
+  has "is on main, not developer"
+  git -C "$R/projects/app" switch -q developer
+  stub_config "" agent_1116-x
+  dock deploy app
+  rc_is 1
+  has "is a task's copy group, not a final stack"
+  run open "$W" app
+  dock deploy "$W/app"
+  rc_is 1
+  has "is a clone"
+  ! grep -q 'up -d' "$DOCKER_LOG"; check "nothing deployed" $?
+  dock deploy
+  rc_is 2
+}
+
+test_rollback_points_the_final_stack_back_and_never_builds() {
   fixture
   docker_stub
   run open "$W" app
-  OUT="$(cd "$R" && PATH="$BASE/bin:$PATH" bash scripts/aiwp-cmds.sh rollback "$W/app" 2>&1)"
-  RC=$?
+  dock rollback app
   rc_is 0
   has "rolled back: app-web <- app-web:rollback-latest"
   grep -q 'compose up -d --no-build' "$DOCKER_LOG"; check "up without build" $?
   ! grep -q 'build' <(grep -v -- '--no-build' "$DOCKER_LOG"); check "no build" $?
-  OUT="$(cd "$R" && NO_ROLLBACK=1 PATH="$BASE/bin:$PATH" bash scripts/aiwp-cmds.sh rollback "$W/app" 2>&1)"
-  RC=$?
+  NO_ROLLBACK=1 dock rollback app
   rc_is 1
   has "no rollback-latest tag"
+  dock rollback "$W/app"
+  rc_is 1
+  has "its copy has no rollback tags"
+}
+
+# Real Docker, only names this test generates (aiwpt<random>, agent_<MMDD>-t<random>): the final stack of a project
+# and a task's copy of the same compose file side by side, then the copy destroyed. Skipped when Docker is not
+# reachable or the base image is not on this machine (a test never downloads one).
+REAL_FINAL=""
+REAL_GROUP=""
+real_cleanup() {
+  [ -n "$REAL_FINAL" ] || return 0
+  (cd "$R/projects/app" 2>/dev/null && docker compose -p "$REAL_FINAL" down -v >/dev/null 2>&1)
+  docker image ls --format '{{.Repository}}:{{.Tag}}' "$REAL_FINAL-web" | while IFS= read -r ref; do docker image rm "$ref" >/dev/null 2>&1; done
+  python3 -I "$SCRIPT_DIR/agent-copy.py" destroy "$REAL_GROUP" >/dev/null 2>&1
+  REAL_FINAL=""
+}
+
+test_real_docker_copy_beside_the_final_stack() {
+  local image="${AIWP_TEST_BASE_IMAGE:-alpine:3.20}" rnd port final_id final_image copy_port w2 g
+  if ! docker version >/dev/null 2>&1 || ! docker image inspect "$image" >/dev/null 2>&1; then
+    echo "SKIP $CURRENT: Docker not reachable or $image not on this machine"
+    return 0
+  fi
+  fixture
+  rnd="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+  w2="$(date +%Y-%m-%d)-t$rnd"
+  g="agent_$(date +%m%d)-t$rnd"
+  REAL_FINAL="aiwpt$rnd"
+  REAL_GROUP="$g"
+  port="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+  printf 'FROM %s\nCMD ["sh", "-c", "sleep 600"]\n' "$image" >"$R/projects/app/Dockerfile"
+  cat >"$R/projects/app/compose.yaml" <<YAML
+name: $REAL_FINAL
+services:
+  web:
+    build: .
+    image: $REAL_FINAL-web:latest
+    container_name: $REAL_FINAL-web
+    ports: ["127.0.0.1:$port:80"]
+    volumes: [data:/data]
+    networks: [net]
+networks:
+  net:
+    name: $REAL_FINAL-net
+volumes:
+  data:
+    name: $REAL_FINAL-data
+YAML
+  git -C "$R/projects/app" add -A
+  git -C "$R/projects/app" commit -q -m stack
+  git -C "$R/projects/app" push -q origin developer
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh deploy app 2>&1)"
+  RC=$?
+  rc_is 0
+  final_id="$(docker ps -q --filter "name=^$REAL_FINAL-web$")"
+  final_image="$(docker image inspect -f '{{.Id}}' "$REAL_FINAL-web:latest")"
+  [ -n "$final_id" ]; check "final stack running" $?
+  run open "$w2" app
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh up "$w2/app" 2>&1)"
+  RC=$?
+  rc_is 0
+  has "group: $g"
+  copy_port="$(printf '%s\n' "$OUT" | sed -n 's|^port: web 80/tcp -> \([0-9]*\) .*|\1|p')"
+  [ -n "$copy_port" ] && [ "$copy_port" -ge 61000 ] && [ "$copy_port" -le 65535 ]; check "copy port in range [$copy_port]" $?
+  eq "copy publishes its port" "127.0.0.1:$copy_port" "$(docker port "$(docker ps -q --filter "label=com.docker.compose.project=$g")" 80/tcp)"
+  eq "final container kept" "$final_id" "$(docker ps -q --filter "name=^$REAL_FINAL-web$")"
+  eq "final port kept" "127.0.0.1:$port" "$(docker port "$final_id" 80/tcp)"
+  eq "final image tag kept" "$final_image" "$(docker image inspect -f '{{.Id}}' "$REAL_FINAL-web:latest")"
+  [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$g")" ]; check "the copy has its own volume" $?
+  run status "$w2"
+  has "copy: $g running 1/1 ports=web:80->$copy_port"
+  # A second deploy of the final stack: rollback tags, no volume deleted.
+  OUT="$(cd "$R" && bash scripts/aiwp-cmds.sh deploy app developer 2>&1)"
+  RC=$?
+  rc_is 0
+  eq "rollback tag of the replaced image" "$final_image" "$(docker image inspect -f '{{.Id}}' "$REAL_FINAL-web:rollback-latest" 2>/dev/null)"
+  docker volume inspect "$REAL_FINAL-data" >/dev/null 2>&1; check "final volume kept" $?
+  # The copy goes with the work; the final stack stays.
+  run close "$w2" --discard
+  rc_is 0
+  has "destroyed: $g"
+  eq "copy containers gone" "" "$(docker ps -aq --filter "label=com.docker.compose.project=$g")"
+  eq "copy volumes gone" "" "$(docker volume ls -q --filter "label=com.docker.compose.project=$g")"
+  eq "copy networks gone" "" "$(docker network ls -q --filter "label=com.docker.compose.project=$g")"
+  eq "copy images gone" "" "$(docker image ls -q --filter "label=com.docker.compose.project=$g")"
+  eq "final container still there" "$final_id" "$(docker ps -q --filter "name=^$REAL_FINAL-web$")"
+  local final="$REAL_FINAL"
+  real_cleanup
+  eq "final stack cleaned" "" "$(docker ps -aq --filter "label=com.docker.compose.project=$final")$(docker volume ls -q --filter "name=^$final")$(docker image ls -q "$final-web")"
 }
 
 test_prepush_reads_every_ref_before_the_scanner() {
@@ -416,17 +767,6 @@ test_a_merge_is_pushed() {
   commit_in "$c" m.txt m
   git -C "$c" merge -q --no-ff -m merge side >/dev/null 2>&1
   eq "post-merge pushed" "$(git -C "$c" rev-parse HEAD)" "$(remote_sha feat/sample-change)"
-}
-
-test_up_with_the_stack_down_uses_the_last_publication() {
-  fixture
-  docker_stub
-  run open "$W" app
-  OUT="$(cd "$R" && STACK_DOWN=1 PATH="$BASE/bin:$PATH" bash scripts/aiwp-cmds.sh up "$W/app" 2>&1)"
-  RC=$?
-  rc_is 0
-  has "rollback: app-web:rollback-latest (published-20260105-000001-abc1234)"
-  grep -q 'tag app-web:published-20260105-000001-abc1234 app-web:rollback-latest' "$DOCKER_LOG"; check "checkpoint from the published tag" $?
 }
 
 test_prepush_scans_against_the_remote_being_pushed_to() {
@@ -618,6 +958,11 @@ test_usage() {
   has "Usage: scripts/aiwp-cmds.sh"
   has "open <work> <repo>... [--branch <type>/<slug>] [--from-main]"
   has "gate, release, hotfix, hotfix-tag, hotfix-down, apply"
+  has "up <work>/<clone> [-- <docker compose options>...]"
+  has "down <work>/<clone>"
+  has "deploy <repo> [developer|main] [-- <docker compose options>...]"
+  has "rollback <repo> [-- <docker compose options>...]"
+  has "^agent_[0-9]{4}-[a-z0-9][a-z0-9-]*$"
   run
   rc_is 2
   run nope

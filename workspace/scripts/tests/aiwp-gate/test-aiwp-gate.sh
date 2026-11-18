@@ -16,6 +16,40 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 # The suite may run from a Claude Code session: phase 2 runs as in a terminal unless a test sets these itself.
 unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+# A fake docker first on PATH for every test: the merge destroys the clone's copy groups, and no test reaches the real
+# Docker. It records each call in DOCKER_LOG and answers from $DSTUB: containers/<project> (the compose folder; the
+# container is c-<project>) and res/<kind>.<project> (the lines of docker <kind> ls for that label).
+mkdir -p "$BASE/bin"
+export DOCKER_LOG="$BASE/docker.log" DSTUB="$BASE/dstub"
+cat >"$BASE/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >>"$DOCKER_LOG"
+label="com.docker.compose.project"
+case "$*" in
+  "version "*) [ -z "${DOCKER_DOWN:-}" ] || exit 1; echo 28.0 ;;
+  "ps -aq --filter label=$label="*) p="${4##*=}"; [ ! -f "$DSTUB/containers/$p" ] || echo "c-$p" ;;
+  "ps -aq --filter label=$label") for f in "$DSTUB"/containers/*; do [ -f "$f" ] && echo "c-${f##*/}"; done ;;
+  "inspect "*)
+    shift
+    sep=""
+    printf '['
+    for id in "$@"; do
+      p="${id#c-}"
+      printf '%s{"Id":"%s","Config":{"Labels":{"%s":"%s","%s.working_dir":"%s"}},"State":{"Running":true}}' \
+        "$sep" "$id" "$label" "$p" "$label" "$(cat "$DSTUB/containers/$p")"
+      sep=","
+    done
+    printf ']\n'
+    ;;
+  "network ls --filter label=$label="* | "volume ls --filter label=$label="* | "image ls --filter label=$label="*)
+    p="${4#label="$label"=}"
+    [ ! -f "$DSTUB/res/$1.$p" ] || cat "$DSTUB/res/$1.$p"
+    ;;
+esac
+exit 0
+STUB
+chmod +x "$BASE/bin/docker"
+export PATH="$BASE/bin:$PATH"
 FAILED=0
 COUNT=0
 OUT=""
@@ -45,7 +79,11 @@ fixture() {
   REMOTE="$BASE/remote.$CURRENT.git"
   rm -rf "$R" "$REMOTE"
   mkdir -p "$R/scripts/lib" "$R/projects" "$R/tmp" "$R/migrations"
-  cp "$SCRIPTS/aiwp-cmds.sh" "$SCRIPTS/aiwp-gate.sh" "$SCRIPTS/aiwp-project-state.sh" "$R/scripts/"
+  cp "$SCRIPTS/aiwp-cmds.sh" "$SCRIPTS/aiwp-gate.sh" "$SCRIPTS/aiwp-project-state.sh" "$SCRIPTS/agent-copy.py" "$R/scripts/"
+  rm -rf "$DSTUB"
+  mkdir -p "$DSTUB/containers" "$DSTUB/res"
+  : >"$DOCKER_LOG"
+  unset DOCKER_DOWN
   cp "$SCRIPTS/lib/projects.sh" "$R/scripts/lib/"
   printf '0.1.0\n' >"$R/VERSION"
   printf '# 0.1.0\n' >"$R/migrations/0.1.0.md"
@@ -136,6 +174,47 @@ test_gate_happy_path_then_merge() {
   RC=$?
   rc_is 0
   has "closed: tmp/work/$W"
+}
+
+test_merge_destroys_the_copy_groups_of_the_clone() {
+  fixture
+  local g=agent_1116-sample-change sha
+  commit_in feature.txt one
+  printf 'name: "%s-app"\n' "$g" >"$R/tmp/work/$W/agent-app.compose.yaml"
+  c >"$DSTUB/containers/$g"
+  echo /elsewhere >"$DSTUB/containers/agent_1116-other"
+  c >"$DSTUB/containers/app"
+  printf 'sha256:bbb %s-web:latest\n' "$g" >"$DSTUB/res/image.$g"
+  echo "${g}_data" >"$DSTUB/res/volume.$g"
+  echo "${g}-app_data" >"$DSTUB/res/volume.$g-app"
+  gate gate "$W/app" --test "test -f feature.txt"
+  rc_is 0
+  [ ! -s "$DOCKER_LOG" ]; check "phase 1 leaves Docker alone" $?
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  gate gate --merge "$W/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  has "destroyed: $g (1 containers, 0 networks, 1 volumes, 1 images)"
+  has "destroyed: $g-app (0 containers, 0 networks, 1 volumes, 0 images)"
+  has "kept: app (not a copy group)"
+  grep -qx "docker rm -f c-$g" "$DOCKER_LOG"; check "containers" $?
+  grep -qx "docker image rm $g-web:latest" "$DOCKER_LOG"; check "the group's images" $?
+  ! grep -q 'rm.*\(c-app\|other\)' "$DOCKER_LOG"; check "another project removed" $?
+  has "next: bash scripts/aiwp-cmds.sh close $W"
+}
+
+test_a_copy_that_cannot_be_destroyed_never_fails_the_merge() {
+  fixture
+  local sha
+  commit_in feature.txt one
+  gate gate "$W/app" --test "test -f feature.txt"
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  DOCKER_DOWN=1 gate gate --merge "$W/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  has "Docker: not reachable: nothing destroyed"
+  has "attention: a Docker copy group of $W/app was not destroyed"
+  eq "remote developer" "$sha" "$(remote_sha developer)"
 }
 
 test_gate_needs_tests_unless_docs_only() {
@@ -1594,7 +1673,7 @@ test_gate_merge_needs_the_persons_order_inside_claude_code() {
   [ -f "$R/tmp/work/$W/.gate-app" ]; check "the phase 1 record stays while refused" $?
 
   typed sess-1 "/merge $W/app"
-  grep -qE '^order	[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' "$orders"; check "the hook recorded the order" $?
+  grep -qE "^order	[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z	work	$W\$" "$orders"; check "the hook recorded the order and its work" $?
   in_session sess-1 gate --merge "$W/app" "$sha"
   rc_is 0
   has "merged: $sha into developer"
@@ -1610,7 +1689,7 @@ test_gate_merge_needs_the_persons_order_inside_claude_code() {
   sha="$(git -C "$R/tmp/work/$w2/app" rev-parse HEAD)"
   in_session sess-1 gate --merge "$w2/app" "$sha"
   rc_is 1
-  has "$refused: the last /merge took in the work $W; $w2 is another work"
+  has "$refused: the last /merge was for the work $W, not $w2/app"
   typed sess-1 "<command-message>merge</command-message>\\n<command-name>/merge</command-name>\\n<command-args></command-args>"
   in_session sess-1 gate --merge "$w2/app" "$sha"
   rc_is 0
@@ -1622,7 +1701,7 @@ test_gate_merge_needs_the_persons_order_inside_claude_code() {
   (cd "$R" && bash scripts/aiwp-cmds.sh open "$w3" app web --branch feat/two-repos >/dev/null 2>&1)
   checked "$w3" app three.txt
   checked "$w3" web three.txt
-  typed sess-1 "/merge --main app"
+  typed sess-1 "/merge $w3"
   in_session sess-1 gate --merge "$w3/app" "$(git -C "$R/tmp/work/$w3/app" rev-parse HEAD)"
   rc_is 0
   in_session sess-1 gate --merge "$w3/web" "$(git -C "$R/tmp/work/$w3/web" rev-parse HEAD)"
@@ -1638,6 +1717,84 @@ test_gate_merge_needs_the_persons_order_inside_claude_code() {
   rc_is 0
   has "merged: $sha into developer"
   eq "nothing recorded outside Claude Code" 0 "$(grep -c "	$sha\$" "$orders")"
+}
+
+# The review finding on BR-13: an order the gate never used must not stay valid for any work, hours later.
+test_the_order_is_for_the_target_typed_and_expires() {
+  fixture
+  local refused="refused: the merge happens only when the person types /merge in this session" orders w2 sha2 sha
+  orders="$R/.history/merge-orders/sess-1"
+  w2="2026-11-18-other-change"
+  checked "$W" app one.txt
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  (cd "$R" && bash scripts/aiwp-cmds.sh open "$w2" app --branch feat/other-change >/dev/null 2>&1)
+  checked "$w2" app two.txt
+  sha2="$(git -C "$R/tmp/work/$w2/app" rev-parse HEAD)"
+  # A /merge of one work (declined or failed at phase 1) never merges another one.
+  typed sess-1 "/merge $w2/app"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused: the last /merge was for the work $w2, not $W/app"
+  eq "developer unchanged" "$(git -C "$R/projects/app" rev-parse developer)" "$(remote_sha developer)"
+  # The expanded form names it too.
+  typed sess-1 "<command-name>/merge</command-name>\\n<command-args>$w2</command-args>"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "the last /merge was for the work $w2"
+  # An argument that names no work or project is refused.
+  typed sess-1 "/merge the login fix"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused: the last /merge named neither a work nor a project"
+  # A release or hotfix order covers the repos of its project only.
+  typed sess-1 "/merge --hotfix acme"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused: the last /merge was for the project acme, not $W/app"
+  # An order older than 12 hours is spent.
+  printf 'order\t2026-01-01T00:00:00Z\twork\t%s\n' "$W" >>"$orders"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "$refused: the last /merge (2026-01-01T00:00:00Z) is older than 12 hours"
+  printf 'order\tnot-a-time\n' >>"$orders"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 1
+  has "is older than 12 hours"
+  # The work typed: merged.
+  typed sess-1 "/merge $W"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  # A project typed: the order lets its repo through (here phase 1 is stale, so the gate stops after the order).
+  typed sess-1 "/merge --main app"
+  in_session sess-1 gate --merge "$w2/app" "$sha2"
+  rc_is 1
+  has "developer moved after phase 1: run the gate again"
+}
+
+test_an_order_without_a_target_or_for_the_project_still_works() {
+  fixture
+  local sha
+  checked "$W" app one.txt
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  typed sess-1 "/merge"
+  grep -qE '^order	[0-9T:Z-]+$' "$R/.history/merge-orders/sess-1"; check "no target recorded" $?
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
+  # With no target, the first merge binds the order to its work.
+  (cd "$R" && bash scripts/aiwp-cmds.sh open 2026-11-18-other-change app --branch feat/other-change >/dev/null 2>&1)
+  checked 2026-11-18-other-change app two.txt
+  in_session sess-1 gate --merge 2026-11-18-other-change/app "$(git -C "$R/tmp/work/2026-11-18-other-change/app" rev-parse HEAD)"
+  rc_is 1
+  has "the last /merge took in the work $W; 2026-11-18-other-change is another work"
+  fixture
+  checked "$W" app one.txt
+  sha="$(git -C "$(c)" rev-parse HEAD)"
+  typed sess-1 "/merge --hotfix app"
+  in_session sess-1 gate --merge "$W/app" "$sha"
+  rc_is 0
+  has "merged: $sha into developer"
 }
 
 test_usage() {

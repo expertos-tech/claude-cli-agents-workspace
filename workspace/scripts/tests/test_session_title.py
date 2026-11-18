@@ -242,9 +242,39 @@ class MergeOrderTests(unittest.TestCase):
         lines = self.orders()
         self.assertEqual(len(lines), len(prompts))
         for line in lines:
-            self.assertRegex(line, r'^order\t\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
+            self.assertRegex(line, r'^order\t\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ(\t[a-z]+\t\S+)?$')
+        self.assertEqual(
+            [line.split('\t')[2:] for line in lines],
+            [[], ['work', '2026-11-18-fix'], ['main', 'acme'], ['hotfix', 'acme'], ['work', '2026-11-18-fix']],
+        )
         mode = os.stat(os.path.join(self.root, '.history', 'merge-orders', 's-1')).st_mode & 0o777
         self.assertEqual(mode, 0o600)
+
+    def test_the_target_typed_with_merge(self):
+        cases = {
+            '/merge': ('', ''),
+            '/merge   ': ('', ''),
+            '/merge 2026-11-18-a/api': ('work', '2026-11-18-a'),
+            '/merge 2026-11-18-add-export/': ('work', '2026-11-18-add-export'),
+            '/merge 2026-11-18-a/api.v2 and bump the version': ('work', '2026-11-18-a'),
+            '/merge --main acme/billing-api/': ('main', 'acme/billing-api'),
+            '/merge --hotfix acme the login fails': ('hotfix', 'acme'),
+            '/merge --main': ('text', '-'),
+            '/merge --main ../x': ('text', '-'),
+            '/merge --hotfix acme/../x': ('text', '-'),
+            '/merge please': ('text', '-'),
+            '/merge 2026-11-18-a/../b': ('text', '-'),
+            '/merge 26-11-18-a': ('text', '-'),
+            '<command-name>/merge</command-name>\n<command-args>2026-11-18-fix/app</command-args>': (
+                'work',
+                '2026-11-18-fix',
+            ),
+            '<command-name>/merge</command-name>\n<command-args></command-args>': ('', ''),
+            '<command-name>/merge</command-name>': ('', ''),
+            '<command-name>/merge</command-name><command-args>--main acme</command-args>': ('main', 'acme'),
+        }
+        for prompt, expected in cases.items():
+            self.assertEqual(title.merge_target(prompt), expected, prompt)
 
     def test_other_prompts_are_no_order(self):
         for prompt in (

@@ -20,10 +20,14 @@ that developer and the release until it is), with the order to tell the person. 
 either way. A message that runs /normalize-projects gets no warning.
 The merge order: a message that runs /merge (any form: /merge, /merge <work>/<clone>, /merge --main ..., /merge
 --hotfix ...), typed as is or in the expanded form Claude Code may pass (<command-name>/merge</command-name> first),
-appends the line "order<TAB><UTC time>" to the git-ignored .history/merge-orders/<session id>, in one write under a
-lock. Phase 2 of the gate (scripts/aiwp-gate.sh gate --merge) runs inside Claude Code only after such an order newer
-than the session's last merge, and appends its own "merged" line there. Only the person's prompt reaches this hook, so
-the model cannot give the order; text that only mentions /merge, or /mergex, is no order.
+appends the line "order<TAB><UTC time>[<TAB><kind><TAB><target>]" to the git-ignored .history/merge-orders/<session
+id>, in one write under a lock. The target is what the person typed: "work<TAB><work>" for /merge <work>[/<clone>],
+"main<TAB><project>" or "hotfix<TAB><project>" for /merge --main|--hotfix <project>, "text<TAB>-" for an argument
+that names neither (the gate refuses it); no argument, no target: the clone of the session, any work. Phase 2 of the
+gate (scripts/aiwp-gate.sh gate --merge) runs inside Claude Code only after such an order newer than the session's last
+merge, younger than its time limit, and for a clone of the target typed; it appends its own "merged" line there. Only
+the person's prompt reaches this hook, so the model cannot give the order; text that only mentions /merge, or /mergex,
+is no order.
 Any failure stays silent and the time is bounded (a capped walk, a state script with a deadline): the prompt always
 goes on.
 Usage: python3 -I session-title.py <workspace-root>   (hook JSON on stdin)
@@ -63,6 +67,10 @@ CLAIM_TTL_SECONDS = 12 * 3600
 # The person's order to merge: /merge as typed, or the expanded form of a slash command (its first <command-name>).
 MERGE_COMMAND = re.compile(r'^\s*/merge(?:\s|$)')
 COMMAND_NAME = re.compile(r'<command-name>\s*(\S*?)\s*</command-name>')
+COMMAND_ARGS = re.compile(r'<command-args>(.*?)</command-args>', re.S)
+# The target of a /merge: <work> or <work>/<clone>, or a project of projects/ after --main or --hotfix.
+MERGE_WORK = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*)(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?/?')
+MERGE_PROJECT = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*/?')
 # A session id names the file of its orders: a plain name only (the same pattern as scripts/aiwp-gate.sh).
 SESSION_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
 
@@ -213,15 +221,39 @@ def runs_merge(prompt):
     return bool(found) and prompt.lstrip().startswith('<command-') and found.group(1) == '/merge'
 
 
+def merge_target(prompt):
+    """Returns the target the person typed with /merge as (kind, value): ('work', <work>) for <work>[/<clone>],
+    ('main' or 'hotfix', <project>) for --main or --hotfix <project>, ('', '') for no argument (any work), and
+    ('text', '-') for an argument that names neither, which the gate refuses."""
+    if MERGE_COMMAND.match(prompt):
+        args = prompt.lstrip()[len('/merge') :]
+    else:
+        found = COMMAND_ARGS.search(prompt[:MAX_READ])
+        args = found.group(1) if found else ''
+    words = args.split()
+    if words and words[0] in ('--main', '--hotfix'):
+        project = words[1] if len(words) > 1 else ''
+        if MERGE_PROJECT.fullmatch(project) and '..' not in project.split('/'):
+            return words[0][2:], project.rstrip('/')
+        return 'text', '-'
+    if not words:
+        return '', ''
+    found = MERGE_WORK.fullmatch(words[0])
+    return ('work', found.group(1)) if found else ('text', '-')
+
+
 def record_merge_order(data, root):
-    """Appends 'order<TAB><UTC time>' to .history/merge-orders/<session id> when the prompt runs /merge: one write in
-    append mode, under a lock, never through a link. Returns True when it recorded the order."""
+    """Appends 'order<TAB><UTC time>[<TAB><kind><TAB><target>]' to .history/merge-orders/<session id> when the prompt
+    runs /merge (merge_target gives the target): one write in append mode, under a lock, never through a link. Returns
+    True when it recorded the order."""
     session_id = str(data.get('session_id') or '')
     if not runs_merge(data.get('prompt')) or not SESSION_ID.fullmatch(session_id):
         return False
     folder = os.path.join(root, '.history', 'merge-orders')
     os.makedirs(folder, exist_ok=True)
-    line = f'order\t{time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}\n'.encode()
+    kind, value = merge_target(data['prompt'])
+    target = f'\t{kind}\t{value}' if kind else ''
+    line = f'order\t{time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}{target}\n'.encode()
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
     descriptor = os.open(os.path.join(folder, session_id), flags, 0o600)
     try:

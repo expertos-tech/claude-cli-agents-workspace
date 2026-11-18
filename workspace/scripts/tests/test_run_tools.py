@@ -258,6 +258,7 @@ class RunToolsTestCase(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop('STORE_KEY', None)
+        os.environ.pop(rt.CUSTOM_DIR_VAR, None)
         self.fake = FakeCommands(self.root)
         self.commands = {'docker', 'make', 'go', 'npm'}
         for target, attr, value in (
@@ -875,6 +876,81 @@ class MoveTests(RunToolsTestCase):
         self.fake.calls.clear()
         self.quiet(rt.move_tool, self.root, self.tools()['acme-metrics'], GROUP)
         self.assertFalse(self.fake.called('network rm'))
+
+
+class CustomDirTests(RunToolsTestCase):
+    """AIWP_CUSTOM_DIR: the tools' configuration read from the custom/ of another workspace."""
+
+    def other(self):
+        """Makes another workspace's custom/ with the configuration of acme-web and acme-store, removes the root's,
+        points AIWP_CUSTOM_DIR at it and returns its path."""
+        installed = tempfile.TemporaryDirectory()
+        self.addCleanup(installed.cleanup)
+        other = os.path.join(os.path.realpath(installed.name), 'custom')
+        for relative, text in (('config/acme-web/users.json', '{}\n'), ('env/acme-store.env', 'STORE_KEY=k\n')):
+            os.makedirs(os.path.dirname(os.path.join(other, relative)), exist_ok=True)
+            Path(other, relative).write_text(text, encoding='utf-8')
+        os.remove(os.path.join(self.root, 'custom/config/acme-web/users.json'))
+        os.environ[rt.CUSTOM_DIR_VAR] = other
+        return other
+
+    def test_without_the_variable_the_root_custom(self):
+        self.assertEqual(rt.custom_dir(self.root), os.path.join(self.root, 'custom'))
+        self.assertEqual(rt.moved_source(self.root, f'{self.root}/custom/x'), f'{self.root}/custom/x')
+        self.assertEqual(self.tools()['acme-web']['services'][0]['moved_binds'], [])
+
+    def test_configuration_files_and_env_files_come_from_the_other_custom(self):
+        other = self.other()
+        web = self.tools()['acme-web']
+        self.assertEqual(web['missing'], [])
+        self.assertEqual(
+            web['services'][0]['moved_binds'],
+            [{'source': f'{other}/config/acme-web/users.json', 'target': '/c', 'read_only': False}],
+        )
+        self.assertEqual(self.tools()['acme-store']['missing'], [])
+        self.assertIn(f'{other}/env/acme-store.env', rt.env_args(self.root, ['acme-store', 'acme-web']))
+        self.assertEqual(rt.moved_source(self.root, f'{self.root}/tools/x'), f'{self.root}/tools/x')
+        self.assertEqual(rt.moved_source(self.root, f'{self.root}/custom'), other)
+
+    def test_what_the_other_custom_lacks_is_named_by_its_path(self):
+        other = self.other()
+        os.remove(os.path.join(other, 'config/acme-web/users.json'))
+        os.remove(os.path.join(other, 'env/acme-store.env'))
+        tools = self.tools()
+        self.assertEqual(
+            tools['acme-web']['missing'],
+            [f'configuration missing: {other}/config/acme-web/users.json (README of tools/acme-web)'],
+        )
+        self.assertIn(f'STORE_KEY in {other}/env/acme-store.env; create it', tools['acme-store']['missing'][0])
+
+    def test_a_variable_that_names_no_folder_is_refused(self):
+        os.environ[rt.CUSTOM_DIR_VAR] = os.path.join(self.root, 'nowhere')
+        with self.assertRaises(rt.Refused):
+            rt.custom_dir(self.root)
+        code, _, err = self.quiet(rt.main, [self.root, 'list'])
+        self.assertEqual(code, 1)
+        self.assertIn('AIWP_CUSTOM_DIR is not a folder', err)
+
+    def test_up_binds_the_other_configuration_through_an_override(self):
+        other = self.other()
+        self.fake.config_json['acme-web']['services']['web']['volumes'][0]['read_only'] = True
+        code, out, _ = self.quiet(rt.cmd_up, self.root, ['acme-web', 'acme-store'])
+        self.assertEqual(code, 0, out)
+        self.assertTrue(
+            self.fake.called(
+                rf'--env-file {other}/env/acme-store.env -f tools/compose.yaml -f {rt.OVERRIDE_FILE} up -d --build'
+            )
+        )
+        with open(os.path.join(self.root, rt.OVERRIDE_FILE), encoding='utf-8') as handle:
+            text = handle.read()
+        self.assertIn(f'source: "{other}/config/acme-web/users.json"', text)
+        self.assertIn('target: "/c"', text)
+        self.assertIn('read_only: true', text)
+        os.environ.pop(rt.CUSTOM_DIR_VAR)
+        self.write('custom/config/acme-web/users.json', '{}\n')
+        self.fake.calls.clear()
+        self.quiet(rt.cmd_up, self.root, ['acme-web'])
+        self.assertFalse(self.fake.called(rt.OVERRIDE_FILE))
 
 
 class UpDownTests(RunToolsTestCase):
