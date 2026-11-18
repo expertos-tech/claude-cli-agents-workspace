@@ -28,21 +28,24 @@ Commands:
         Runs the command (no shell) with the clone as the current folder, only when it is on run's list; anything else
         is refused, running nothing, with "not on run's list: run it as a plain command (the permission mode
         decides)". The list:
-        - git with no global option and one of: add commit status diff log show restore switch checkout branch merge
-          rebase (no -x/--exec, no -i) reset stash mv rm rev-parse ls-files blame cherry-pick revert fetch (a remote
-          by name, no --upload-pack/-u, no URL) grep (no -O) config (only --get, --get-all, --list, -l); an
-          --opt=value whose value reads as a command (; & | ` $( or a leading !) is refused. Never git push: the
-          hooks push, and push below;
+        - git with no global option and one of add commit status diff log show restore switch checkout branch merge
+          rebase reset stash mv rm rev-parse ls-files blame cherry-pick revert fetch grep config, each with its own
+          short list of options, matched exactly: an option off the list, an abbreviation of one on it, or a group of
+          short flags with a letter off the list is refused (so no --exec, -x or -i for rebase, no --upload-pack, no
+          -O for grep, no --output anywhere). fetch names a remote of the clone (git remote), never a path or URL;
+          config only reads (--get, --get-all, --list, -l). Never git push: the hooks push, and push below;
         - a script file of the clone: bash <file> [args], sh <file> [args], python3 <file> [args], with no option
           before the file; python3 -m pytest|unittest [args];
-        - the tools shellcheck shfmt ruff markdownlint-cli2 sha256sum wc diff cat head tail ls grep sed find mkdir
-          touch cp mv rm chmod; sed with no script file and no e, w, W, r or R command (nor an s flag e or w); find
-          with no -exec, -execdir, -ok, -okdir, -delete or -fprint*; rm, mv and chmod -R never on the clone itself.
+        - the tools shellcheck shfmt ruff markdownlint-cli2 sha256sum wc diff cat head tail ls grep find mkdir touch cp
+          mv rm chmod (no sed: edit with the editor or a script file); find with no -exec, -execdir, -ok, -okdir,
+          -delete or -fprint*; rm, mv and chmod -R never on the clone itself.
         Every argument, every value of --opt=value and every attached value of a short option (-t<dir>, -at<dir>)
         that names a path must resolve, symbolic links followed, inside the clone and outside its git dir (.git: its
         hooks and config); /dev/null is fine, ~ is not. When AIWP_TERMS_FILE is not set and this repository finds a
-        terms list, exports it, so tests/check.sh in the clone scans with the same list. What a script of the clone
-        does at run time is not seen.
+        terms list, exports it, so tests/check.sh in the clone scans with the same list.
+        Accepted limit: a script file run through bash, sh or python3 (or a config file a listed tool executes, such
+        as .markdownlint-cli2.cjs) does whatever it holds, a file that run's own commands wrote included; run checks
+        the command line, never what a script does. The terms scan of push and of the hooks still judges what leaves.
   push <work>[/<clone>]
         Pushes the branch now, exactly as the hooks do (what a failed automatic push left behind): the terms scan of
         what leaves runs first, in this script, then git push (never forced) through the clone's pre-push hook, which
@@ -86,7 +89,8 @@ part of any repository). They call this script by the absolute path it had when 
                              ref outside refs/heads/, and a push that is not a fast-forward (a force push: an amend or
                              a rebase of pushed commits). A deletion of another branch passes. Then it scans what
                              leaves, the commits the remote does not have (git ls-remote): every version of a file
-                             they add or change, and their messages, against the terms list (tests/lib/terms.sh, the
+                             they add or change, the paths of those files, their messages, and their author and
+                             committer names and e-mails, against the terms list (tests/lib/terms.sh, the
                              lookup of tests/check.sh --help). A match refuses the push and prints
                              <commit>:<path>:<line>:<text>; never paste those lines into an issue, a commit or a pull
                              request. AIWP_TERMS_FILE naming no file refuses; no terms list prints
@@ -247,23 +251,48 @@ cmd_open() {
 refused_args() {
   local clone="$1"
   shift
-  python3 -I - "$clone" "$(git -C "$clone" rev-parse --absolute-git-dir)" "$@" <<'PY'
+  python3 -I - "$clone" "$(git -C "$clone" rev-parse --absolute-git-dir)" "$(git -C "$clone" remote)" "$@" <<'PY'
 import os
-import re
 import sys
 
 NOT_LISTED = "not on run's list: run it as a plain command (the permission mode decides)"
-GIT_SUBCOMMANDS = {
-    "add", "commit", "status", "diff", "log", "show", "restore", "switch", "checkout", "branch", "merge", "rebase",
-    "reset", "stash", "mv", "rm", "rev-parse", "ls-files", "blame", "cherry-pick", "revert", "fetch", "grep", "config",
-}
 TOOLS = {
     "shellcheck", "shfmt", "ruff", "markdownlint-cli2", "sha256sum", "wc", "diff", "cat", "head", "tail", "ls", "grep",
-    "sed", "find", "mkdir", "touch", "cp", "mv", "rm", "chmod",
+    "find", "mkdir", "touch", "cp", "mv", "rm", "chmod",
 }
 FIND_ACTIONS = {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"}
-# A value that reads as shell code: a separator, a pipe, a substitution, or a leading ! (a git alias or helper).
-COMMANDISH = re.compile(r"[;&|`]|\$\(|^!")
+# The git subcommands of run and, for each, the options it may take, matched exactly (git accepts abbreviated long
+# options and grouped short flags, so nothing is matched by prefix): long flags, long options with a value (--opt=value
+# or --opt value), short flags, short options with a value (the last of a group: attached, or the next argument).
+FMT = {"--format", "--pretty"}
+READ = {"--stat", "--name-only", "--name-status", "--oneline", "--no-color", "--patch", "--shortstat", "--numstat"}
+GIT_OPTIONS = {
+    "add": ({"--all", "--update", "--intent-to-add", "--dry-run", "--verbose"}, set(), "AuNnv", ""),
+    "commit": ({"--amend", "--no-edit", "--allow-empty", "--all", "--quiet"}, {"--message", "--file", "--fixup"}, "aq", "mFC"),
+    "status": ({"--short", "--porcelain", "--branch"}, set(), "sb", ""),
+    "diff": (READ | {"--cached", "--staged", "--check"}, {"--diff-filter"}, "pw", "U"),
+    "show": (READ | {"--no-patch"}, FMT, "ps", ""),
+    "log": (READ | {"--graph", "--all", "--reverse", "--first-parent", "--no-merges", "--merges", "--decorate"},
+            FMT | {"--since", "--until", "--author", "--grep", "--max-count"}, "p", "n"),
+    "restore": ({"--staged", "--worktree"}, {"--source"}, "SW", "s"),
+    "switch": ({"--detach", "--quiet"}, {"--create"}, "q", "c"),
+    "checkout": ({"--quiet"}, set(), "q", "b"),
+    "branch": ({"--list", "--show-current", "--all", "--verbose", "--merged", "--no-merged"}, set(), "ladDv", ""),
+    "merge": ({"--no-edit", "--ff-only", "--no-ff", "--abort", "--continue", "--quiet"}, {"--message"}, "q", "m"),
+    "rebase": ({"--continue", "--abort", "--skip", "--quiet"}, {"--onto"}, "q", ""),
+    "reset": ({"--soft", "--mixed", "--hard", "--quiet"}, set(), "q", ""),
+    "stash": ({"--include-untracked", "--keep-index", "--quiet"}, {"--message"}, "uq", "m"),
+    "mv": ({"--force", "--dry-run", "--verbose"}, set(), "fnkv", ""),
+    "rm": ({"--cached", "--force", "--quiet", "--dry-run"}, set(), "rfqn", ""),
+    "rev-parse": ({"--short", "--abbrev-ref", "--show-toplevel", "--verify", "--quiet", "--symbolic-full-name"}, set(), "q", ""),
+    "ls-files": ({"--others", "--exclude-standard", "--cached", "--modified", "--deleted", "--stage"}, set(), "ocmdsz", ""),
+    "blame": (set(), set(), "w", "L"),
+    "cherry-pick": ({"--continue", "--abort", "--skip", "--no-commit", "--no-edit"}, set(), "n", ""),
+    "revert": ({"--continue", "--abort", "--skip", "--no-commit", "--no-edit"}, set(), "n", ""),
+    "fetch": ({"--prune", "--quiet"}, set(), "qp", ""),
+    "grep": (set(), set(), "nilcwEF", "e"),
+    "config": ({"--get", "--get-all", "--list"}, set(), "l", ""),
+}
 
 
 def resolve(clone, value):
@@ -301,131 +330,52 @@ def candidates(arg):
     return values
 
 
-def git_reason(args):
-    """Return why a git call is not allowed, or an empty string."""
-    if not args or args[0] not in GIT_SUBCOMMANDS:
-        return f"git {args[0] if args else ''}: {NOT_LISTED}".replace("git : ", "git: ")
-    sub, rest = args[0], args[1:]
-    for arg in rest:
-        if arg.startswith("--") and "=" in arg and COMMANDISH.search(arg.split("=", 1)[1]):
-            return f"git {sub} {arg}: an option value that reads as a command"
-    if sub == "rebase" and any(a.startswith(("-x", "-i", "--exec", "--interactive")) for a in rest):
-        return "git rebase -x/--exec runs commands and -i opens an editor: rebase without them"
-    if sub == "fetch":
-        for a in rest:
-            if a.startswith(("--upload-pack", "-u")) or "::" in a or "://" in a:
-                return f"git fetch {a}: fetch a remote of the clone by name, with no --upload-pack"
-    if sub == "grep" and any(a.startswith(("-O", "--open-files-in-pager")) for a in rest):
-        return "git grep -O opens files in a program"
-    if sub == "config":
-        reads = {"--get", "--get-all", "--list", "-l"}
-        if not any(a in reads for a in rest) or any(a.startswith("-") and a not in reads for a in rest):
-            return "git config: only --get, --get-all, --list or -l"
-    return ""
-
-
-def sed_script_reason(script):
-    """Return why a sed script is refused (an e, w, W, r or R command, or an s flag e or w), or an empty string."""
-    i, n = 0, len(script)
-
-    def skip_delimited(i, delim):
-        """Return the index after the next unescaped delim from i, or -1."""
-        while i < n:
-            if script[i] == "\\":
-                i += 2
-                continue
-            if script[i] == delim:
-                return i + 1
-            i += 1
-        return -1
-
-    while i < n:
-        c = script[i]
-        if c in " \t\n;{}!,":
-            i += 1
-        elif c.isdigit() or c in "$~+":
-            i += 1
-        elif c == "/":
-            i = skip_delimited(i + 1, "/")
-            if i < 0:
-                return "a sed script run cannot read"
-            while i < n and script[i] in "IM":
-                i += 1
-        elif c == "\\" and i + 1 < n:
-            i = skip_delimited(i + 2, script[i + 1])
-            if i < 0:
-                return "a sed script run cannot read"
-        elif c in "ewWrR":
-            return f"the sed command {c} runs a command or reads or writes a file"
-        elif c in "sy" and i + 1 < n:
-            delim = script[i + 1]
-            i = skip_delimited(i + 2, delim)
-            i = skip_delimited(i, delim) if i >= 0 else -1
-            if i < 0:
-                return "a sed script run cannot read"
-            flags = ""
-            while i < n and script[i] not in ";\n}":
-                flags += script[i]
-                i += 1
-            if c == "s" and ("e" in flags or "w" in flags):
-                return "the s flag e or w runs a command or writes a file"
-        elif c in "aic:btT#":
-            while i < n and script[i] != "\n" and not (c in "btT" and script[i] == ";"):
-                i += 1
-        else:
-            i += 1
-    return ""
-
-
-def sed_scripts(args):
-    """Return the scripts of a sed call as (index of the argument holding it, script), and why it is refused when it
-    reads a script file (an empty string otherwise)."""
-    scripts, positional, i = [], [], 0
+def git_positionals(sub, args):
+    """Return the arguments of a git subcommand that are not options, and why an option is not on its list."""
+    longs, long_values, shorts, short_values = GIT_OPTIONS[sub]
+    positional, i = [], 0
     while i < len(args):
-        a = args[i]
+        arg = args[i]
         i += 1
-        if a == "-" or not a.startswith("-"):
-            positional.append((i - 1, a))
-        elif a.startswith("--"):
-            name, eq, value = a.partition("=")
-            if name.startswith("--f"):
-                return [], "sed --file: give the script with -e, run cannot read a script file"
-            if name.startswith("--e"):
-                if eq:
-                    scripts.append((i - 1, value))
-                elif i < len(args):
-                    scripts.append((i, args[i]))
-                    i += 1
-            elif name.startswith("--l") and not eq:
-                i += 1
-        else:
-            for k, letter in enumerate(a[1:], start=1):
-                attached = a[k + 1 :]
-                if letter == "f":
-                    return [], "sed -f: give the script with -e, run cannot read a script file"
-                if letter == "e":
-                    if attached:
-                        scripts.append((i - 1, attached))
-                    elif i < len(args):
-                        scripts.append((i, args[i]))
-                        i += 1
+        if arg == "--":
+            return positional + args[i:], ""
+        if arg.startswith("--"):
+            name, eq, _ = arg.partition("=")
+            if name in longs and not eq:
+                continue
+            if name in long_values and (eq or i < len(args)):
+                i += 0 if eq else 1
+                continue
+            return [], f"git {sub} {arg}: not on run's list of options for git {sub}"
+        if arg.startswith("-") and arg != "-":
+            if sub in ("log", "show") and arg[1:].isdigit():
+                continue
+            for k, letter in enumerate(arg[1:], start=1):
+                if letter in short_values:
+                    i += 0 if arg[k + 1 :] or i >= len(args) else 1
                     break
-                if letter == "l":
-                    i += 0 if attached else 1
-                    break
-                if letter == "i":
-                    break
-    if not scripts and positional:
-        scripts.append(positional[0])
-    return scripts, ""
+                if letter not in shorts:
+                    return [], f"git {sub} {arg}: -{letter} is not on run's list of options for git {sub}"
+            continue
+        positional.append(arg)
+    return positional, ""
 
 
-def sed_reason(args):
-    """Return why a sed call is refused (a script file, or a script with e, w, W, r or R), or an empty string."""
-    scripts, why = sed_scripts(args)
-    for _, script in scripts:
-        why = why or sed_script_reason(script)
-    return why
+def git_reason(args, remotes):
+    """Return why a git call is not allowed (a subcommand or an option off run's list), or an empty string."""
+    if not args or args[0] not in GIT_OPTIONS:
+        return f"git {args[0] if args else ''}: {NOT_LISTED}"
+    sub, rest = args[0], args[1:]
+    positional, why = git_positionals(sub, rest)
+    if why:
+        return why
+    if sub == "fetch" and (not positional or positional[0] not in remotes):
+        return f"git fetch: name a remote of the clone ({', '.join(sorted(remotes)) or 'none'}), not a path or URL"
+    if sub == "rebase" and len(positional) > 1:
+        return "git rebase: one upstream ref at most"
+    if sub == "config" and not any(a in ("--get", "--get-all", "--list") or a == "-l" for a in rest):
+        return "git config: only --get, --get-all, --list or -l"
+    return ""
 
 
 def script_reason(clone, gitdirs, name, args):
@@ -441,17 +391,15 @@ def script_reason(clone, gitdirs, name, args):
     return ""
 
 
-def command_reason(clone, gitdirs, argv):
+def command_reason(clone, gitdirs, remotes, argv):
     """Return why the program of the command, or how it is called, is not on run's list, or an empty string."""
     name, rest = argv[0], argv[1:]
     if name == "git":
-        return git_reason(rest)
+        return git_reason(rest, remotes)
     if name in ("bash", "sh", "python3"):
         return script_reason(clone, gitdirs, name, rest)
     if name not in TOOLS:
         return f"{name}: {NOT_LISTED}"
-    if name == "sed":
-        return sed_reason(rest)
     if name == "find":
         hit = [a for a in rest if a in FIND_ACTIONS]
         return f"find {hit[0]} runs, deletes or writes: {NOT_LISTED}" if hit else ""
@@ -466,21 +414,19 @@ def command_reason(clone, gitdirs, argv):
 
 
 def main():
-    """Print each reason run refuses the command sys.argv[3:] in the clone sys.argv[1] (git dir sys.argv[2])."""
+    """Print each reason run refuses the command sys.argv[4:] in the clone sys.argv[1] (git dir sys.argv[2], remote
+    names sys.argv[3], one per line)."""
     clone = os.path.realpath(sys.argv[1])
     gitdirs = {os.path.realpath(sys.argv[2]), os.path.join(clone, ".git")}
-    argv = sys.argv[3:]
-    # A sed script is no path: sed_script_reason judges it.
-    scripts = {i + 1 for i, _ in sed_scripts(argv[1:])[0]} if argv[0] == "sed" else set()
-    for index, arg in enumerate(argv[1:], start=1):
-        if index in scripts:
-            continue
+    remotes = set(sys.argv[3].split())
+    argv = sys.argv[4:]
+    for arg in argv[1:]:
         for value in candidates(arg):
             why = path_reason(clone, gitdirs, value)
             if why:
                 print(f"  {arg}: {why}")
                 break
-    why = command_reason(clone, gitdirs, argv)
+    why = command_reason(clone, gitdirs, remotes, argv)
     if why:
         print(f"  {why}")
 
@@ -587,10 +533,10 @@ publish_tool() {
   echo "copy: workspace/tools/$tool"
   if [ -d "$custom" ]; then
     AIWP_CUSTOM_DIR="$custom" agent_copy up "$(work_group "$work")--$tool" "$dir" "$work_root/$work/agent-$tool.compose.yaml" \
-      ${args[@]+"${args[@]}"} --custom-root "$clone/workspace/custom" || rc=$?
+      ${args[@]+"${args[@]}"} --custom-root "$clone/workspace/custom" --allow-root "$clone" --allow-root "$custom" || rc=$?
   else
     echo "attention: $custom not found (AIWP_WORKSPACE): the copy runs without the installed configuration"
-    agent_copy up "$(work_group "$work")--$tool" "$dir" "$work_root/$work/agent-$tool.compose.yaml" || rc=$?
+    agent_copy up "$(work_group "$work")--$tool" "$dir" "$work_root/$work/agent-$tool.compose.yaml" --allow-root "$clone" || rc=$?
   fi
   return "$rc"
 }
@@ -762,10 +708,12 @@ cmd_autopush() {
 }
 
 # Scans what the revisions "<sha> --not <sha>..." bring for company terms: every version of a file their commits add
-# or change (merges against each parent), and their messages. Prints each match; returns 0 when none, 1 on a match, 2
-# when the scan failed.
+# or change (merges against each parent), the paths of those files (renames included: git log --no-renames lists the
+# new path), their messages, and their author and committer names and e-mails. A work clone never pushes a tag
+# (pre-push refuses refs/tags/*), so no tag message leaves. Prints each match; returns 0 when none, 1 on a match, 2 when
+# the scan failed.
 scan_commits() {
-  local clone="$1" patterns="$2" line commit="" meta path mode sha seen=" " rc found=0
+  local clone="$1" patterns="$2" line commit="" meta path mode sha seen=" " rc found=0 paths=""
   shift 2
   while IFS= read -r line; do
     case "$line" in
@@ -777,13 +725,20 @@ scan_commits() {
     path="${line#*$'\t'}"
     read -r _ mode _ sha _ <<<"$meta"
     [[ "$sha" =~ $zero_re ]] && continue
+    paths+="${commit:0:12} $path"$'\n'
     [ "$mode" != 160000 ] || continue
     case "$seen" in *" $sha "*) continue ;; esac
     seen+="$sha "
     rc=0
     git -C "$clone" cat-file blob "$sha" | terms_scan "$patterns" "${commit:0:12}:$path" || rc=$?
     case "$rc" in 0) ;; 1) found=1 ;; *) return 2 ;; esac
-  done < <(git -C "$clone" log --format='commit %H' --raw --no-abbrev --no-renames -m "$@")
+  done < <(git -C "$clone" -c core.quotePath=false log --format='commit %H' --raw --no-abbrev --no-renames -m "$@")
+  rc=0
+  printf '%s' "$paths" | terms_scan "$patterns" "path" || rc=$?
+  case "$rc" in 0) ;; 1) found=1 ;; *) return 2 ;; esac
+  rc=0
+  git -C "$clone" log --format='%h author %an <%ae> committer %cn <%ce>' "$@" | terms_scan "$patterns" "identity" || rc=$?
+  case "$rc" in 0) ;; 1) found=1 ;; *) return 2 ;; esac
   while IFS= read -r commit; do
     rc=0
     git -C "$clone" log -1 --format=%B "$commit" | terms_scan "$patterns" "${commit:0:12}:message" || rc=$?
@@ -820,7 +775,7 @@ scan_leaving() {
   case "$rc" in
     0) return 0 ;;
     1)
-      echo "caw-work: refused: the lines above hold a company term (<commit>:<path or message>:<line>:<text>); never paste them into an issue, a commit or a pull request. Rewrite the commits not on the remote without it (git commit --amend, or git reset --soft to the pushed commit and commit again), then push." >&2
+      echo "caw-work: refused: the lines above hold a company term (<commit>:<path>, <commit>:message, path or identity, then :<line>:<text>); never paste them into an issue, a commit or a pull request. Rewrite the commits not on the remote without it (git commit --amend, or git reset --soft to the pushed commit and commit again), then push." >&2
       return 1
       ;;
     *)

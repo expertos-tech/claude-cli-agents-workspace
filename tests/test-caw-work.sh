@@ -486,7 +486,6 @@ git config --unset caw.branch
 git config caw.branch
 git config --global --list
 git config --file x --list
-git log --format=%H;id
 git difftool
 git mergetool
 git archive --exec=x HEAD
@@ -548,6 +547,129 @@ curl example.com
 LIST
 }
 
+test_run_refuses_abbreviated_and_grouped_options() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  commit_in b.txt two
+  local m="$BASE/home" args
+  mkdir -p "$m"
+  # The forms the third review proved, each with a marker file that must never appear.
+  run run "$W" -- git rebase -q --exe "touch $m/p1" HEAD~1
+  rc_is 1
+  has "not on run's list of options for git rebase"
+  run run "$W" -- git rebase -qx "touch $m/p2" HEAD~1
+  rc_is 1
+  run run "$W" -- git rebase --inter HEAD~1
+  rc_is 1
+  run run "$W" -- git fetch --upl="sh -c \"touch $m/p3\" x" .
+  rc_is 1
+  run run "$W" -- git fetch .
+  rc_is 1
+  has "name a remote of the clone (origin)"
+  run run "$W" -- git grep --open="touch $m/p4" one
+  rc_is 1
+  run run "$W" -- git grep "-iOtouch $m/p5" one
+  rc_is 1
+  run run "$W" -- sed -n ":a;e touch $m/p6" README.md
+  rc_is 1
+  has "sed: not on run's list"
+  [ -z "$(ls -A "$m")" ]; check "no marker file" $?
+  eq "the branch is where it was" "$(remote_sha "heads/$B")" "$(git -C "$C" rev-parse HEAD)"
+  while IFS= read -r args; do
+    # shellcheck disable=SC2086  # each line is a command, split on purpose
+    run run "$W" -- $args </dev/null
+    [ "$RC" -eq 1 ]; check "refused: $args" $?
+  done <<'LIST'
+git rebase --exec=true HEAD~1
+git rebase --exe=true HEAD~1
+git rebase --ex=true HEAD~1
+git rebase -x true HEAD~1
+git rebase -xtrue HEAD~1
+git rebase -qxtrue HEAD~1
+git rebase -i HEAD~1
+git rebase -qi HEAD~1
+git rebase --interactive HEAD~1
+git rebase --i HEAD~1
+git rebase --root
+git rebase origin/developer HEAD~1
+git fetch --upload-pack=true origin
+git fetch --upload=true origin
+git fetch --u=true origin
+git fetch -u origin
+git fetch -qu origin
+git fetch ../x
+git fetch ext::sh
+git fetch https://example.com/x.git
+git fetch
+git grep -O one
+git grep -Otrue one
+git grep -nO one
+git grep -nOtrue one
+git grep --open-files-in-pager=true one
+git grep --open-files=true one
+git grep --o=true one
+git log --output=out
+git log --outp=out
+git diff --output=out
+git show --output=out
+git log --ext-diff
+git diff --ext-diff
+git log --textconv
+git commit -c HEAD
+git commit --reuse-message=HEAD
+git commit --no-verify -m x
+git commit -n -m x
+git merge -s ours origin/developer
+git merge --strategy=ours origin/developer
+git status --untracked-files=all
+git branch -m x
+git config --get-regexp x
+git config -lz
+git checkout -p
+git stash -p
+git add -p
+git add --patch
+LIST
+}
+
+test_terms_in_paths_and_identities_are_not_pushed() {
+  fixture
+  run open "$B"
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  # A term only in the name of a file.
+  printf 'clean\n' >"$C/acmecorp-notes.txt"
+  git -C "$C" add -- acmecorp-notes.txt
+  OUT="$(git -C "$C" commit -q -m "add notes" 2>&1)"
+  has "path:1:"
+  has "acmecorp-notes.txt"
+  has "NOT pushed"
+  eq "a term in a path is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  git -C "$C" reset -q --hard "$pushed"
+  # A term only in a renamed path.
+  commit_in plain.txt clean
+  pushed="$(remote_sha "heads/$B")"
+  eq "a clean commit is pushed" "$(git -C "$C" rev-parse HEAD)" "$pushed"
+  git -C "$C" mv plain.txt sub-acmecorp.txt
+  OUT="$(git -C "$C" commit -q -m "rename" 2>&1)"
+  has "sub-acmecorp.txt"
+  eq "a term in a renamed path is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  git -C "$C" reset -q --hard "$pushed"
+  # A term only in the author's e-mail, then only in the committer's name.
+  OUT="$(GIT_AUTHOR_EMAIL=dev@acmecorp.example git -C "$C" commit -q --allow-empty -m "clean" 2>&1)"
+  has "identity:1:"
+  has "NOT pushed"
+  eq "a term in an author e-mail is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  git -C "$C" reset -q --hard "$pushed"
+  OUT="$(GIT_COMMITTER_NAME="Acmecorp Bot" git -C "$C" commit -q --allow-empty -m "clean" 2>&1)"
+  has "identity:1:"
+  eq "a term in a committer name is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  git -C "$C" reset -q --hard "$pushed"
+  run push "$W"
+  rc_is 0
+}
+
 test_run_allows_its_list() {
   fixture
   run open "$B"
@@ -593,9 +715,6 @@ sha256sum README.md
 ls -la
 ls
 grep -n sample README.md
-sed -n 1p README.md
-sed -e s/sample/x/g README.md
-sed -n -e /sample/p README.md
 find . -name ok.sh
 mkdir -p sub/dir
 touch sub/dir/f
@@ -607,7 +726,6 @@ rm -r sub
 chmod +x ok.sh
 diff README.md README.md
 cp /dev/null empty.txt
-sed -i.bak s/sample/changed/ empty.txt
 LIST
   run run "$W" -- cp /dev/null "$C/abs.txt"
   rc_is 0
@@ -822,7 +940,7 @@ test_publish_routes_by_what_changed() {
   mkdir -p "$AIWP_WORKSPACE/custom/env" "$AIWP_WORKSPACE/custom/config/acme-tool"
   printf 'ACME_KEY=k\n' >"$AIWP_WORKSPACE/custom/env/acme-tool.env"
   tool_in_clone acme-tool 'services: {}'
-  printf '{"name":"acme-tool","services":{"web":{"build":{"context":"."},"container_name":"acme-tool","ports":[{"target":80,"published":"8080","protocol":"tcp"}],"volumes":[{"type":"bind","source":"%s/workspace/custom/config/acme-tool/users.json","target":"/c","read_only":true}]}}}\n' "$C" >"$DSTUB/config.json"
+  printf '{"name":"acme-tool","services":{"web":{"build":{"context":"%s/workspace/tools/acme-tool","dockerfile":"Dockerfile"},"container_name":"acme-tool","ports":[{"target":80,"published":"8080","protocol":"tcp"}],"volumes":[{"type":"bind","source":"%s/workspace/custom/config/acme-tool/users.json","target":"/c","read_only":true}]}}}\n' "$C" "$C" >"$DSTUB/config.json"
   local g ov
   g="$(printf 'agent_%s-sample-change--acme-tool' "$(date +%m%d)")"
   ov="$R/tmp/work/$W/agent-acme-tool.compose.yaml"
