@@ -291,7 +291,100 @@ test_claude_md_excludes_of_the_custom_layer_reach_the_settings() {
   rc_is 1
   has "out of sync: .claude/settings.json"
   run
-  cmp -s "$BASE/root/rules/agents/settings.json" "$BASE/root/.claude/settings.json"; check "plain copy again" $?
+  got="$(python3 -I -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["claudeMdExcludes"]))' "$BASE/root/.claude/settings.json")"
+  same "$got" "**/tmp/work/**" "only the source excludes again"
+  same "$(allow_rules)" "$(core_allow)" "core allow rules kept without the excludes"
+}
+
+# The allow rules setup-claude.sh adds to the generated settings, one per line, in order (BR-2 of autonomous-work).
+core_allow() {
+  printf '%s\n' 'Edit(/tmp/work/**)' 'Bash(bash scripts/aiwp-cmds.sh open *)' 'Bash(bash scripts/aiwp-cmds.sh status)' \
+    'Bash(bash scripts/aiwp-cmds.sh status *)' 'Bash(bash scripts/aiwp-cmds.sh push *)' 'Bash(bash scripts/aiwp-cmds.sh up *)' \
+    'Bash(bash scripts/aiwp-cmds.sh down *)'
+}
+# Checks that two texts are equal: got, want, description.
+same() { if [ "$1" = "$2" ]; then check "$3" 0; else check "$3: [$1]" 1; fi; }
+# Prints one key of permissions (allow by default) of the generated settings, one rule per line.
+allow_rules() {
+  python3 -I -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["permissions"].get(sys.argv[2], [])))' \
+    "$BASE/root/.claude/settings.json" "${1:-allow}"
+}
+
+test_core_allow_rules_added_once_to_an_empty_source() {
+  fixture
+  echo '{}' >"$BASE/root/rules/agents/settings.json"
+  run
+  rc_is 0
+  same "$(allow_rules)" "$(core_allow)" "exactly the core allow rules"
+  same "$(python3 -I -c 'import json,sys; print(sorted(json.load(open(sys.argv[1]))))' "$BASE/root/.claude/settings.json")" \
+    "['permissions']" "nothing else added"
+  run
+  rc_is 0
+  hasnt "written: .claude/settings.json"
+  same "$(allow_rules)" "$(core_allow)" "still once after a second run"
+  run --check
+  rc_is 0
+  hasnt "out of sync"
+}
+
+# The source's own allow rules come first; one equal to a core rule stays where it is and is not added again; deny,
+# ask and every other key are kept as they are, a deny equal to a core rule included (deny wins in Claude Code).
+test_core_allow_rules_after_the_source_without_duplicates() {
+  fixture
+  cat >"$BASE/root/rules/agents/settings.json" <<'JSON'
+{
+  "model": "opus",
+  "env": {"KEEP": "1"},
+  "claudeMdExcludes": ["**/tmp/work/**"],
+  "permissions": {
+    "allow": ["Bash(ls *)", "Bash(bash scripts/aiwp-cmds.sh push *)"],
+    "ask": ["Bash(git push *)"],
+    "deny": ["Edit(/tmp/work/**)", "Read(**/.env)"],
+    "defaultMode": "default"
+  },
+  "hooks": {"Stop": []}
+}
+JSON
+  run
+  rc_is 0
+  local want
+  want="$(printf '%s\n' 'Bash(ls *)' 'Bash(bash scripts/aiwp-cmds.sh push *)'; core_allow | grep -vxF 'Bash(bash scripts/aiwp-cmds.sh push *)')"
+  same "$(allow_rules)" "$want" "source first, core after, once"
+  same "$(allow_rules deny)" "$(printf '%s\n' 'Edit(/tmp/work/**)' 'Read(**/.env)')" "deny unchanged"
+  same "$(allow_rules ask)" "Bash(git push *)" "ask unchanged"
+  python3 -I - "$BASE/root/rules/agents/settings.json" "$BASE/root/.claude/settings.json" <<'PY_SAME'
+import json, sys
+source, generated = (json.load(open(path)) for path in sys.argv[1:3])
+generated['permissions'].pop('allow')
+source['permissions'].pop('allow')
+sys.exit(0 if source == generated else 1)
+PY_SAME
+  check "everything but allow unchanged" $?
+  run
+  hasnt "written: .claude/settings.json"
+  same "$(allow_rules)" "$want" "still once after a second run"
+  run --check
+  rc_is 0
+  hasnt "out of sync"
+}
+
+# A source the setup cannot read as settings is copied as it is, with a warning, and the setup still succeeds.
+test_core_allow_rules_with_an_unreadable_source() {
+  fixture
+  echo '{"permissions": ' >"$BASE/root/rules/agents/settings.json"
+  run
+  rc_is 0
+  has "warning: rules/agents/settings.json cannot be read"
+  has "warning: .claude/settings.json could not be generated"
+  hasnt "Traceback"
+  cmp -s "$BASE/root/rules/agents/settings.json" "$BASE/root/.claude/settings.json"; check "copied as it is" $?
+  run --check
+  rc_is 0
+  echo '[]' >"$BASE/root/rules/agents/settings.json"
+  run
+  rc_is 0
+  has "warning: rules/agents/settings.json is not a JSON object"
+  cmp -s "$BASE/root/rules/agents/settings.json" "$BASE/root/.claude/settings.json"; check "a list copied as it is" $?
 }
 
 test_custom_rules_copied_with_and_without_paths() {

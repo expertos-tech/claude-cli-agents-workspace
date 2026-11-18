@@ -16,7 +16,9 @@ Creates or syncs .claude/ (git-ignored) from rules/ and the custom layer (versio
                                 line of custom/claude-md-excludes.txt: instruction files a team keeps in a project,
                                 which the workspace must not load; one path or glob relative to the workspace root
                                 per line, inside projects/<repo>/ or custom/pocs/<poc>/ only, # and blank lines
-                                ignored, any other line skipped with a warning)
+                                ignored, any other line skipped with a warning; and, in its permissions.allow, after
+                                the source's own and never twice, the core allow rules: edits in tmp/work/ and the
+                                aiwp-cmds.sh commands open, status, push, up and down; deny and ask still win)
   rules/skills/<name>/**     -> .claude/skills/<name>/** (stale files removed)
   rules/*.md with `paths:`   -> .claude/rules/*.md    (path-scoped rules; a rule that loses its
                                 front matter or is deleted makes its copy stale)
@@ -47,6 +49,21 @@ Example:
   scripts/setup-claude.sh --check || scripts/setup-claude.sh
 USAGE
 }
+
+# The core allow rules, added to permissions.allow of every generated .claude/settings.json, after the source's own
+# and never twice: the autonomous work of /request edits its clone in tmp/work/ and runs the border commands of
+# aiwp-cmds.sh with no prompt. Generated here, not written in rules/agents/settings.json, so they are part of the
+# mandatory core that no configuration removes; a deny or ask rule still wins (Claude Code checks deny, ask, allow).
+# close stays out on purpose: a wildcard cannot leave out --discard.
+core_allow=(
+  "Edit(/tmp/work/**)"
+  "Bash(bash scripts/aiwp-cmds.sh open *)"
+  "Bash(bash scripts/aiwp-cmds.sh status)"
+  "Bash(bash scripts/aiwp-cmds.sh status *)"
+  "Bash(bash scripts/aiwp-cmds.sh push *)"
+  "Bash(bash scripts/aiwp-cmds.sh up *)"
+  "Bash(bash scripts/aiwp-cmds.sh down *)"
+)
 
 check=0
 quiet=0
@@ -315,17 +332,33 @@ for f in "$rules_dst"/custom-*.md; do
   fi
 done
 
-# Prints the settings with the claudeMdExcludes of custom/claude-md-excludes.txt added, as absolute patterns (the form
-# Claude Code matches), for the root as given and, when it differs, as resolved.
+# Prints the settings with the core allow rules added to permissions.allow and, when a file is given in $2, the
+# claudeMdExcludes of custom/claude-md-excludes.txt added, as absolute patterns (the form Claude Code matches), for the
+# root as given and, when it differs, as resolved.
 merged_settings() {
-  python3 -I - "$1" "$2" "$root" <<'PY_EXCLUDES'
+  python3 -I - "$1" "$2" "$root" "${core_allow[@]}" <<'PY_EXCLUDES'
 import json
 import os
 import sys
 
 settings_path, excludes_path, root = sys.argv[1:4]
-with open(settings_path, encoding='utf-8') as handle:
-    settings = json.load(handle)
+try:
+    with open(settings_path, encoding='utf-8') as handle:
+        settings = json.load(handle)
+except (OSError, ValueError) as error:
+    sys.exit(f'warning: rules/agents/settings.json cannot be read: {error}')
+if not isinstance(settings, dict):
+    sys.exit('warning: rules/agents/settings.json is not a JSON object')
+permissions = settings.get('permissions')
+if not isinstance(permissions, dict):
+    permissions = settings['permissions'] = {}
+allow = permissions.get('allow')
+allow = list(allow) if isinstance(allow, list) else []
+allow.extend(rule for rule in dict.fromkeys(sys.argv[4:]) if rule not in allow)
+permissions['allow'] = allow
+if not excludes_path:
+    print(json.dumps(settings, indent=2, ensure_ascii=False))
+    sys.exit(0)
 roots = [root] + ([os.path.realpath(root)] if os.path.realpath(root) != root else [])
 patterns = list(settings.get('claudeMdExcludes') or [])
 with open(excludes_path, encoding='utf-8') as handle:
@@ -355,16 +388,14 @@ PY_EXCLUDES
 if [ -f "$src/settings.json" ]; then
   settings_from="$src/settings.json"
   excludes_file="$root/custom/claude-md-excludes.txt"
-  if [ -f "$excludes_file" ] && [ ! -L "$excludes_file" ]; then
-    merged_file="$(mktemp)"
-    if merged_settings "$src/settings.json" "$excludes_file" >"$merged_file"; then
-      settings_from="$merged_file"
-    else
-      echo "warning: custom/claude-md-excludes.txt could not be merged into .claude/settings.json; copied without it" >&2
-    fi
+  [ -f "$excludes_file" ] && [ ! -L "$excludes_file" ] || excludes_file=""
+  merged_file="$stage/settings.json"
+  if merged_settings "$src/settings.json" "$excludes_file" >"$merged_file"; then
+    settings_from="$merged_file"
+  else
+    echo "warning: .claude/settings.json could not be generated with the core allow rules and custom/claude-md-excludes.txt; copied as it is" >&2
   fi
   sync_file "$settings_from" "$dst/settings.json"
-  [ -z "${merged_file:-}" ] || rm -f "$merged_file"
 fi
 
 # Installs a user-scope mod once: an existing copy or registration is never changed.
