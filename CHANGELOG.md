@@ -37,6 +37,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   "Run it alone"), a Docker copy per task in its own `agent_` group on internal networks, `/docker-deploy` for the
   final stack, the merge only on the person's order, and the merge review by three questions with a return review
   after fixes (decision record 0004).
+- Validators refuse only a closed list of hard rules; the rest is a warning shown once (closing board, `/merge`
+  summary, `/draft-request` with "Authorizations"); one review per merge, effort `medium` into `developer` and
+  `high` into `main`; the gate's non-secret checks, four asks of `guard-bash` and the copy's unsafe services become
+  warnings (decision record 0005).
 
 ### Added
 
@@ -67,6 +71,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   it and edits of `tmp/work/` with no prompt, so the one prompt of a task is the push of `developer`.
 - `/caw-pilot` and `/caw-docker-deploy`, the layers of `/pilot` and `/docker-deploy`.
 - The request `validators-warn-not-block`: validators block only real errors, the rest is a warning.
+- `.claude/rules/security.md` "Hard rules", mirrored from the product's, and "Warnings": a company term in what a
+  work clone pushes is a warning, the push waits, and `bash tests/caw-work.sh push <work> --accept-terms` (an ask
+  prompt: the owner's confirmation) records it in a private file next to the terms list and pushes; `check.sh`
+  repo-terms honours it, and a new term warns again.
 
 ### Changed
 
@@ -77,9 +85,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `/caw-prompt`), `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same purpose.
 - An approved plan is recorded as a pending request, no longer in `done/`.
 - Plans and requests are shown to the owner in their language and saved in English.
-- A merge into `developer` checks and reviews only the difference that enters, by the three questions, with the
-  effort by content (code and configuration `xhigh`, documents `high`) and a return review after fixes; a
-  RECOMMENDED finding becomes a `ready` request.
+- A merge into `developer` checks and reviews only the difference that enters, by the three questions, with effort
+  `medium` (`high` into `main`), the owner's authorizations in the brief, and a return review after the fixes of its
+  BLOCKERs; a WARNING never blocks and is listed once in the summary for the owner to decide. No independent review
+  runs during the stages of a request, hooks and security included; the closing board lists the stage's warnings.
 - Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
 - `/caw-merge --main` ends with the same final review as the product's: since the last tag, by the three questions.
 - `/caw-request` and `/caw-merge` no longer push the work branch by hand: the clone's hooks do; `/caw-commit` stages
