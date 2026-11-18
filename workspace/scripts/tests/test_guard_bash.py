@@ -1896,6 +1896,10 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' stop app',
             'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
             'docker compose -p ' + GROUP + ' restart', 'docker compose -p ' + GROUP + ' port app 80',
+            'docker compose -p ' + GROUP + ' up -d --build --wait --wait-timeout 60 --pull always --no-deps app',
+            'docker compose -p ' + GROUP + ' up --force-recreate --remove-orphans -t 5 --quiet-pull',
+            'docker compose -p ' + GROUP + ' build --no-cache --pull -q --progress plain app',
+            'docker compose -p ' + GROUP + ' exec db psql -U app -d app -c "DROP TABLE x"',
             'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' up -d',
             'docker volume rm ' + GROUP + '_db', 'docker volume rm -f ' + GROUP + '_db ' + WEB_GROUP + '_db',
             'docker volume inspect --format "{{.Mountpoint}}" ' + GROUP + '_db', 'docker rm -fv c1',
@@ -1920,6 +1924,15 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' run --rm -v billing-api_pgdata:/d app psql -c "DROP DATABASE x"',
             'docker compose -p ' + GROUP + ' exec --privileged db psql -c "DROP TABLE x"',
             'docker compose -p agent_1118-add-export-billing-web down -v',
+            'docker compose -p ' + GROUP + ' exec db psql -h prod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db psql postgresql://u@prod.example.com/app -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db dropdb -h prod.example.com app',
+            'docker compose -p ' + GROUP + ' exec db dropdb --host=prod.example.com app',
+            'docker compose -p ' + GROUP + ' exec db psql -hprod.example.com -c "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db psql "host=prod.example.com dbname=app" -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec db psql postgresql://prod.example.com/app -c "DROP TABLE x"',
+            'docker compose -p ' + GROUP + ' exec db sqlcmd -S prod.example.com -Q "DROP DATABASE x"',
+            'docker compose -p ' + GROUP + ' exec db sh -c "psql -h prod.example.com -c \'DROP DATABASE x\'"',
         ):  # fmt: skip
             self.assertEqual(self.decided(command), 'ask', command)
         self.assertEqual(self.decided('docker compose -p ' + GROUP + ' down -v', self.root), 'ask')
@@ -1949,6 +1962,9 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' down --rmi all',
             'docker compose -p ' + GROUP + ' down ../x', 'docker run --rm -v ./src:/s alpine ls',
             'docker create alpine', 'docker compose -p agent_1118-add-export-billing-web ps',
+            'docker compose -p ' + GROUP + ' build --ssh default', 'docker compose -p ' + GROUP + ' build --builder x',
+            'docker compose -p ' + GROUP + ' build --secret id=x', 'docker compose -p ' + GROUP + ' up --scale app=3',
+            'docker compose -p ' + GROUP + ' up ../x', 'docker compose -p ' + GROUP + ' build --push',
             'docker compose -p ' + GROUP + ' run --volume=$HOME:/h app ls',
             'docker compose -p ' + GROUP + ' --env-file /etc/x.env up',
             'docker compose -p ' + GROUP + ' exec app curl https://example.com',
@@ -1976,6 +1992,8 @@ class DockerGroupTests(TrailTestCase):
         self.assertEqual(guard.option_value(['-pX'], 0), ('-p', 'X', 1))
         self.assertEqual(guard.option_value(['--file'], 0), ('--file', '', 2))
         self.assertTrue(guard.inner_reaches_out(['app', 'ssh', 'host']))
+        self.assertFalse(guard.names_database_host(['app', 'curl', '-h']))
+        self.assertTrue(guard.names_database_host(['db', 'mysql', '--host', 'x']))
         self.assertFalse(guard.inner_reaches_out(['db', 'psql', '-c', 'select 1']))
         groups = guard.DockerGroups(self.root, self.run)
         self.assertFalse(groups.override('$X.yaml', self.clone, self.clone))
@@ -2003,6 +2021,7 @@ class ProtectedFolderTests(TrailTestCase):
             ('python3 -c "import shutil; shutil.rmtree(\'tools/observability/.data\')"', ''),
             ('rm -rf "$UNKNOWN/tools/observability/.data"', ''), ('ssh host rm -rf /srv/tools/observability/.data', ''),
             ('docker run --rm -v "$PWD/tools/observability/.data:/d" alpine rm -rf /d', ''),
+            ('docker run --rm --mount type=bind,source=/srv/tools/observability/.data,target=/d alpine rm -rf /d', ''),
             ('docker run --rm -v "$PWD/../../../../tools/observability/.data:/d" alpine rm -rf /d', 'clone'),
             ('docker compose -p ' + GROUP + ' run -dv ' + '../../../../tools/observability/.data:/g app ls', 'clone'),
             ('rm -rf ../../../../tools/observability/.data', 'clone'), ('rm -rf ../../../../tools', 'clone'),
@@ -2068,6 +2087,7 @@ class ProtectedFolderTests(TrailTestCase):
             ('bash -c "echo order >> .history/merge-orders/abc"', ''), ('find .history -name x -delete', ''),
             ('ls .history/merge-orders | xargs rm', ''), ('vim .history/merge-orders/abc', ''),
             ('docker run --rm -v "$PWD/.history/merge-orders:/m" alpine sh', ''),
+            ('docker run --rm --mount src=/srv/.history/merge-orders,dst=/d alpine touch /d/x', ''),
             ('echo order >> ../../../../.history/merge-orders/abc', 'clone'),
             ('npm test && echo order >> ../../../../.history/merge-orders/abc', 'clone'),
         ):  # fmt: skip
@@ -2091,7 +2111,11 @@ class ProtectedFolderTests(TrailTestCase):
             './scripts/session-title.py .', "python3 scripts/session-title?py . <<< '{}'",
             'python3 scripts/session-t*.py', 'python3 scripts/session-title.p[y]', 'python3 < scripts/session-title.py',
             'cat scripts/session-title.py | python3 -', 'python3 scripts/session-{title,x}.py', 'python3 scripts/s*',
-            'python3 scripts/s*e.py', 'cd scripts && python3 *-title.py', 'cat scripts/session-title.py',
+            'python3 scripts/s*e.py', 'cd scripts && python3 *-title.py', 'cat scripts/session-title.py > /tmp/x.py',
+            'python3 -c "$(cat scripts/session-title.py)"', 'python3 <(cat scripts/session-title.py)',
+            'head -c 9999 scripts/session-title.py | bash', 'grep -h . scripts/s* | python3 -',
+            'bash -c "cat scripts/session-title.py | python3 -"', 'mv scripts/session-title.py /tmp/x',
+            'echo > scripts/session-title.py',
         ):  # fmt: skip
             result = self.result(command, self.root)
             self.assertEqual(result and result['permissionDecision'], 'deny', command)
@@ -2101,6 +2125,9 @@ class ProtectedFolderTests(TrailTestCase):
         for command in (
             'cat .history/merge-orders/abc', 'ls .history/merge-orders', 'grep -r order .history/merge-orders',
             'git log -- scripts/session-title.py', 'find .history -name x', 'cat scripts/other.py',
+            'ls -la scripts/*.py', 'grep -n TODO scripts/*', 'wc -l scripts/*.py', 'less scripts/session-title.py',
+            'cat scripts/session-title.py', 'head -20 scripts/session-title.py > /dev/null',
+            'cat scripts/session-title.py | grep merge',
             'python3 scripts/prompt-log.py sync',
         ):  # fmt: skip
             self.assertNotEqual(self.decided(command, self.root), 'deny', command)

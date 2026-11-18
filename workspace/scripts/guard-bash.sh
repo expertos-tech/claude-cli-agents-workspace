@@ -30,9 +30,11 @@ mode (auto mode judges destruction); this hook holds only what the workspace nev
         CLAUDECODE or CLAUDE_CODE_SESSION_ID (VAR=x, export, declare, unset, read, printf -v, ${VAR:=x}, env -u,
         env -i, env -, exec -c); one that writes, moves, deletes or links a path under .history/merge-orders/ of the
         root, or a folder that holds it (a redirection, or any command but a reader such as cat, ls, grep; interpreter
-        code that names it; links resolved, from the folder the command runs in); and one that names
-        scripts/session-title.py, the UserPromptSubmit hook that records the order, in any word or redirection,
-        whatever reads it (python3 < it, cat it | python3 -, a wildcard or braces that match it; git reads aside).
+        code or a Docker mount (-v <it>:/d, --mount source=<it>,...) that names it; links resolved, from the folder
+        the command runs in); and one that may run, copy, move, link or write scripts/session-title.py, the
+        UserPromptSubmit hook that records the order, named in any word or redirection (a wildcard or braces that
+        match it too): any command but a reader; a reader (cat, less, ls, grep, wc) only when it writes its output to
+        a file or the line also runs a shell or an interpreter (cat it | python3 -, python3 -c "$(cat it)").
   ask   deleting a database: docker volume rm/prune, docker compose down -v / rm -v, docker system prune --volumes,
         docker rm -v; DROP or TRUNCATE given to a SQL client (psql, mysql, mariadb, sqlite3, sqlcmd, mongosh,
         duckdb); dropdb, mysqladmin drop, dotnet ef database drop, prisma migrate reset or db push --force-reset,
@@ -41,7 +43,7 @@ mode (auto mode judges destruction); this hook holds only what the workspace nev
   ask   deleting, moving or emptying tools/observability/.data of the root, Grafana's data, anything in it or a folder
         that holds it, whatever the rest of the line is and wherever it runs, an approved clone included: rm, rmdir,
         mv, shred, truncate, find -delete or -exec rm, rsync --delete, cp, dd, sed -i or a redirection into it, xargs
-        fed by a find, interpreter code, a Docker mount (-v <it>:/d) or ssh that names it.
+        fed by a find, interpreter code, a Docker mount (-v <it>:/d, --mount source=<it>,...) or ssh that names it.
   ask   scripts/aiwp-cmds.sh release, deploy (updates the final stack of a project from a branch), hotfix (pushes a
         fix to main), hotfix-tag (pushes a release tag), hotfix-down
         (merges main into developer and pushes it), checkpoint (pushes the checkpoint tags), developer --create (creates
@@ -102,13 +104,17 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
           (a double dash: a work slug never holds one) of that clone's work tmp/work/<yyyy-mm-dd>-<slug>/ (an existing
           clone folder), run from the clone with no docker global option and no DOCKER_* or COMPOSE_* variable on the
           line: docker compose -p <group> (or --project-name), -f naming only files of the clone or the copy's
-          override tmp/work/<work>/agent-<clone>.compose.yaml, with up, down (-v, --volumes, --remove-orphans, -t),
-          ps, logs, stop, start, restart, build (no --push), config, top, images, port, pause, unpause, or exec with
-          only -T -i -t -d -e -w -u --index (grouped short options read as docker does; a SQL client or dropdb it runs
-          in the container gets no question) and nothing remote in the container; docker rm, rmi, image rm, volume rm
+          override tmp/work/<work>/agent-<clone>.compose.yaml, with up (-d, --build, --no-build, --wait,
+          --wait-timeout, --force-recreate, --no-recreate, --remove-orphans, --no-deps, -t, --pull, --quiet-pull),
+          down (-v, --volumes, --remove-orphans, -t), build (--no-cache, --pull, -q, --progress), each with service
+          names, ps, logs, stop, start, restart, config, top, images, port, pause, unpause, or exec with only -T -i
+          -t -d -e -w -u --index (grouped short options read as docker does; a SQL client or dropdb it runs in the
+          container gets no question unless it names a host: -h, -H, -S, --host, user@host, host=, a URI with a
+          host) and nothing remote in the container; docker rm, rmi, image rm, volume rm
           or inspect, network rm of resources that all carry the label com.docker.compose.project=<group> (docker
           inspect, 5 s; Docker that does not answer, a resource with no label or of another group: today's rules).
-          docker compose run, create, cp, attach, watch, an unknown option and docker run are left to them.
+          docker compose run, create, cp, attach, watch, an option outside these lists (build --ssh, --secret,
+          --builder) and docker run are left to them.
         It stays silent when it cannot tell: a word with $ (a variable, a substitution) or ~, a brace expansion, a
         wildcard that may leave (a dot segment after it, a match that is a link out), a folder it does not know, two
         clones, a redirection with no command, a nested text it could not read.

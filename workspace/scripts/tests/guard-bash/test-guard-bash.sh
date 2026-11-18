@@ -38,6 +38,8 @@
 #  D31 own group: docker compose run/create, an unknown exec option, a clone group spelled with one dash -> not allowed;
 #      a session-title.py spelled with a wildcard or read by cat -> deny; a Docker mount of Grafana's data -> ask
 #                                                                              test_docker_group, test_protected_folders
+#  D32 exec of a SQL client that names a host -> ask; build --ssh -> not allowed; reading the hook -> silent;
+#      a --mount of Grafana's data (comma-separated) -> ask ................. test_docker_group, test_protected_folders
 #  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask  test_real_docker
 set -uo pipefail
 
@@ -210,6 +212,10 @@ STUB
   has "an exec of the own group with known options is allowed" '"permissionDecision": "allow"'
   hook_docker "docker compose -p ${group}-billing-api down -v" "$clone" "$root" "$stub"
   has "a clone group spelled with one dash is another work's group: it asks" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group exec db psql -h prod.example.com -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
+  has "a SQL client in the container that names a host asks" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group build --ssh default" "$clone" "$root" "$stub"
+  silent "build with an option outside the allowlist prints nothing"
   hook_docker "docker compose -p ${group}--billing-api down -v" "$clone" "$root" "$stub"
   has "the clone's own group, with a double dash, is allowed" '"permissionDecision": "allow"'
 
@@ -245,6 +251,10 @@ test_protected_folders() {
   has "a wildcard that matches the hook is refused" '"permissionDecision": "deny"'
   hook_in "cat scripts/session-title.py | python3 -" "$root" "$root"
   has "piping the hook into python3 is refused" '"permissionDecision": "deny"'
+  hook_in "grep -n TODO scripts/*" "$root" "$root"
+  silent "reading the hook prints nothing"
+  hook_in "docker run --rm --mount type=bind,source=$root/tools/observability/.data,target=/d alpine rm -rf /d" "$root" "$root"
+  has "a --mount of Grafana's data asks" '"permissionDecision": "ask"'
   # shellcheck disable=SC2016  # $PWD is text of the judged command line, not expanded here
   hook_in 'docker run --rm -v "$PWD/tools/observability/.data:/d" alpine rm -rf /d' "$root" "$root"
   has "a Docker mount of Grafana's data asks" '"permissionDecision": "ask"'

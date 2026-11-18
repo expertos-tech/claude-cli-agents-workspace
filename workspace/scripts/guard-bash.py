@@ -2282,12 +2282,12 @@ FIND_WRITES = ('-delete', '-fprint', '-fprint0', '-fprintf', '-fls') + FIND_ACTI
 # BR-9: Grafana's data, at the root of the workspace. BR-13: the person's merge orders, written only by the
 # UserPromptSubmit hook (scripts/session-title.py), read by scripts/aiwp-gate.sh with the session's variables.
 GRAFANA_DATA = os.path.join('tools', 'observability', '.data')
-GRAFANA_MARK = re.compile(r'(^|/)observability/\.data(/|:|$)')
+GRAFANA_MARK = re.compile(r'(^|[/=,])observability/\.data(/|:|,|$)')
 GRAFANA_REASON = (
     'it deletes, moves or empties tools/observability/.data, the data of Grafana (dashboards, users, settings)'
 )
 MERGE_ORDERS = os.path.join('.history', 'merge-orders')
-ORDERS_MARK = re.compile(r'(^|/)merge-orders(/|:|$)')
+ORDERS_MARK = re.compile(r'(^|[/=,])merge-orders(/|:|,|$)')
 ORDER_SCRIPT = 'session-title.py'
 SESSION_VARIABLES = {'CLAUDECODE', 'CLAUDE_CODE_SESSION_ID'}
 SESSION_WORD = re.compile(r'(?<![\w${])(CLAUDECODE|CLAUDE_CODE_SESSION_ID)(?!\w)')
@@ -2439,8 +2439,9 @@ def protected_hit(entry, root, relative, mark, every_word=False):
     """True when one command reaches a protected folder of the root (relative): it deletes, moves, empties or writes
     it, anything in it or a folder that holds it, by its paths (read from its folder, links resolved), by a
     redirection, by the files xargs hands it, or by interpreter code or a Docker mount that names it (mark, which
-    ends at /, : or the end of the word). every_word: any path a command other than a reader names inside the folder
-    counts too. A command that runs elsewhere (ssh, a container) is judged by the mark only."""
+    ends at /, :, a comma or the end of the word: -v <it>:/d, --mount source=<it>,target=/d). every_word: any
+    path a command other than a reader names inside the folder counts too. A command that runs elsewhere (ssh, a
+    container) is judged by the mark only."""
     argv, folder = entry['argv'], entry['folder']
     found = touches(argv, entry['redirects'])
     name = os.path.basename(argv[0])
@@ -2508,28 +2509,50 @@ def names_order_script(word, folder):
     return False
 
 
-def runs_order_script(entry, root):
-    """True when a command names scripts/session-title.py, the hook that records the person's /merge, in any word,
-    redirection or interpreter code, whatever reads it (python3 scripts/session-title.py, python3 < it, cat it |
-    python3 -, a copy of it, a wildcard or braces that match it). Only git commands that read are left alone."""
+# What runs text as code: a line that holds one may feed it what a reader printed (a pipe, $(...), <(...)).
+CODE_RUNNERS = SHELLS | {
+    'source', '.', 'eval', 'node', 'nodejs', 'deno', 'bun', 'perl', 'ruby', 'php', 'lua', 'Rscript', 'pwsh', 'tclsh',
+    'osascript',
+}  # fmt: skip
+
+
+def runs_code(argv):
+    """True when a command runs text as code: a shell, eval, source, or an interpreter (python3, node, perl...)."""
+    name = os.path.basename(argv[0])
+    return name in CODE_RUNNERS or name.startswith(('python', 'pypy'))
+
+
+def runs_order_script(entry, root, code_on_line=False):
+    """True when a command names scripts/session-title.py, the hook that records the person's /merge, in a word, a
+    redirection or interpreter code (also a wildcard or braces that match it) and may run, copy, move, link or write
+    it: any command but a reader (python3 it, python3 < it, cp it, ln, vim). A reader (cat, less, ls, grep, wc) is let
+    through unless it writes its output to a file or the line also runs code that may read that output (cat it |
+    python3 -, python3 -c "$(cat it)"). git commands that read are left alone."""
     argv = entry['argv']
-    parts = git_parts(argv) if os.path.basename(argv[0]) == 'git' else None
+    name = os.path.basename(argv[0])
+    parts = git_parts(argv) if name == 'git' else None
     if parts and git_reads(parts['sub'], parts['args']):
         return False
     folder = entry['folder'] if entry['folder'] is not None else root
     words = argv + code_tokens(argv) + [target for _, target in entry['redirects']]
     pieces = [piece for word in words for piece in (word, word.partition('=')[2]) if piece]
-    return any(names_order_script(piece, folder) for piece in pieces)
+    if not any(names_order_script(piece, folder) for piece in pieces):
+        return False
+    if name not in READERS:
+        return True
+    return code_on_line or any(found[0] == 'write' for found in touches([':'], entry['redirects']))
 
 
-def protection_verdict(entry, root):
+def protection_verdict(entry, root, code_on_line=False):
     """Returns ('deny', reason) for a command that gets around the person's merge order (BR-13): it changes the
     session's variables, writes .history/merge-orders/ or runs the hook that writes it; ('ask', reason) for one that
     deletes, moves or empties Grafana's data (BR-9), wherever it runs and whatever the rest of the line is; else
-    None."""
+    None. code_on_line: the line also runs code (a shell, an interpreter), which may read what a reader prints."""
     if session_change(entry):
         return 'deny', SESSION_REASON
-    if runs_order_script(entry, root) or protected_hit(entry, root, MERGE_ORDERS, ORDERS_MARK, every_word=True):
+    if runs_order_script(entry, root, code_on_line):
+        return 'deny', ORDERS_REASON
+    if protected_hit(entry, root, MERGE_ORDERS, ORDERS_MARK, every_word=True):
         return 'deny', ORDERS_REASON
     if protected_hit(entry, root, GRAFANA_DATA, GRAFANA_MARK):
         return 'ask', GRAFANA_REASON
@@ -2563,6 +2586,12 @@ COMPOSE_SUBCOMMANDS = {
 }  # fmt: skip
 # The options of docker compose down and exec it knows, without and with a value; any other is not approved.
 DOWN_OPTIONS = ({'-v', '--volumes', '--remove-orphans'}, {'-t', '--timeout'})
+UP_OPTIONS = (
+    {'-d', '--detach', '--build', '--no-build', '--wait', '--force-recreate', '--no-recreate', '--remove-orphans',
+     '--no-deps', '--quiet-pull'},
+    {'--wait-timeout', '-t', '--timeout', '--pull'},
+)  # fmt: skip
+BUILD_OPTIONS = ({'--no-cache', '--pull', '-q', '--quiet'}, {'--progress'})
 EXEC_OPTIONS = (
     {'-T', '-i', '-t', '-d', '--no-TTY', '--interactive', '--tty', '--detach'},
     {'-e', '--env', '-w', '--workdir', '-u', '--user', '--index'},
@@ -2641,17 +2670,37 @@ def pflag_operands(words, flags, values, interspersed=True):
     return operands
 
 
+# Database tools whose host a container of the group may point elsewhere, and how they name it.
+DATABASE_HOST_TOOLS = SQL_CLIENTS | {'dropdb', 'createdb', 'mysqladmin', 'pg_dump', 'pg_dumpall', 'pg_restore'}
+HOST_OPTIONS = ('-h', '-H', '-S', '--host', '--server')
+REMOTE_DATABASE = re.compile(r'@|host\s*=|://[^/]', re.I)
+
+
+def names_database_host(words):
+    """True when a database tool among the words names a host: -h, -H, -S, --host or --server in any spelling, or a
+    URI or conninfo with a user@host, host= or an authority (postgresql://prod/app)."""
+    if not any(os.path.basename(word) in DATABASE_HOST_TOOLS for word in words):
+        return False
+    for word in words:
+        option = word.partition('=')[0]
+        if option in HOST_OPTIONS or (not word.startswith('--') and word[:2] in HOST_OPTIONS):
+            return True
+        if REMOTE_DATABASE.search(word):
+            return True
+    return False
+
+
 def inner_reaches_out(words):
     """True when the command a container of the group runs reaches a remote system: a program of NOT_APPROVED other
-    than a SQL client, or a remote word (push, publish, deploy...)."""
-    if any(os.path.basename(word) in NOT_APPROVED - SQL_CLIENTS for word in words):
+    than a SQL client, a SQL client or dropdb that names a host, or a remote word (push, publish, deploy...)."""
+    if any(os.path.basename(word) in NOT_APPROVED - SQL_CLIENTS for word in words) or names_database_host(words):
         return True
     return any(w.partition(':')[0] in REMOTE_WORDS or w.startswith('publish') for w in plain_words(words))
 
 
 class DockerGroups:
     """Tells which Docker commands of a line act only on the task's own group (BR-8): docker compose -p <group> with
-    up, down (-v, --remove-orphans, -t), ps, logs, stop, start, restart, build, config, top, images, port, pause,
+    up, down or build with their known options, ps, logs, stop, start, restart, config, top, images, port, pause,
     unpause, or exec with its known options; and docker rm, rmi, image rm, volume rm or inspect, network rm of
     resources that all carry the compose label of that group. The command runs in a clone of tmp/work/, and the
     group is one of the work of that clone. The labels come from docker inspect under a short timeout; what it cannot
@@ -2716,8 +2765,9 @@ class DockerGroups:
         if sub == 'exec':
             operands = pflag_operands(rest, *EXEC_OPTIONS, interspersed=False)
             return bool(operands) and not inner_reaches_out(operands[1:])
-        if sub == 'down':
-            operands = pflag_operands(rest, *DOWN_OPTIONS)
+        if sub in ('down', 'up', 'build'):
+            known = {'down': DOWN_OPTIONS, 'up': UP_OPTIONS, 'build': BUILD_OPTIONS}[sub]
+            operands = pflag_operands(rest, *known)
             return operands is not None and all(RESOURCE_NAME.match(word) for word in operands)
         if any(a.startswith('--push') for a in rest):
             return False
@@ -2844,9 +2894,10 @@ def decide(data, root, run=subprocess.run):
     asks, asked, staging, created = [], set(), [], []
     core = CoreGuard(root, cwd, run, entries)
     docker = DockerGroups(root, run)
+    code = any('argv' in entry and runs_code(entry['argv']) for entry in entries)
     for entry in entries:
         verdict = None
-        guarded = None if 'reason' in entry else protection_verdict(entry, root)
+        guarded = None if 'reason' in entry else protection_verdict(entry, root, code)
         if 'reason' in entry:
             verdict = ('ask', entry['reason']) if GUARDED_WORD.search(command) else None
         elif os.path.basename(entry['argv'][0]) == 'git':
