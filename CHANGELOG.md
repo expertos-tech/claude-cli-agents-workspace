@@ -27,6 +27,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the repo is blocked until it is.
 - `/run-tools` and `tools/compose.yaml`: the local tools started by checkbox, the container ones in one compose group,
   their configuration from `custom/`.
+- The container consoles animate opening and closing a Compose group and the jobs panel; the menu switch is now
+  "Animations".
 
 ### Added
 
