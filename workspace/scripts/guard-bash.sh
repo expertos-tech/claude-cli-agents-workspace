@@ -104,23 +104,23 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
           (a double dash: a work slug never holds one) of that clone's work tmp/work/<yyyy-mm-dd>-<slug>/ (an existing
           clone folder), run from the clone with no docker global option and no DOCKER_* or COMPOSE_* variable on the
           line: docker compose -p <group> (or --project-name), -f naming only files of the clone or the copy's
-          override tmp/work/<work>/agent-<clone>.compose.yaml, with up (-d, --build, --no-build, --wait,
-          --wait-timeout, --force-recreate, --no-recreate, --remove-orphans, --no-deps, -t, --pull, --quiet-pull),
-          down (-v, --volumes, --remove-orphans, -t), build (--no-cache, --pull, -q, --progress), each with service
-          names, ps, logs, stop, start, restart, config, top, images, port, pause, unpause, or exec with only -T -i
-          -t -d -e -w -u --index (grouped short options read as docker does) into a service whose running
-          containers, by docker ps and docker inspect, are attached only to networks that are internal (no route
-          out) and carry the label of the group. Then anything runs there with no question (a shell, an
-          interpreter, a database tool and its DROP): it cannot reach another machine. A service that publishes
-          ports is also on the non-internal <group>_edge network, so exec there, Docker that does not answer, no
-          container, host or none networking keep today's rules; so does a container that reaches the host past its
-          networks: privileged, added capabilities, pid, ipc or uts "host", or a mount of a runtime socket
-          (docker.sock, containerd.sock, podman.sock, anything under /run or /var/run) or of the host's /;
+          override tmp/work/<work>/agent-<clone>.compose.yaml, with down (-v, --volumes, --remove-orphans, -t, service
+          names), ps, logs, stop, restart, config, top, images, port, pause, unpause, or exec with only -T -i -t -d
+          -e -w -u --index (grouped short options read as docker does) into a service whose running containers, by
+          docker ps and docker inspect, are attached only to networks that are internal (no route out), carry the
+          label of the group and keep the host's gateway out (gateway_mode_ipv4 and _ipv6 isolated, Docker 28+).
+          Then anything runs there with no question (a shell, an interpreter, a database tool and its DROP): it
+          cannot reach another machine. A service that publishes ports is also on the non-internal <group>_edge
+          network, so exec there, Docker that does not answer, no container, host or none networking keep today's
+          rules; so does a container that is not, by allowlist: not privileged, no added capabilities, no pid, ipc
+          or uts "host", no devices, no security options, and every mount a volume or a bind of a folder inside the
+          clone (not the clone itself, not its .git);
           docker rm, rmi, image rm, volume rm or inspect, network rm of resources that all carry the label
           com.docker.compose.project=<group> (docker inspect, 5 s; Docker that does not answer, a resource with no
           label or of another group: today's rules).
-          docker compose run, create, cp, attach, watch, an option outside these lists (build --ssh, --secret,
-          --builder) and docker run are left to them.
+          docker compose up, build, start, run, create, cp, attach, watch, an option outside these lists and docker
+          run are left to them: the copy starts only through scripts/aiwp-cmds.sh up <work>/<clone>, which writes
+          its override and refuses a service that is not safe.
         It stays silent when it cannot tell: a word with $ (a variable, a substitution) or ~, a brace expansion, a
         wildcard that may leave (a dot segment after it, a match that is a link out), a folder it does not know, two
         clones, a redirection with no command, a nested text it could not read.

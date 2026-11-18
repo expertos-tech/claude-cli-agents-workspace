@@ -1847,14 +1847,28 @@ LABEL = 'com.docker.compose.project'
 
 
 # Services of the group whose container reaches the host past its networks.
-HOST_REACHING = ('priv', 'caps', 'pid', 'ipc', 'uts', 'sock', 'run', 'varrun', 'root', 'badmount', 'nomounts')
+HOST_REACHING = (
+    'priv', 'caps', 'pid', 'ipc', 'uts', 'sock', 'run', 'varrun', 'root', 'badmount', 'nomounts', 'notype', 'tmpfs',
+    'dockercfg', 'colima', 'ssh', 'devices', 'seccomp', 'cloneroot', 'clonegit', 'gw',
+)  # fmt: skip
+HOME = os.path.expanduser('~')
 
 
-def box(*networks, privileged=False, capadd=None, pid='', ipc='private', uts='', mounts=()):
+def box(*networks, privileged=False, capadd=None, pid='', ipc='private', uts='', mounts=(), devices=(), opts=None):
     """Returns what docker container inspect prints of a container (guard.CONTAINER_FORMAT) on those networks."""
     found = {'networks': {name: {} for name in networks}, 'privileged': privileged, 'capadd': capadd, 'pid': pid}
     found.update({'ipc': ipc, 'uts': uts, 'mounts': list(mounts) if mounts is not None else None})
+    found.update({'devices': list(devices), 'securityopt': opts})
     return found
+
+
+def bind(source):
+    """Returns a bind mount of docker inspect."""
+    return {'Type': 'bind', 'Source': source}
+
+
+# What docker network inspect prints of a network of the group: internal, labeled, gateway kept out.
+ISOLATED = {'com.docker.network.bridge.gateway_mode_' + ip: 'isolated' for ip in ('ipv4', 'ipv6')}
 
 
 class TrailTestCase(unittest.TestCase):
@@ -1876,14 +1890,23 @@ class TrailTestCase(unittest.TestCase):
         'c-links': box('host'), 'c-priv': box(GROUP + '_internal', privileged=True),
         'c-caps': box(GROUP + '_internal', capadd=['SYS_ADMIN']), 'c-pid': box(GROUP + '_internal', pid='host'),
         'c-ipc': box(GROUP + '_internal', ipc='host'), 'c-uts': box(GROUP + '_internal', uts='host'),
-        'c-sock': box(GROUP + '_internal', mounts=[{'Source': '/srv/x/docker.sock'}]),
-        'c-run': box(GROUP + '_internal', mounts=[{'Source': '/run/containerd'}]),
-        'c-varrun': box(GROUP + '_internal', mounts=[{'Source': '/var/run'}]),
-        'c-root': box(GROUP + '_internal', mounts=[{'Source': '/'}]),
+        'c-sock': box(GROUP + '_internal', mounts=[bind('/srv/x/docker.sock')]),
+        'c-run': box(GROUP + '_internal', mounts=[bind('/run/containerd')]),
+        'c-varrun': box(GROUP + '_internal', mounts=[bind('/var/run')]),
+        'c-root': box(GROUP + '_internal', mounts=[bind('/')]),
+        'c-notype': box(GROUP + '_internal', mounts=[{'Source': '/var/lib/docker/volumes/x/_data'}]),
+        'c-tmpfs': box(GROUP + '_internal', mounts=[{'Type': 'tmpfs', 'Source': ''}]),
+        'c-dockercfg': box(GROUP + '_internal', mounts=[bind(HOME + '/.docker')]),
+        'c-colima': box(GROUP + '_internal', mounts=[bind(HOME + '/.colima')]),
+        'c-ssh': box(GROUP + '_internal', mounts=[bind(HOME + '/.ssh')]),
+        'c-devices': box(GROUP + '_internal', devices=[{'PathOnHost': '/dev/kvm'}]),
+        'c-seccomp': box(GROUP + '_internal', opts=['seccomp:unconfined']),
+        'c-gw': box(GROUP + '_gw'),
         'c-badmount': box(GROUP + '_internal', mounts=['x']), 'c-nomounts': box(GROUP + '_internal', mounts=None),
-        'c-data': box(GROUP + '_internal', mounts=[{'Source': '/var/lib/docker/volumes/x/_data'}]),
+        'c-data': box(GROUP + '_internal', mounts=[{'Type': 'volume', 'Source': '/var/lib/docker/volumes/x/_data'}]),
         'c-flat': 'null',
-        GROUP + '_internal': {'internal': True, 'labels': {LABEL: GROUP}},
+        GROUP + '_internal': {'internal': True, 'labels': {LABEL: GROUP}, 'options': ISOLATED},
+        GROUP + '_gw': {'internal': True, 'labels': {LABEL: GROUP}, 'options': {}},
         GROUP + '_edge': {'internal': False, 'labels': {LABEL: GROUP}},
         'other_internal': {'internal': True, 'labels': {LABEL: 'agent_1118-other'}},
         'host': {'internal': False, 'labels': {}},
@@ -1904,6 +1927,11 @@ class TrailTestCase(unittest.TestCase):
         Path(self.work, 'agent-billing-api.compose.yaml').write_text('services: {}\n', encoding='utf-8')
         Path(self.root, 'tools/observability/.data/grafana.db').write_text('x', encoding='utf-8')
         self.run = FakeRun({self.root: {}, self.clone: {}}, labels=dict(self.LABELS))
+        # Binds read against this clone: one of its folders is fine; the clone itself or its .git is not.
+        self.run.labels['ps:' + GROUP + '/srcbind'] = ['c-srcbind']
+        self.run.labels['c-srcbind'] = box(GROUP + '_internal', mounts=[bind(self.clone + '/src')])
+        self.run.labels['c-cloneroot'] = box(GROUP + '_internal', mounts=[bind(self.clone)])
+        self.run.labels['c-clonegit'] = box(GROUP + '_internal', mounts=[bind(self.clone + '/.git')])
 
     def result(self, command, cwd=None, run=None):
         """Returns the decision object of a command run in the clone (or cwd), or None when the hook stays silent."""
@@ -1921,9 +1949,10 @@ class DockerGroupTests(TrailTestCase):
 
     def test_the_own_group_is_allowed_with_no_question(self):
         for command in (
-            'docker compose -p ' + GROUP + ' down -v', 'docker compose --project-name ' + GROUP + ' up -d --build',
+            'docker compose -p ' + GROUP + ' down -v', 'docker compose --project-name ' + GROUP + ' logs app',
             'docker compose --project-name=' + WEB_GROUP + ' ps', 'docker compose -p' + GROUP + ' logs app',
-            'docker compose -p ' + GROUP + ' -f compose.yaml -f ../agent-billing-api.compose.yaml up -d',
+            'docker compose -p ' + GROUP + ' -f compose.yaml -f ../agent-billing-api.compose.yaml ps',
+            'docker compose -p ' + GROUP + ' exec srcbind ls /app',
             'docker compose --dry-run -p ' + GROUP + ' --env-file src/x.env down --remove-orphans -t 5 -v',
             'docker compose -p ' + GROUP + ' exec -T db psql -U app -c "DROP TABLE users"',
             'docker compose -p ' + GROUP + ' exec -it -e A=1 -w /app app pytest /app/tests',
@@ -1932,9 +1961,6 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' exec --index=2 --user=root app ls',
             'docker compose -p ' + GROUP + ' stop app',
             'docker compose -p ' + GROUP + ' restart', 'docker compose -p ' + GROUP + ' port app 80',
-            'docker compose -p ' + GROUP + ' up -d --build --wait --wait-timeout 60 --pull always --no-deps app',
-            'docker compose -p ' + GROUP + ' up --force-recreate --remove-orphans -t 5 --quiet-pull',
-            'docker compose -p ' + GROUP + ' build --no-cache --pull -q --progress plain app',
             'docker compose -p ' + GROUP + ' exec db psql -U app -d app -c "DROP TABLE x"',
             'docker compose -p ' + GROUP + ' exec app python3 -c "import os; print(os.environ)"',
             'docker compose -p ' + GROUP + ' exec app curl https://example.com',
@@ -1963,7 +1989,7 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' exec db PGHOST=prod.example.com dropdb app',
             'docker compose -p ' + GROUP + ' exec db timeout 5 dropdb app',
             'docker compose -p ' + GROUP + ' exec db sh -c "dropdb app && createdb app"',
-            'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' up -d',
+            'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' ps',
             'docker volume rm ' + GROUP + '_db', 'docker volume rm -f ' + GROUP + '_db ' + WEB_GROUP + '_db',
             'docker volume inspect --format "{{.Mountpoint}}" ' + GROUP + '_db', 'docker rm -fv c1',
             'docker container rm c1', 'docker rmi img', 'docker image rm --no-prune img', 'docker network rm net',
@@ -2023,6 +2049,9 @@ class DockerGroupTests(TrailTestCase):
             'docker compose -p ' + GROUP + ' run -v billing-api_pgdata:/d app ls',
             'docker compose -p ' + GROUP + ' run --rm -v ./src:/app/src app pytest',
             'docker compose -p ' + GROUP + ' create', 'docker compose -p ' + GROUP + ' attach app',
+            'docker compose --project-name ' + GROUP + ' up -d --build', 'docker compose -p ' + GROUP + ' up -d',
+            'docker compose -p ' + GROUP + ' build --no-cache app', 'docker compose -p ' + GROUP + ' start app',
+            'npm test && docker compose -p ' + GROUP + ' down -v && docker compose -p ' + GROUP + ' up -d',
             'docker compose -p ' + GROUP + ' watch', 'docker compose -p ' + GROUP + ' exec -itz app ls',
             'docker compose -p ' + GROUP + ' exec --privileged app sh',
             'docker compose -p ' + GROUP + ' exec -x app sh',
@@ -2059,17 +2088,17 @@ class DockerGroupTests(TrailTestCase):
         self.assertEqual(guard.option_value(['-pX'], 0), ('-p', 'X', 1))
         self.assertEqual(guard.option_value(['--file'], 0), ('--file', '', 2))
         groups = guard.DockerGroups(self.root, self.run)
-        self.assertTrue(groups.isolated(GROUP, 'app'))
-        self.assertFalse(groups.isolated(GROUP, '-x'))
+        self.assertTrue(groups.isolated(GROUP, 'app', self.clone))
+        self.assertFalse(groups.isolated(GROUP, '-x', self.clone))
         self.run.labels['ps:' + GROUP + '/odd'] = ['-c']
-        self.assertFalse(groups.isolated(GROUP, 'odd'))
+        self.assertFalse(groups.isolated(GROUP, 'odd', self.clone))
         self.run.labels['ps:' + GROUP + '/oddnet'] = ['c-oddnet']
         self.run.labels['c-oddnet'] = box('-n')
-        self.assertFalse(groups.isolated(GROUP, 'oddnet'))
+        self.assertFalse(groups.isolated(GROUP, 'oddnet', self.clone))
         self.run.labels['ps:' + GROUP + '/junk'] = ['c-junk']
         self.run.labels['c-junk'] = box(GROUP + '_junk')
         self.run.labels[GROUP + '_junk'] = '{not json'
-        self.assertFalse(groups.isolated(GROUP, 'junk'))
+        self.assertFalse(groups.isolated(GROUP, 'junk', self.clone))
         groups = guard.DockerGroups(self.root, self.run)
         self.assertFalse(groups.override('$X.yaml', self.clone, self.clone))
         self.assertFalse(groups.resources(['volume', 'rm', 'a b'], {GROUP}))

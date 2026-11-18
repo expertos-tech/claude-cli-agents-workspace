@@ -15,7 +15,7 @@ It allows, with no question, a line it can tell stays in one clone of tmp/work/<
 command runs there, every path it names (arguments and redirections, links resolved) stays there out of its .git and
 is no local secret file, nothing deletes that .git, and none reaches a remote system (a push, a publish, a deploy, ssh,
 curl, a cloud or cluster CLI, a global install). Docker only in the task's own group (agent_<MMDD>-<slug>[--<clone>]:
-an allowlist of docker compose subcommands, exec only into a container on internal networks of the group, resources
+an allowlist of docker compose subcommands, no up or build, exec only into a container on isolated networks, resources
 told by their compose label), where deleting a volume or a database asks nothing. SQL clients on the
 host and the workspace scripts are never allowed by it. Every deny and ask comes first; what it cannot tell stays
 silent.
@@ -2563,20 +2563,14 @@ GROUP_LABEL = 'com.docker.compose.project'
 OVERRIDE_FILE = re.compile(r'^agent-(.+)\.compose\.yaml$')
 INSPECT_TIMEOUT_SECONDS = 5
 COMPOSE_FLAGS = {'--dry-run', '--compatibility', '--all-resources', '--verbose'}
-# The docker compose subcommands allowed on the own group: they act on the containers its compose files define. run,
-# create, cp, attach, watch and the rest are left to the permission mode (run takes mounts and volumes on its line).
+# The docker compose subcommands allowed on the own group: they act on the containers the copy already has. up, build,
+# start, create, run, cp, attach, watch and the rest are left to the permission mode: a container starts only through
+# scripts/aiwp-cmds.sh up <work>/<clone>, which writes the copy's override and refuses a service that is not safe.
 COMPOSE_SUBCOMMANDS = {
-    'up', 'down', 'ps', 'logs', 'stop', 'start', 'restart', 'build', 'config', 'top', 'images', 'port', 'pause',
-    'unpause', 'exec',
+    'down', 'ps', 'logs', 'stop', 'restart', 'config', 'top', 'images', 'port', 'pause', 'unpause', 'exec',
 }  # fmt: skip
 # The options of docker compose down and exec it knows, without and with a value; any other is not approved.
 DOWN_OPTIONS = ({'-v', '--volumes', '--remove-orphans'}, {'-t', '--timeout'})
-UP_OPTIONS = (
-    {'-d', '--detach', '--build', '--no-build', '--wait', '--force-recreate', '--no-recreate', '--remove-orphans',
-     '--no-deps', '--quiet-pull'},
-    {'--wait-timeout', '-t', '--timeout', '--pull'},
-)  # fmt: skip
-BUILD_OPTIONS = ({'--no-cache', '--pull', '-q', '--quiet'}, {'--progress'})
 EXEC_OPTIONS = (
     {'-T', '-i', '-t', '-d', '--no-TTY', '--interactive', '--tty', '--detach'},
     {'-e', '--env', '-w', '--workdir', '-u', '--user', '--index'},
@@ -2657,46 +2651,52 @@ def pflag_operands(words, flags, values, interspersed=True):
 
 # The compose label that names the service of a container, and what docker network inspect prints of a network.
 SERVICE_LABEL = 'com.docker.compose.service'
-NETWORK_FORMAT = '{"internal":{{json .Internal}},"labels":{{json .Labels}}}'
+NETWORK_FORMAT = '{"internal":{{json .Internal}},"labels":{{json .Labels}},"options":{{json .Options}}}'
+# The bridge options that keep the host's gateway out of an internal network (Docker 28 and later).
+ISOLATED_GATEWAY = ('com.docker.network.bridge.gateway_mode_ipv4', 'com.docker.network.bridge.gateway_mode_ipv6')
 # What docker container inspect prints of a container: its networks and what may reach the host past them.
 CONTAINER_FORMAT = (
     '{"networks":{{json .NetworkSettings.Networks}},"privileged":{{json .HostConfig.Privileged}},'
     '"capadd":{{json .HostConfig.CapAdd}},"pid":{{json .HostConfig.PidMode}},"ipc":{{json .HostConfig.IpcMode}},'
-    '"uts":{{json .HostConfig.UTSMode}},"mounts":{{json .Mounts}}}'
+    '"uts":{{json .HostConfig.UTSMode}},"devices":{{json .HostConfig.Devices}},'
+    '"securityopt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}}}'
 )
-# Sockets of a container runtime: a container that mounts one drives the host's containers.
-RUNTIME_SOCKETS = {'docker.sock', 'containerd.sock', 'podman.sock'}
 
 
-def reaches_host(container):
-    """True when a container (what CONTAINER_FORMAT prints) can reach the host past its networks: privileged, added
-    capabilities, the host's pid, ipc or uts namespace, or a mount of a runtime socket (docker.sock, containerd.sock,
-    podman.sock, anything under /run or /var/run) or of the host's root."""
+def reaches_host(container, clone):
+    """True when a container (what CONTAINER_FORMAT prints) may reach the host past its networks, read as an
+    allowlist: it must not be privileged, add capabilities, share the host's pid, ipc or uts namespace, have devices
+    or security options, and every mount must be a volume or a bind of a folder inside the clone, out of its .git
+    (stays_in) and not the clone itself. Anything else, or what cannot be read, reaches the host."""
     if container.get('privileged') is not False or container.get('capadd'):
         return True
     if any(container.get(key) == 'host' for key in ('pid', 'ipc', 'uts')):
+        return True
+    if container.get('devices') or container.get('securityopt'):
         return True
     mounts = container.get('mounts')
     if not isinstance(mounts, list):
         return True
     for mount in mounts:
-        source = os.path.normpath(str(mount.get('Source') or '')) if isinstance(mount, dict) else '/'
-        if source == '/' or os.path.basename(source) in RUNTIME_SOCKETS:
-            return True
-        if any(source == top or source.startswith(top + '/') for top in ('/run', '/var/run')):
+        kind = mount.get('Type') if isinstance(mount, dict) else None
+        source = str(mount.get('Source') or '') if isinstance(mount, dict) else ''
+        if kind == 'volume':
+            continue
+        inside = os.path.isabs(source) and stays_in(source, clone) and os.path.realpath(source) != clone
+        if kind != 'bind' or not inside:
             return True
     return False
 
 
 class DockerGroups:
     """Tells which Docker commands of a line act only on the task's own group (BR-8): docker compose -p <group> with
-    up, down or build with their known options, ps, logs, stop, start, restart, config, top, images, port, pause,
-    unpause, or exec with its known options; and docker rm, rmi, image rm, volume rm or inspect, network rm of
-    resources that all carry the compose label of that group. The command runs in a clone of tmp/work/, and the
-    group is one of the work of that clone. exec counts only when every network of the service's containers is
-    internal and of the group: then whatever it runs there (a shell, an interpreter, a database tool) cannot reach
-    another machine. The labels and networks come from docker inspect under a short timeout; what it cannot tell is
-    not its own. docker compose run, create, cp and docker run are never its own."""
+    down and its known options, ps, logs, stop, restart, config, top, images, port, pause, unpause, or exec with its
+    known options (never up, build, start, create or run: the copy starts only through aiwp-cmds.sh up); and docker
+    rm, rmi, image rm, volume rm or inspect, network rm of resources that all carry the compose label of that group.
+    The command runs in a clone of tmp/work/, and the group is one of the work of that clone. exec counts only when
+    the service's containers are isolated (isolated, reaches_host): then whatever it runs there (a shell, an
+    interpreter, a database tool) cannot reach another machine. The labels and networks come from docker inspect
+    under a short timeout; what it cannot tell is not its own."""
 
     def __init__(self, root, run):
         self.root, self.run, self.known = root, run, {}
@@ -2756,13 +2756,10 @@ class DockerGroups:
         if sub == 'exec':
             operands = pflag_operands(rest, *EXEC_OPTIONS, interspersed=False)
             single = len(set(projects)) == 1
-            return bool(operands) and single and self.isolated(projects[0], operands[0])
-        if sub in ('down', 'up', 'build'):
-            known = {'down': DOWN_OPTIONS, 'up': UP_OPTIONS, 'build': BUILD_OPTIONS}[sub]
-            operands = pflag_operands(rest, *known)
+            return bool(operands) and single and self.isolated(projects[0], operands[0], clone)
+        if sub == 'down':
+            operands = pflag_operands(rest, *DOWN_OPTIONS)
             return operands is not None and all(RESOURCE_NAME.match(word) for word in operands)
-        if any(a.startswith('--push') for a in rest):
-            return False
         return all(word_stays(word, folder, clone) for word in rest)
 
     def override(self, word, folder, clone):
@@ -2802,13 +2799,13 @@ class DockerGroups:
         labels = self.labels(kind, names) if names else None
         return labels is not None and all(found.get(GROUP_LABEL) in groups for found in labels)
 
-    def isolated(self, group, service):
+    def isolated(self, group, service, clone):
         """True when every running container of a service of the group is attached only to networks that are
-        internal (no route out of the machine) and carry the label of the group, as docker inspect says. A service
-        that publishes ports is also on a non-internal network (<group>_edge): not isolated. No container, Docker
-        that does not answer, a container with no network, host or none networking, or one that reaches the host
-        past its networks (reaches_host: privileged, capabilities, host namespaces, a runtime socket): not
-        isolated."""
+        internal (no route out of the machine), carry the label of the group and keep the host's gateway out
+        (gateway_mode_ipv4 and _ipv6 isolated), as docker inspect says. A service that publishes ports is also on a
+        non-internal network (<group>_edge): not isolated. No container, Docker that does not answer, a container
+        with no network, host or none networking, or one that may reach the host past its networks (reaches_host,
+        against the clone): not isolated."""
         if not RESOURCE_NAME.match(service):
             return False
         labels = ('label=' + GROUP_LABEL + '=' + group, 'label=' + SERVICE_LABEL + '=' + service)
@@ -2819,7 +2816,9 @@ class DockerGroups:
         if containers is None or not all(isinstance(found, dict) for found in containers):
             return False
         attached = [found.get('networks') for found in containers]
-        if any(reaches_host(found) for found in containers) or not all(isinstance(n, dict) and n for n in attached):
+        if any(reaches_host(found, clone) for found in containers):
+            return False
+        if not all(isinstance(nets, dict) and nets for nets in attached):
             return False
         names = sorted({name for nets in attached for name in nets})
         if not all(RESOURCE_NAME.match(name) for name in names):
@@ -2828,7 +2827,10 @@ class DockerGroups:
         if networks is None or not all(isinstance(net, dict) for net in networks):
             return False
         return all(
-            net.get('internal') is True and (net.get('labels') or {}).get(GROUP_LABEL) == group for net in networks
+            net.get('internal') is True
+            and (net.get('labels') or {}).get(GROUP_LABEL) == group
+            and all((net.get('options') or {}).get(option) == 'isolated' for option in ISOLATED_GATEWAY)
+            for net in networks
         )
 
     def labels(self, kind, names):

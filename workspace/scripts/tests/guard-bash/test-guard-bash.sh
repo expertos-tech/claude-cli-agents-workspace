@@ -42,7 +42,8 @@
 #                                                                              test_docker_group, test_protected_folders
 #  D33 exec in a container of the own group whose networks are all internal and of the group -> allow, whatever it
 #      runs (psql -h <host>, sh -c); a container also on a non-internal network (<group>_edge) -> ask; the hook's
-#      reader in a pipe -> deny; a container that mounts docker.sock (or privileged...) -> ask
+#      reader in a pipe -> deny; a container that mounts docker.sock (or privileged...) or a network whose gateway is
+#      not isolated -> ask; compose up of the own group -> left to the permission mode
 #      .............................................. test_docker_group, test_protected_folders
 #  D30 real Docker (skipped when it does not answer): a volume of the own group -> allow, another -> ask; with
 #      alpine:3.20 present, exec into a container on an internal network -> allow, once also on an edge one -> ask
@@ -192,6 +193,7 @@ if [ "$1" = ps ]; then
     *service=db*) echo c-db ;;
     *service=web*) echo c-web ;;
     *service=sock*) echo c-sock ;;
+    *service=gw*) echo c-gw ;;
   esac
   exit 0
 fi
@@ -200,13 +202,17 @@ for name in "$@"; do
   case "$name" in
     agent_1118-add-export_db) echo '{"com.docker.compose.project":"agent_1118-add-export"}' ;;
     other_db) echo '{"com.docker.compose.project":"agent_1118-other"}' ;;
+    c-gw) echo '{"networks":{"agent_1118-add-export_gw":{}},"privileged":false,"capadd":null,"mounts":[]}' ;;
     c-db) echo '{"networks":{"agent_1118-add-export_internal":{}},"privileged":false,"capadd":null,"mounts":[]}' ;;
     c-sock) echo '{"networks":{"agent_1118-add-export_internal":{}},"privileged":false,"capadd":null,'\
 '"mounts":[{"Source":"/var/run/docker.sock"}]}' ;;
     c-web) echo '{"networks":{"agent_1118-add-export_internal":{},"agent_1118-add-export_edge":{}},'\
 '"privileged":false,"capadd":null,"mounts":[]}' ;;
     agent_1118-add-export_internal)
-      echo '{"internal":true,"labels":{"com.docker.compose.project":"agent_1118-add-export"}}' ;;
+      echo '{"internal":true,"labels":{"com.docker.compose.project":"agent_1118-add-export"},"options":'\
+'{"com.docker.network.bridge.gateway_mode_ipv4":"isolated","com.docker.network.bridge.gateway_mode_ipv6":"isolated"}}' ;;
+    agent_1118-add-export_gw)
+      echo '{"internal":true,"labels":{"com.docker.compose.project":"agent_1118-add-export"},"options":{}}' ;;
     agent_1118-add-export_edge)
       echo '{"internal":false,"labels":{"com.docker.compose.project":"agent_1118-add-export"}}' ;;
     *) exit 1 ;;
@@ -244,6 +250,10 @@ STUB
   has "a container also on the edge network keeps the question" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group exec sock psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
   has "a container that mounts the Docker socket keeps the question" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group exec gw psql -c 'DROP DATABASE x'" "$clone" "$root" "$stub"
+  has "an internal network that does not isolate the gateway keeps the question" '"permissionDecision": "ask"'
+  hook_docker "docker compose -p $group up -d" "$clone" "$root" "$stub"
+  silent "up of the own group is left to the permission mode (only aiwp-cmds.sh up starts the copy)"
   hook_docker "docker compose -p $group exec db psql -c 'DROP DATABASE x'" "$clone" "$root" "$BASE/no-such-docker"
   has "exec with Docker that does not answer keeps the question" '"permissionDecision": "ask"'
   hook_docker "docker compose -p $group build --ssh default" "$clone" "$root" "$stub"
@@ -323,7 +333,9 @@ test_real_docker() {
     return 0
   fi
   local group="agent_1118-$id" box="guard-bash-test-$id"
-  docker network create --internal --label "com.docker.compose.project=$group" "${group}_internal" >/dev/null
+  docker network create --internal --label "com.docker.compose.project=$group" \
+    -o com.docker.network.bridge.gateway_mode_ipv4=isolated -o com.docker.network.bridge.gateway_mode_ipv6=isolated \
+    "${group}_internal" >/dev/null
   docker network create --label "com.docker.compose.project=$group" "${group}_edge" >/dev/null
   docker run -d --pull never --name "$box" --network "${group}_internal" --label "com.docker.compose.project=$group" \
     --label com.docker.compose.service=db alpine:3.20 sleep 120 >/dev/null
