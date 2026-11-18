@@ -511,6 +511,27 @@ class WarningTests(unittest.TestCase):
         self.assertEqual(found['hookSpecificOutput']['permissionDecision'], 'ask')
         warned(self, found['systemMessage'], 'aiwp-cmds.sh gate --untested', 'without running its tests')
 
+    def test_run_it_alone_shows_the_warnings_of_the_line(self):
+        # BR-4, AC-3: the refusal carries the WARNING of the other command, as a question does.
+        line = 'bash scripts/aiwp-cmds.sh release billing-api && bash scripts/aiwp-cmds.sh deploy billing-api'
+        found = printed(line, cwd=ROOT)
+        question(self, found['hookSpecificOutput'], True)
+        self.assertIn('release', found['hookSpecificOutput']['permissionDecisionReason'])
+        warned(self, found['systemMessage'], 'aiwp-cmds.sh deploy', 'updates the final stack')
+        # Every warning of the line, each once, in the order of the line.
+        found = printed(
+            'bash scripts/aiwp-cmds.sh checkpoint app && dropdb billing; bash scripts/aiwp-cmds.sh deploy a b', cwd=ROOT
+        )
+        question(self, found['hookSpecificOutput'], True)
+        lines = found['systemMessage'].split('\n')
+        self.assertEqual(len(lines), 2, lines)
+        warned(self, lines[0], 'aiwp-cmds.sh checkpoint', 'pushes them to the remote')
+        warned(self, lines[1], 'aiwp-cmds.sh deploy', 'updates the final stack')
+        # A "Run it alone" with no warned command prints no message.
+        found = printed('npm test && dropdb billing', cwd=ROOT)
+        question(self, found['hookSpecificOutput'], True)
+        self.assertNotIn('systemMessage', found)
+
     def test_help_and_the_plain_forms_stay_silent(self):
         for command in (
             'bash scripts/aiwp-cmds.sh deploy --help', 'bash scripts/aiwp-cmds.sh checkpoint --help',

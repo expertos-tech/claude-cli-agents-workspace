@@ -2982,7 +2982,8 @@ def decide(data, root, run=subprocess.run):
     denied instead, with "Run it alone:", so the question shows only what it asks about (a cd, pushd, popd or an
     assignment travels with the asked command). Warns, with no permission decision: aiwp-cmds.sh deploy, checkpoint,
     developer --create and gate --untested (a WARNING shown to the human; Claude Code's permission mode decides, and
-    a deny or an ask of the same line keeps its decision). Allows, with no question, a line it can tell stays in one
+    a deny or an ask of the same line keeps its decision; an ask or a "Run it alone" shows the line's warnings with
+    it). Allows, with no question, a line it can tell stays in one
     clone of tmp/work/ and reaches no remote system, Docker only in the task's own group (approval); never over a deny,
     an ask or a warning. The rest is left to Claude Code's own permission mode."""
     command = data['tool_input']['command']
@@ -3053,7 +3054,7 @@ def decide(data, root, run=subprocess.run):
         groups = {entry['group'] for entry in entries if not travels(entry)}
         # A command that runs a file the line wrote keeps the question: alone, in a later call, the file is not seen.
         if groups - asked and not shared.get('fed'):
-            emit('deny', alone_reason(asks))
+            emit('deny', alone_reason(asks), warnings)  # BR-4: the line's warnings travel with the refusal
         else:
             reasons = '; '.join(reason.rstrip('.') for reason in asks[:3])
             emit('ask', 'Confirm before running: ' + reasons + '.', warnings)
