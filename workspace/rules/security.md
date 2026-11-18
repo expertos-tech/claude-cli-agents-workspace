@@ -7,6 +7,29 @@ paths:
 
 # security.md
 
+## Hard rules
+
+The validators (the hooks, the gate, the reviews, the checks of the scripts) protect against mistakes, not against the human: the human owns the machine, and a destructive program, a security test or a tool that does what the human asked is not policed. What the human asks for, in the request or in the conversation, is the decision: a validator may warn about it once, never refuse it and never reopen it later.
+
+A hard refusal (a `deny`, a refusal of a hook or of the gate, a BLOCKER that stops a merge) exists only for this closed list. Each hook, the gate and `rules/review.md` refuse only what is here.
+
+| Hard rule | Why |
+| --- | --- |
+| A secret in clear (a key, a token, a password, a private key, a `.env` with values) committed, pushed or read into the session | Once it leaves the machine it must be rotated: nothing takes it back |
+| Deleting a remote repository, or rewriting or deleting published history (a force push to a shared branch; deleting `developer`, `main` or a tag on the remote) | Other clones, releases and installs depend on it, and it cannot be undone |
+| A git write in `projects/` or in the read-only core outside the gate; Terraform changing the cloud outside `aiwp-cmds.sh apply` | The gate and the apply are where the human sees what changes in a shared base or in real infrastructure |
+| A merge into a base without the human's order (`/merge` typed by the human) | What enters a base, and from there production, is the human's decision |
+| Deleting a database or Grafana's data (`tools/observability/.data`) without the human's confirmation | Data that is not code has no copy to come back to |
+| A change that does something nobody asked for and that cannot be undone (data deleted, a remote changed) | A mistake nobody can repair after it happens |
+
+## Warnings
+
+Everything else a validator finds is a warning, with a suggestion: a best practice, a hardening idea, a public IP in an `.env`, a company term in a public repository, an attack that needs someone writing code to escape the checks on purpose. The human decides; the work goes on. What would interrupt the work over and over (a question per command, a refusal per spelling, a review round per fix) is gathered and shown once: in the closing board of a wave, in the summary of `/merge`, or when a request is written (`/draft-request`). One format everywhere:
+
+```text
+WARNING: <what was seen> — <why it may be a problem> — <what the human can do>
+```
+
 ## Secrets
 
 - A leak is a secret that leaves the human's machine or lands where others read it: committed to git (any repo, any branch), or written in a versioned document, a log, a message, a report, a container image or Terraform state. A secret in the human's own local configuration (a git-ignored `.env`, `~/.config`, a keychain) is configuration, not a leak.

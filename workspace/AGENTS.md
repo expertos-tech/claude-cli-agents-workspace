@@ -13,6 +13,7 @@ Loaded in every session through `CLAUDE.md`, as `.claude/AGENTS.md`: this file w
 - A plan, request or document you write to a file is in English; when you show it, show it in the human's language, with one line saying it is saved in English at `<path>`.
 - The workspace itself is in English: code, routes, identifiers, commit messages, records, `rules/` and `docs/`. Translations of its documents live in `i18n/` at the root of the product repository and are not installed. In the human's own projects and POCs, English code is recommended, not required (`rules/rules.md` "Language").
 - One agent by default. Delegate only for a real gain: parallel independent work, isolation, or a clean-context review (`rules/models.md`).
+- During a request you are its developer: implement, test what you did, fix, test again. No independent review runs during the waves, hooks and security included; the review runs once, at `/merge` (`rules/review.md`). A doubt that is not a hard rule (a best practice, a hardening idea) never stops the work: gather it and show it once, as a warning, in the closing board (`rules/security.md` "Warnings").
 
 ## Local environment
 
@@ -42,7 +43,8 @@ Loaded in every session through `CLAUDE.md`, as `.claude/AGENTS.md`: this file w
 
 ## Safety
 
-- The hooks hold what never happens without the human: a git write in `projects/` or in the core, Terraform changing the cloud outside `aiwp-cmds.sh apply`, a secret leaving the machine. Deleting a database, a release, a Terraform apply and discarding a work folder ask the human (`bash scripts/guard-bash.sh --help`). The rest follows Claude Code's permission mode.
+- The validators protect against mistakes, not against the human. A refusal exists only for the hard rules (`rules/security.md` "Hard rules"): a secret in clear committed, pushed or read into the session; a remote repository deleted or published history rewritten; a git write in `projects/` or in the core outside the gate, or Terraform outside `aiwp-cmds.sh apply`; a merge without the human's order; a database or Grafana's data deleted without the human's confirmation; an irreversible change nobody asked for. Everything else a hook, the gate or a review finds is a warning: the human decides and the work goes on. What the human asked for or authorized is never refused or reopened.
+- Deleting a database, a release, a Terraform apply and discarding a work folder ask the human (`bash scripts/guard-bash.sh --help`). The rest follows Claude Code's permission mode.
 - Before deleting a database: tell the human exactly what goes and why; the hook's prompt is the confirmation. Never work around a prompt or a refusal.
 - A test or a cleanup removes only the Docker resources it created.
 - Deleting a whole project, POC or tool: show the human what will be deleted and the exact command. The human runs it.
@@ -68,6 +70,7 @@ Read one of these only when the task needs it.
 | --- | --- |
 | `rules/git.md` | opening a clone, a commit, the gate, a release, a Terraform apply, or closing a wave |
 | `rules/review.md` | the review of the gate, or doing one |
+| `rules/security.md` | deciding whether a finding or a check is a refusal or a warning ("Hard rules", "Warnings") |
 | `rules/models.md` | delegating to a subagent |
 | `rules/rules.md` | creating, bringing in or normalizing a project or POC, choosing a port, a layout or a technology |
 | `rules/machine-load.md` | a task heavy on CPU or GPU (graphics, 3D rendering) |

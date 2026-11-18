@@ -84,7 +84,7 @@ A request goes through three folders of `custom/requests/`, one per state of its
 - A request never moves while its waves run. `<project>` is the project the release names (`rules/rules.md` "Workspace projects"); a request that touched several projects gets one copy per project.
 - At each merge into `developer`, `/merge` appends to the request, after a `---`, `## Execution — <yyyy-mm-dd>, merged into developer at <sha>`: what was done by step with the commits, the decisions taken while running, the deviations from the request, the status of each acceptance criterion (proven: how; pending: what is missing; failed: why), the checks, and what is left. A request with no file gets one in `qa/<project>/` with a "Requested" section that sums up what the human asked.
 - `/merge --main` validates everything in `qa/<project>/` against what was done, and adds `Released in <project> vX.Y.Z` to each file it moves to `done/<project>/`.
-- There is no backlog: an idea is a pending request in state `idea`, in the adjustment size of `templates/request.md`. A RECOMMENDED finding of a review becomes a `ready` request.
+- There is no backlog: an idea is a pending request in state `idea`, in the adjustment size of `templates/request.md`. A warning of a review becomes a `ready` request when the human chooses it in the summary of `/merge`.
 - Commit and push of `custom/` by path, as in "Authorization".
 
 ## Commits

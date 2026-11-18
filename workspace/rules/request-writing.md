@@ -61,7 +61,7 @@ Every prompt says the reasoning effort each step asks for, so the human can set 
   | `medium` | work with a clear scope; the default |
   | `high` | the step itself does something where checking matters or edge cases are likely: security, personal data, money, permissions, a migration, concurrency, a destructive step, a bug in code that exists. A message, a confirmation or a screen around such an action is `medium` |
 
-- Never `xhigh` or `max` on your own: only when the user asks for it, in those words.
+- Never an effort above `high` on your own: only when the user asks for it, in those words.
 - `adjustment`: one line of the short form, `**Effort:** <level>`.
 - `feature` and `system`: a section "Steps and effort", after "Out of scope" and the optional sections, as a table `| Step | Effort | Why |`, one row per step, followed by this line, as written: "The subagents of each step run with the step's effort, passed in the call." One step only: one row. It does not count toward the size's ceiling.
 - The reason of a row is a few words about what the step changes (e.g. "clear scope", "touches personal data"), never a technical plan.
@@ -120,7 +120,7 @@ By size ("Size"). Right below the title, in every size: the line `**Project:** <
 - Every decided value carries `(assumed decision)`; in `feature` and `system` it also has its line in "Assumed decisions"; nothing of Flow step 3 "Also blocking" is decided.
 - Every `AC` is testable.
 - No infra size the ideas did not give: no volume, availability, latency or budget asked, decided or left pending.
-- The effort is there ("Effort"): the `**Effort:**` line in an `adjustment`, the "Steps and effort" table and its subagent line in the other sizes; no `xhigh` or `max` the user did not ask for.
+- The effort is there ("Effort"): the `**Effort:**` line in an `adjustment`, the "Steps and effort" table and its subagent line in the other sizes; no effort above `high` the user did not ask for.
 - The `**Project:**` line and then the development environment line are right below the title; a prompt that shows personal data says "open" or "masked", or carries that question in "Open questions".
 - No HOW decisions, no secrets, tokens, passwords or internal hostnames, no command lines (`/<command>`, `*<command>`).
 - `Destination`, when present, names an existing folder exactly, or says "new project" (with its folder in `projects/` when the user gave one; none: the workspace asks it, `rules/rules.md` "Workspace layout"), "POC" or "local tool".
