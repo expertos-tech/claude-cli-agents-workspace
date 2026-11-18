@@ -74,6 +74,7 @@ Done:       <what changed: commits (sha, title), branch pushed>
 Verified:   <command and result; each skip named>
 Left:       <next stages, with effort | /caw-merge | nothing>
 Pending:    <decisions for the owner, findings, refused push | none>
+Warnings:   <each one in the format of workspace/rules/security.md "Warnings", gathered during the stage | none>
 Request:    maintainers/requests/<file>.md | tmp/request.md | none
 ➜ Next: <the command to run, and where: /caw-merge from the clone, /caw-request <name>>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
