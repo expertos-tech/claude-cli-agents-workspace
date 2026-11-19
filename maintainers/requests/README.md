@@ -40,6 +40,9 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 | Round | Request | Notes |
 | --- | --- | --- |
+| 0 | `validators-follow-ups.md` | Review fixtures per hard rule, warnings with "Run it alone", the test installation from a work clone |
+| 0 | `warnings-board.md` | After `rules-as-product-layers`; the numbered warnings board, with risk levels, before the closing board and in the merge summary; product and maintenance |
+| 0 | `preferred-language.md` | After `rules-as-product-layers`; the reply language as the `language` setting, asked at install and by a root hook; design: `plans/preferred-language.md` |
 | 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
 | 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
@@ -80,6 +83,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/rules-as-product-layers.md` | this merge | All proven: AC-2 and AC-5 by headless runs, AC-4 by the table of its Execution block |
 | `qa/validators-warn-not-block.md` | this merge | AC-8, AC-9 proven; AC-1, AC-2 at script level; AC-3 to AC-6 by this merge's review and summary; AC-7 in part |
 | `qa/merge-versioned-changelog.md` | 8e01d75 | AC-1 to AC-3 pending (end-to-end run) |
 | `qa/autonomous-work.md` | this merge | AC-2, AC-4, AC-6 to AC-9, AC-14 proven; AC-1, AC-3, AC-5, AC-10 at script level, their session part pending; AC-11 to AC-13, AC-15 in part |

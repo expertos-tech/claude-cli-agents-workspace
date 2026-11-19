@@ -11,6 +11,20 @@
     "**/claude-cli-agents-workspace/.claude/worktrees/*/workspace/**",
     "**/claude-cli-agents-workspace/.claude/worktrees/*/tmp/**"
   ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I -B \"$CLAUDE_PROJECT_DIR/tests/caw-session-index.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Edit(/tmp/work/**)",

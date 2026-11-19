@@ -3,12 +3,13 @@
 English · [Português (Brasil)](../i18n/pt-BR/docs/maintenance.md) · [Español](../i18n/es/docs/maintenance.md)
 
 How this repository is maintained. A session opened at the repository root changes the product; it does not use it.
-The rules of that session are the root `CLAUDE.md` and `.claude/rules/`.
+The rules of that session are the root `CLAUDE.md` and `.claude/rules/`, six of which are layers over product rules
+("Rules").
 
 ## Maintain from the repository root
 
 - The product is `workspace/`. Its `AGENTS.md`, `CLAUDE.md`, `rules/`, skills, agents and hooks are code being edited,
-  never instructions for the maintenance session. `.claude/settings.json` keeps them out of context with
+  never instructions for the maintenance session, but through the layers ("Rules", "Skills"). `.claude/settings.json` keeps them out of context with
   `claudeMdExcludes`.
 - Start Claude Code at the repository root. Project settings are read from the folder the session starts in, so a
   session started inside `workspace/` misses the root's settings.
@@ -45,6 +46,27 @@ The work of the maintainers, in the open. Nothing there reaches an installed wor
 | `maintainers/requests/qa/` | Requests on `developer`, not released, each with the "Execution" block of every merge |
 | `maintainers/requests/done/` | Released requests |
 | `maintainers/reviews/` | Reports of independent reviews; created by the first one |
+
+## Rules
+
+`process.md` and `product.md` of `.claude/rules/` hold only maintenance rules. `security.md`, `review.md`, `models.md`,
+`git.md`, `docs.md` and `scripts.md` are layers over the product rule of the same name in `workspace/rules/`, which
+stays the one source: the first line of the body points at it (`@workspace/rules/<name>.md`: read in full from the
+root, whatever its `paths:`, as the session index defines a line that holds only `@<path>`), and three sections win
+over it: "Ignore from the product
+rule", "Mapping" (the product's names to this repository's: the human to the owner, `/merge` to `/caw-merge`,
+`custom/requests/` to `maintainers/requests/`) and "CAW rules" (what only this repository does: its rows of hard
+rules, the public repository, the company-term warning). A line the product rule gains reaches the maintenance with
+no copy to update. The product file is read rather than imported: `claudeMdExcludes` blocks an `@` import from
+`workspace/`, and a file with `paths:` does not load through an import. `tests/check.sh` fails on a rule with a product
+counterpart that is not a layer, a layer whose product rule is gone, and a layer that lacks a section.
+
+When to read each rule is the session index. The product keeps its own index in `workspace/AGENTS.md` "Reference"
+("read `rules/git.md` before a commit..."), loaded in every session of an installed workspace. Here one SessionStart
+hook, `tests/caw-session-index.py`, runs at the start of a session and after each compaction: it reads that section,
+applies `.claude/session-index.md` (the rules the maintenance leaves out, such as `quality.md`; the words that map,
+such as the gate to `/caw-merge`; the rows only this repository has) and gives the session a short list, one line per
+rule, with the task before which to read it. A row the product index gains reaches the maintenance with no change here.
 
 ## Skills
 
