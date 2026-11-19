@@ -64,6 +64,8 @@ aiwp
 
 Always at the workspace root, even to work on a project: that is where the rules and hooks apply. Recommended: Claude Code's auto mode. The workspace leaves to it the judgment of what is destructive and keeps in hooks only what must never happen. Claude replies in your preferred language, asked when the workspace is created (the Claude Code setting `language`), or else in the language you write in.
 
+A new workspace starts in the `assisted` mode: at the moments a newcomer usually gets the flow wrong (a push to `main`, a change straight in `projects/`, a long session), Claude shows a short box saying what is about to happen, why, and the workspace's way, then asks: continue, don't show this kind again in this session, or do it the better way. The boxes never change what is allowed. `/pilot auto` turns them off for good; `/pilot assisted` brings them back.
+
 ### 5. Ask
 
 ```text
@@ -115,7 +117,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/draft-request [ideas \| file]` | Turns your ideas into a request of the right size (adjustment, feature or system), with the effort of each step; asks only what blocks and saves it in `custom/requests/` |
 | `/request [name \| path]` | Runs a written request, gives the session the project's name, numbered; `/merge` moves it to qa, and the release to done |
 | `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows the rules, skills and agents a session loads and where each comes from; turns core ones off or on, replaces a core rule or adds your own, in `custom/rules-config.json` and `custom/my-rules/` (the mandatory core always loads); `lessons` proposes own rules from the tagged lessons |
-| `/pilot [auto\|manual]` | Shows or changes who runs the tests a human would run by hand: Claude (`auto`, the default) or you (`manual`) |
+| `/pilot [assisted\|auto\|manual]` | Shows or changes the mode: `assisted` (the default of a new workspace: Claude runs the tests a human would run by hand and explains the flow in short boxes), `auto` (the same, without the boxes) or `manual` (you run those tests, this session only); `assisted` and `auto` become your default |
 | `/local-env [folder]` | Creates or completes the filled `.env` from `.env.example`, without showing values: for `docker/`, `docker/sonar/` and a tool of `tools/`, in `custom/env/<name>.env` |
 | `/run-tools [--down [tool...]]` | Checkboxes with the local tools of this machine (observability, the simulators, the Azurite console, this machine's container console); starts the ones you tick, in one compose group, after saying what each one lacks; `--down` stops |
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lists the state of every project and POC; or analyses one (four analysts, a plan you approve, the language of its docs) and migrates it on a tested branch, with checkpoint tags, into `developer` and `main` |

@@ -130,3 +130,91 @@ The subagents of each stage run with the stage's effort, passed in the call. Sta
   board.
 - Open: an unknown value in the default file. Decided: `assisted`. Reason: the safe side for a newcomer.
 - Open: acceptance criteria. Decided: AC-1 to AC-10, derived from the BRs. Reason: the ideas bring only the rules.
+
+---
+
+## Execution — 2026-11-19, merged into developer at this merge
+
+### Done, by stage
+
+1. The mode and its default (BR-1 to BR-5), effort high: `scripts/pilot-mode.sh` reads and writes `.claude/pilot-mode`
+   and prints the start line; `release-notice.sh` prints it on startup, clear and compact, its existing entry widened
+   to those sources (no new hook entry); `aiwp update` writes `auto` for a core that predates the mode with history;
+   `/pilot assisted` (d762897, 0a6a50e).
+2. The boxes (BR-6 to BR-8, BR-10): `rules/assisted.md`, `quality.md` "Verification mode", the brief line of
+   `models.md`, README, `docs/usage.md`, `docs/overview.md` (4781501, 42149ee); the box held to one line per label and
+   the selection through the question tool, in a fixed order with English labels, after real sessions showed both
+   drifting (01b7efd, 84a3acd).
+3. The maintenance (BR-9): the root `CLAUDE.md` "Pilot mode" import, `.claude/assisted.md` (M1 to M6), `/caw-pilot`,
+   `.gitignore`, the `caw-layers` check of the new layer, `docs/maintenance.md` (ab3ce14, 536a865, 9488819).
+4. Proof in real sessions: a pty-driven interactive session and headless runs in test installations, and headless
+   runs at the root and in a work clone (below).
+- The fixes of the stage's warnings board: dfc0b11, 93247d7, 88bf581, 0add3cc, db85bf6. Changelogs: f63ca86. The fix
+  of the merge review's BLOCKER: 2737015.
+
+### Decisions taken while running
+
+- The check of stage 3 passed: a missing imported file is skipped silently and a present one is imported, so the root
+  learns its mode by the `CLAUDE.md` import (D-4, option A).
+- The owner answered `fix` to every warning of the stage's board (W-1 to W-5, below).
+- The start line comes from `release-notice.sh`; `/pilot` writes the default through `scripts/pilot-mode.sh`, because
+  the deny rule on `.claude/` blocks the Write tool there.
+
+### Deviations
+
+- Stage 1 had no independent review before it closed: `.claude/rules/process.md` (one review, at `/caw-merge`) wins
+  over the request; this merge's review covers it.
+- A session started in a work clone gets the root `CLAUDE.md` but not its import (Claude Code skips an import outside
+  the start folder): the existing start hook `tests/caw-session-index.py` gives the mode line there (W-5). D-4's
+  reason "the root stays hook-free" no longer held (the root already had two SessionStart hooks); no hook entry was
+  added.
+- `setup-claude.sh --quiet` now also runs on clear and compact (the shared entry): about 0.4 s each.
+- The aiwp suite is split into `aiwp`, `aiwp-update` and `aiwp-update-list` (W-2).
+
+### Acceptance criteria
+
+- AC-1: proven, interactive session on a pty of a test installation: start line `assisted`, `rules/assisted.md` read,
+  the Start box and the selection through the question tool, waiting; Continue goes on.
+- AC-2: proven, `pilot-mode.sh set auto` then a headless session: no box, `rules/assisted.md` never read or named.
+- AC-3: proven at script level (`set manual` refused, the file unchanged; suite `pilot-mode`); the skill never runs
+  the script for `manual`.
+- AC-4: proven by the aiwp scenarios (old core with history → `auto`, without → no file, a file kept, a fresh `new` →
+  no file, rollback then update → `assisted`) and `/caw-test-install` (no default file).
+- AC-5: proven: the Branches box with Continue, Don't show this again and Do it in a clone (interactive); with
+  Continue and the person's explicit go-ahead, the session ran the push and `guard-bash` refused it, nothing reached
+  the remote, and the Refusals box followed (headless). Without that go-ahead the agent itself declined the push.
+- AC-6: proven, interactive: "Don't show this again" on the Context box wrote `Assisted: muted Context`; a third
+  subject showed no Context box while the Branches box still showed; a new session showed the Context box again.
+- AC-7, AC-10: proven by the scenarios of the start hook (no file, `auto`, `assisted`, an unknown value, `/pilot`
+  turned off).
+- AC-8: proven, headless in a test installation in `assisted`: the session delegated to `code-explorer` with a brief
+  opening `VERIFICATION: auto` and nothing about boxes (the word `assisted` only inside the line the task searched for).
+- AC-9: proven, headless at a copy of the root: no file → the M1 box; ``Pilot mode: `auto`.`` → none; the file
+  git-ignored; also in a work clone through the hook line; `caw-layers` passes for `/caw-pilot` and
+  `.claude/assisted.md`.
+
+### Checks
+
+- `bash tests/check.sh --base origin/developer --i18n-pending`: PASS (translations pending; repo-terms SKIP, no terms
+  list on this machine). `/caw-test-install`: PASS, run again after the installer changes.
+
+### Warnings
+
+- Stage board: W-1 fix in 93247d7 (the pilot-mode commands in the product allow list, not the skill), W-2 fix in
+  88bf581 (the aiwp suite split: 43, 41 and 37 s), W-3 fix (AC-5 proven in a session, above), W-4 fix in 88bf581
+  (rollback keeps `assisted`), W-5 fix in dfc0b11 (the mode in a work clone). Found while fixing: `pilot-mode.sh set`
+  wrote into a linked folder, fixed in 0add3cc.
+- Merge board: W-1 fix (AC-8 proven in a session).
+
+### The merge review
+
+- `reviewer`, effort `medium`: REJECTED, one BLOCKER: `/caw-pilot` gave a session in a work clone the root's file as
+  `../../../.claude/pilot-mode.local.md`, which resolves to `<root>/tmp`; fixed in 2737015 (four levels up, the file
+  `tests/caw-session-index.py` reads). The return review, focused (`high`) and light (`medium`): both APPROVED, no
+  other place with the same defect, no regression of the fixes.
+- Its warning W-1 (AC-8 proven only by the rule text): the owner answered `fix`; proven in a session (above).
+
+### Left
+
+- The gate's suites total about 212 s, over the 3-minute budget; `developer` was already over it before this work.
+- After this merge, sessions at the root start in `assisted` until `/caw-pilot auto`.

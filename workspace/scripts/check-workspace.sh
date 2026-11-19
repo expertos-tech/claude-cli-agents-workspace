@@ -20,6 +20,9 @@ tests/aiwp-cmds/test-aiwp-cmds.sh
 tests/aiwp-gate/test-aiwp-gate.sh
 tests/aiwp-project-state/test-aiwp-project-state.sh
 tests/aiwp/test-aiwp.sh
+tests/aiwp-update/test-aiwp-update.sh
+tests/aiwp-update-list/test-aiwp-update-list.sh
+tests/pilot-mode/test-pilot-mode.sh
 tests/sync-env/test-sync-env.sh
 tests/run-tools/test-run-tools.sh
 tests/workspace-import/test-workspace-import.sh
@@ -522,7 +525,10 @@ suite_inputs() {
     tests/aiwp-cmds/test-aiwp-cmds.sh) echo "aiwp-cmds.sh agent-copy.py lib/projects.sh tests/aiwp-cmds tests/test_agent_copy.py" ;;
     tests/aiwp-gate/test-aiwp-gate.sh) echo "aiwp-gate.sh aiwp-cmds.sh agent-copy.py aiwp-project-state.sh lib/projects.sh tests/aiwp-gate" ;;
     tests/aiwp-project-state/test-aiwp-project-state.sh) echo "aiwp-project-state.sh lib/projects.sh tests/aiwp-project-state" ;;
-    tests/aiwp/test-aiwp.sh) echo "aiwp.sh release-notice.sh tests/aiwp ../rules/agents/settings.json" ;;
+    tests/aiwp/test-aiwp.sh) echo "aiwp.sh release-notice.sh pilot-mode.sh tests/aiwp ../rules/agents/settings.json" ;;
+    tests/aiwp-update/test-aiwp-update.sh) echo "aiwp.sh tests/aiwp/lib.sh tests/aiwp/fixture.sh tests/aiwp-update" ;;
+    tests/aiwp-update-list/test-aiwp-update-list.sh) echo "aiwp.sh tests/aiwp/lib.sh tests/aiwp/fixture.sh tests/aiwp-update-list" ;;
+    tests/pilot-mode/test-pilot-mode.sh) echo "pilot-mode.sh rules-config.py tests/pilot-mode ../rules/manifest.json" ;;
     tests/sync-env/test-sync-env.sh) echo "sync-env.sh lib/env.sh tests/sync-env" ;;
     tests/run-tools/test-run-tools.sh) echo "run-tools.sh run-tools.py tests/run-tools tests/test_run_tools.py ../tools/compose.yaml ../tools/observability/compose.yaml ../tools/login-simulator/compose.yaml ../tools/safe-browsing-simulator/compose.yaml ../tools/azurite-console/compose.yaml" ;;
     tests/workspace-import/test-workspace-import.sh) echo "workspace-import.py prompt-log.py aiwp-cmds.sh aiwp-gate.sh lib/projects.sh tests/workspace-import tests/test_workspace_import.py" ;;

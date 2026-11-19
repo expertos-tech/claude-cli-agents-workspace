@@ -2,6 +2,8 @@
 # Personal Claude Code settings of this clone
 .claude/settings.local.json
 CLAUDE.local.md
+# The default pilot mode of this clone, written by /caw-pilot and imported by CLAUDE.md "Pilot mode"
+/.claude/pilot-mode.local.md
 # Scratch files, test installations (tmp/test-install/), private analyses of real use and tmp/request.md
 /tmp/
 # Check ledger and hook state of the gate (scripts/check-ledger.sh writes it at the git root)
