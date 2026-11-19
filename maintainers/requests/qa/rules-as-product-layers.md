@@ -96,6 +96,8 @@ Done, by step:
 - `b946b09`, merged by `703cbef`: the pending requests (`validators-follow-ups`, `warnings-board`,
   `preferred-language` with its plan) and this request, committed on `developer` and taken into this merge (W-2).
 - Changelog: `13dfd68`.
+- The merge review (REJECTED, one BLOCKER): the old review rule's "Never give it your conclusion" was in neither
+  the product rule nor the layer; restored as a CAW rule of `.claude/rules/review.md`, with its row in the AC-4 table.
 
 Decisions taken while running (the owner, 2026-11-18):
 
@@ -176,6 +178,7 @@ the layer's "Ignore from the product rule" / "Mapping" / "CAW rules".
 | review | When the owner asks, with the owner's effort | P (further round) + L-C (effort) |
 | review | One reviewer per merge; split; a script's difference only | P |
 | review | Clean context; brief: range, requests of `qa/`, owner's words, what the suite proved, authorizations | P + L-M (`maintainers/requests/qa/`, the suite) |
+| review | Never give it your conclusion | L-C (found lost by the merge review, restored) |
 | review | Brief: changelog sections of the range | L-C |
 | review | Q1 with Execution blocks and changelogs at every merge | P (Q1) + L-C (at every merge) |
 | review | Q2, Q3 (protection: hook, deny rule, gate, file mode) | P + L-M |

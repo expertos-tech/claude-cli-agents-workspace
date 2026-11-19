@@ -26,6 +26,7 @@ The sections below win where they differ; its `paths:` do not limit it here.
 ## CAW rules
 
 - The agent's own tests and the suite close each stage.
+- The brief never gives the reviewer your conclusion.
 - Into `developer`: what is already on `developer` was reviewed by the merge that brought it; never again.
 - A review the owner asks for runs with the effort the owner gives.
 - The brief also gives the changelog sections of the range: the root `CHANGELOG.md`, and `workspace/CHANGELOG.md` for
