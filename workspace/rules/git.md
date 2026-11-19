@@ -60,7 +60,7 @@ Closing a wave, in this order:
 4. Checkpoint of `custom/`: commit by path only this session's files there (both paths of a move), then push. Other sessions' files stay out.
 5. Closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the values are in the language of the conversation. Its `Warnings:` line lists the decision of each warning of step 2. Then stop: the next wave starts in a new session, from the request.
 
-The closing board, the summary of `/merge` and any "next request" line never offer a request of `custom/requests/doing/` as one to run: it is in progress in another work, and they name it `in progress: <work>` (`bash scripts/aiwp-cmds.sh status` gives the work), with no `/request` command. The one exception is this wave's own request with steps left: its next step runs with `/request <file>.md`, which resumes it.
+The closing board, the summary of `/merge` and any "next request" line never offer a request of `custom/requests/doing/` as one to run: it is in progress in another work, and they name it `<file>.md in progress: <work>` (`bash scripts/aiwp-cmds.sh status` gives the work), the words `in progress:` in English like the labels, with no `/request` command. The one exception is this wave's own request with steps left: its next step runs with `/request <file>.md`, which resumes it.
 
 The warnings board looks like the closing board, so it stands out. Its labels stay as below; the values are in the language of the conversation, each warning in the format of `rules/security.md` "Warnings":
 
@@ -90,7 +90,7 @@ Pending:    <refused push | none>
 Warnings:   <the decision of each warning of the board: W-1 accept, W-2 fix in <sha>, W-3 request <file> | none>
 Request:    custom/requests/<file>.md | none
 ➜ Approved: /merge <work>/<clone>   Not approved: bash scripts/aiwp-cmds.sh close <work> --discard
-➜ You can clear the context and start a new session[: /request <file>.md]
+➜ You can clear the context and start a new session[: /request <file>.md][; <file>.md in progress: <work>]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 

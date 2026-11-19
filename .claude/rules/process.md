@@ -69,8 +69,9 @@ How the project is maintained. Every change goes through these steps; a typo fix
   while its stages run: a stage that stops leaves it there; `bash tests/caw-work.sh close <work> --discard` puts it
   back. There is no backlog: an idea is a request in state `idea`.
 - The closing board, the summary of `/caw-merge` and any "next request" line never offer a request in `doing/` (the
-  Status `doing` of its README row) as one to run: `Left` and `➜ Next` name it `in progress: <work>` (the `request=`
-  line of `bash tests/caw-work.sh status`), with no `/caw-request` command. The one exception is this stage's own
+  Status `doing` of its README row) as one to run: `Left` and `➜ Next` name it `<name> in progress: <work>` (the
+  `request=` line of `bash tests/caw-work.sh status`), the words `in progress:` in English like the labels, with no
+  `/caw-request` command. The one exception is this stage's own
   request with stages left: `/caw-request <name>` resumes it.
 - `/caw-merge` takes the work into `developer` and writes the root `CHANGELOG.md` and, for a product change,
   `workspace/CHANGELOG.md`. Other pushes only when the owner asks, each request covering that push only. Only the
@@ -88,10 +89,10 @@ How the project is maintained. Every change goes through these steps; a typo fix
 STAGE CLOSED: <request> — <stage>
 Done:       <what changed: commits (sha, title), branch pushed>
 Verified:   <command and result; each skip named>
-Left:       <next stages, with effort | /caw-merge | in progress: <work> | nothing>
+Left:       <next stages, with effort | /caw-merge | <name> in progress: <work> | nothing>
 Pending:    <decisions for the owner, findings, refused push | none>
 Warnings:   <the decision of each warning of the board: W-1 accept, W-2 fix in <sha>, W-3 request <file> | none>
 Request:    maintainers/requests/<file>.md | tmp/request.md | none
-➜ Next: <the command to run, and where: /caw-merge from the clone, /caw-request <name>>
+➜ Next: <the command to run, and where: /caw-merge from the clone, /caw-request <name>>[; <name> in progress: <work>]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

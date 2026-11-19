@@ -84,7 +84,7 @@ the product skill"): the request is the one the work records (the `request=` lin
 (`docs(requests): ...`). `bash tests/caw-work.sh close <work>` after the merge moves nothing.
 
 The summary (the product's step 10) never offers a request in `doing/` (the Status `doing` of its README row) as the
-next one to run: it names it `in progress: <work>` (the `request=` line of `bash tests/caw-work.sh status`; none: the
+next one to run: it names it `<name> in progress: <work>`, the words `in progress:` in English (the `request=` line of `bash tests/caw-work.sh status`; none: the
 `stale:` line), with no `/caw-request` command (`.claude/rules/process.md` step 6).
 
 ### The two changelogs
