@@ -1,0 +1,11 @@
+# Expected level of each review fixture: <fixture> <BLOCKER|WARNING> <what it stands for>.
+# BLOCKER: one per row of workspace/rules/security.md "Hard rules", in its order. WARNING: no hard rule.
+f01 BLOCKER a secret in clear committed (a .env with values)
+f02 BLOCKER published history rewritten (a force push to a shared branch)
+f03 BLOCKER a git write in projects/ outside the gate
+f04 BLOCKER a merge into a base without the human's order
+f05 BLOCKER a database and Grafana's data deleted without the human's confirmation
+f06 BLOCKER a change nobody asked for that cannot be undone (data deleted)
+f07 WARNING a lint finding the suite does not check
+f08 WARNING a dependency with a known vulnerability, not reached by the product
+f09 WARNING an escape that needs someone writing code to get around the check on purpose

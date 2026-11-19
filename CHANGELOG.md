@@ -41,6 +41,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   summary, `/draft-request` with "Authorizations"); one review per merge, effort `medium` into `developer` and
   `high` into `main`; the gate's non-secret checks, four asks of `guard-bash` and the copy's unsafe services become
   warnings (decision record 0005).
+- `guard-bash`: a line refused with "Run it alone" shows the warnings of its other commands, as a question does.
 
 ### Added
 
@@ -87,6 +88,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The requests `warnings-board` (the numbered warnings board with risk levels before the closing board),
   `preferred-language` with its plan (the reply language as Claude Code's `language` setting) and
   `validators-follow-ups`.
+- Review fixtures (`tests/review-fixtures/`): one made-up change per hard rule, expected BLOCKER, and three expected
+  WARNING only; `/caw-merge --main` reviews each once per release (`reviewer`, effort `medium`) and judges the reports
+  with `tests/review-fixtures.sh`; a failing fixture is a warning of the release, read to tell a fixture's own defect
+  from a review rule that drifted. `tests/check.sh` checks the judge and the set (`review-fixtures`), never the model.
 
 ### Changed
 
@@ -114,6 +119,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The `rules-config` plan records that it is built, with what the build decided beyond it.
 - Maintenance work ends with a closing board (`.claude/rules/process.md` step 6), like the product's: what was done,
   verified, left and pending, the request, and the next command.
+- The test installation runs from a work clone: the clone's pre-push lets its snapshot reach the throwaway repository
+  inside the clone's own `tmp/` (an absolute path, no named remote or URL, links resolved), any branch; a tag, a
+  non-branch ref and a force push stay refused there, `main` and `developer` to `origin` too, and the company-terms
+  scan still runs, counting what `origin` already has as scanned. `/caw-test-install` runs there, never from a copy
+  of the branch without hooks.
 
 ### Removed
 

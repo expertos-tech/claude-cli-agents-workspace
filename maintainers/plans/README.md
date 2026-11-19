@@ -17,5 +17,6 @@ says what must be true when it is done. Read the plan before running its request
 | `fork-my-rules.md` | Giving own rules back to the project by fork and pull request | `requests/fork-my-rules.md` |
 | `assisted-mode.md` | `/pilot assisted`: boxes that teach the workspace to a newcomer, the default per person, `/caw-pilot` | `requests/assisted-mode.md` |
 | `preferred-language.md` | The reply language as Claude Code's `language` setting: asked at install, asked by a root hook in the maintenance | `requests/preferred-language.md` |
+| `request-in-progress.md` | The "doing" state of a request from the opening of its clone to its merge, so no list suggests a request already running | `requests/request-in-progress.md` |
 
 The order in which they run is in `maintainers/requests/README.md`.

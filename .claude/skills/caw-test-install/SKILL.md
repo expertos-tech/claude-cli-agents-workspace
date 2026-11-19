@@ -13,11 +13,15 @@ Never copy `workspace/` by hand to fake an installation: always go through `inst
 
 ## Procedure
 
-1. Run `bash tests/test-install.sh` (in the background if it may pass 3 minutes). It snapshots the current tree
-   (commits and working changes, git-ignored files left out) into a throwaway bare repository tagged
-   `v<workspace/VERSION>`, and runs `install.sh` with a temporary HOME and data folder, no terminal and
-   `AIWP_WORKSPACE`, so the installer itself creates the workspace (`aiwp new`, a local custom skeleton), all under
-   `tmp/test-install/<timestamp>/`.
+1. Run `bash tests/test-install.sh` (in the background if it may pass 3 minutes) where the change is: in a work clone,
+   from the root, `bash tests/caw-work.sh run <work> -- bash tests/test-install.sh`, so it tests the clone's tree and
+   the installation lands in the clone's `tmp/test-install/`. Never a hook-free copy of the branch: the clone's
+   pre-push lets the snapshot reach its throwaway repository (a local folder inside the clone's own `tmp/`) and still
+   refuses `main` or `developer` to `origin`, a tag and a force push (`bash tests/caw-work.sh --help`, "pre-push").
+   It snapshots the current tree (commits and working changes, git-ignored files left out) into a throwaway bare
+   repository tagged `v<workspace/VERSION>`, and runs `install.sh` with a temporary HOME and data folder, no terminal
+   and `AIWP_WORKSPACE`, so the installer itself creates the workspace (`aiwp new`, a local custom skeleton), all
+   under `tmp/test-install/<timestamp>/`.
 2. It checks the installation and prints PASS or FAIL per check: no `.git` at its root; core folders and executables
    555, other core files 444; the writable folders present (`custom/`, `projects/`, `tmp/`, `.claude/`, `.history/`
    and the closed list of tool outputs at the top of `workspace/scripts/aiwp.sh`); the manifest lists exactly the

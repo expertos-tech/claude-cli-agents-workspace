@@ -351,6 +351,112 @@ test_protected_refs_are_refused() {
   eq "developer not deleted" "$dev" "$(remote_sha developer)"
 }
 
+# BR-5, AC-4: the throwaway repository of tests/test-install.sh, in the clone's own tmp/, takes main as that script
+# pushes it (a snapshot commit over HEAD, made by commit-tree); main to origin, a tag and a force push stay refused.
+test_scratch_destination_in_tmp_takes_the_test_installation() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  local dir="$C/tmp/test-install/20261118-120000" snap main pushed
+  mkdir -p "$dir"
+  git init -q --bare "$dir/remote.git"
+  snap="$(git -C "$C" commit-tree "$(git -C "$C" write-tree)" -p HEAD -m "test installation snapshot")"
+  in_clone push -q "$dir/remote.git" "$snap:refs/heads/main"
+  rc_is 0
+  eq "the snapshot reached the throwaway repository" "$snap" "$(git --git-dir="$dir/remote.git" rev-parse -q --verify main)"
+  # Any branch, developer included, and the scan still ran on it.
+  in_clone push "$dir/remote.git" HEAD:refs/heads/developer
+  rc_is 0
+  hasnt "refused"
+  # The same clone still never pushes main to origin.
+  main="$(remote_sha main)"
+  in_clone push -q origin HEAD:main
+  rc_not 0
+  has "never pushes main"
+  eq "main unchanged on origin" "$main" "$(remote_sha main)"
+  # A tag and a force push stay refused there too.
+  git -C "$C" tag v9.9.9
+  in_clone push -q "$dir/remote.git" v9.9.9
+  rc_not 0
+  has "never pushes a tag"
+  pushed="$(git --git-dir="$dir/remote.git" rev-parse main)"
+  in_clone push -q --force "$dir/remote.git" HEAD:refs/heads/main
+  rc_not 0
+  has "force push"
+  eq "main kept in the throwaway repository" "$pushed" "$(git --git-dir="$dir/remote.git" rev-parse main)"
+  # A company term is still stopped by the scan.
+  commit_in b.txt "made for acmecorp"
+  in_clone push -q "$dir/remote.git" HEAD:refs/heads/side
+  rc_not 0
+  has "WARNING: a company term"
+  eq "nothing with the term" none "$(git --git-dir="$dir/remote.git" rev-parse -q --verify side || echo none)"
+}
+
+# A term already on origin was scanned when it left: the test installation, whose throwaway repository starts empty,
+# does not scan the whole history again; a term only in the clone is still stopped.
+test_scratch_destination_skips_what_origin_has() {
+  fixture
+  printf 'made for acmecorp\n' >"$R/old.txt"
+  git -C "$R" add -- old.txt
+  git -C "$R" commit -q -m "an old commit, already public"
+  git -C "$R" push -q origin developer
+  run open "$B"
+  local dir="$C/tmp/test-install/20261118-120000" snap
+  mkdir -p "$dir"
+  git init -q --bare "$dir/remote.git"
+  snap="$(git -C "$C" commit-tree "$(git -C "$C" write-tree)" -p HEAD -m "test installation snapshot")"
+  in_clone push -q "$dir/remote.git" "$snap:refs/heads/main"
+  rc_is 0
+  hasnt "WARNING: a company term"
+  eq "the snapshot reached the throwaway repository" "$snap" "$(git --git-dir="$dir/remote.git" rev-parse -q --verify main)"
+  # A term the clone adds, not on origin, is still stopped there.
+  commit_in new.txt "for acmecorp again"
+  snap="$(git -C "$C" commit-tree "$(git -C "$C" write-tree)" -p HEAD -m "test installation snapshot")"
+  in_clone push -q "$dir/remote.git" "$snap:refs/heads/side"
+  rc_not 0
+  has "new.txt:1:for acmecorp again"
+  hasnt "old.txt"
+  # origin unreadable: the scan only widens, it still runs (a fresh throwaway repository: it knows nothing yet).
+  git -C "$C" remote set-url origin "$BASE/missing.$CURRENT.git"
+  git init -q --bare "$dir/fresh.git"
+  in_clone push -q "$dir/fresh.git" "$snap:refs/heads/main"
+  rc_not 0
+  has "origin cannot be read: the terms scan covers every commit"
+  has "old.txt:1:made for acmecorp"
+}
+
+# BR-5: only an absolute path strictly inside the clone's tmp/, links resolved: never outside it, never by a named
+# remote, never a relative path or a URL.
+test_scratch_destination_is_only_the_clones_tmp() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  local snap target
+  snap="$(git -C "$C" rev-parse HEAD)"
+  mkdir -p "$C/tmp" "$BASE/outside.$CURRENT"
+  for target in "$BASE/outside.$CURRENT/r.git" "$C/r.git" "$C/tmp/../r.git" "$C/tmp/link.git" "$C/tmp/named.git"; do
+    rm -rf "$target"
+    git init -q --bare "$target"
+  done
+  rm -rf "$C/tmp/link.git"
+  ln -s "$BASE/outside.$CURRENT/r.git" "$C/tmp/link.git"
+  for target in "$BASE/outside.$CURRENT/r.git" "$C/r.git" "$C/tmp/../r.git" "$C/tmp/link.git" "file://$C/tmp/named.git"; do
+    in_clone push -q "$target" "$snap:refs/heads/main"
+    rc_not 0
+    has "never pushes main"
+  done
+  git -C "$C" remote add scratch "$C/tmp/named.git"
+  in_clone push -q scratch "$snap:refs/heads/main"
+  rc_not 0
+  has "never pushes main"
+  OUT="$(cd "$C" && git push -q tmp/named.git "$snap:refs/heads/main" 2>&1)"
+  RC=$?
+  rc_not 0
+  has "never pushes main"
+  eq "nothing reached outside tmp/" none "$(git --git-dir="$BASE/outside.$CURRENT/r.git" rev-parse -q --verify main || echo none)"
+  eq "nothing by a name or a relative path" none "$(git --git-dir="$C/tmp/named.git" rev-parse -q --verify main || echo none)"
+}
+
 test_no_terms_list_skips_the_scan() {
   fixture
   run open "$B"
@@ -997,6 +1103,7 @@ test_check_repo_terms_skips_accepted_terms() {
   cp "$HERE/lib/terms.sh" "$k/tests/lib/terms.sh"
   cp "$HERE/lib/layers.sh" "$k/tests/lib/layers.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-work.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-review-fixtures.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-layers.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-session-index.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-language.sh"

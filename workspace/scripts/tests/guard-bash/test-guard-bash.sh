@@ -51,7 +51,7 @@
 #                                                                              test_real_docker
 #  D34 aiwp-cmds.sh deploy, checkpoint, developer --create, gate --untested -> a WARNING (systemMessage) with no
 #      permission decision, no "Run it alone" beside other commands; release, close --discard, another group's
-#      volume rm and Grafana's data still ask .................................... test_aiwp_warnings
+#      volume rm and Grafana's data still ask; a "Run it alone" shows the line's warnings ... test_aiwp_warnings
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -500,6 +500,11 @@ test_aiwp_warnings() {
   hook_in "bash scripts/aiwp-cmds.sh deploy billing-api developer && rm -rf tools/observability/.data" "$root" "$root"
   has "a warned command beside Grafana's data: the question runs alone" '"permissionDecision": "deny"'
   has "with Run it alone" "Run it alone"
+  has "the refusal shows the warning of deploy" "WARNING: aiwp-cmds.sh deploy"
+  hook "bash scripts/aiwp-cmds.sh release billing-api && bash scripts/aiwp-cmds.sh deploy billing-api"
+  has "release beside deploy: refused to run alone" "Run it alone"
+  has "the refusal names the release" "aiwp-cmds.sh release"
+  has "and shows the WARNING of deploy" '"systemMessage": "WARNING: aiwp-cmds.sh deploy'
 }
 
 test_python_missing_asks() {
