@@ -40,6 +40,7 @@ pushed by the clone's hooks (`tests/caw-work.sh`). `main`, the tag and the GitHu
 | gate phase 2 | at the root, on `developer` with no change: `git fetch -q origin`, `git merge --ff-only origin/developer`; the clone's sha still its HEAD and the remote branch (`git ls-remote origin <branch>`), else back to step 1; `git fetch -q <clone> <branch>`, `git merge --ff-only <sha>`, then, alone in its call, `git push origin developer` |
 | `aiwp-cmds.sh close <work>` | `bash tests/caw-work.sh close <work>`, once `developer` holds the sha: it deletes the remote work branch and the work folder; a clone with no hooks (release, hotfix, hotfix down): `rm -rf tmp/work/<work>/<clone>`, and the work folder when empty, once `developer` holds the sha |
 | `custom/requests/` (and `qa/<project>/`, `done/<project>/`) | `maintainers/requests/` (and `qa/`, `done/`), committed in the clone, or on `developer` when the session has no clone; no `custom/` |
+| `custom/requests/doing/`; the `request=` line of `bash scripts/aiwp-cmds.sh status <work>` | `maintainers/requests/doing/`, its README row with the Status `doing`; the `request=` line of `bash tests/caw-work.sh status <work>` |
 | a `ready` request made of a warning the owner chose to fix later | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, with its row in the README |
 | `rules/review.md`, `rules/docs.md` | `.claude/rules/review.md`, `.claude/rules/docs.md` (`workspace/rules/docs.md` "CHANGELOG.md" for the changelog rules) |
 
@@ -70,6 +71,21 @@ row in the README, both written in the clone after the board; then the suite run
   and the request to `qa/` with its Execution block (commits), the suite with `--base origin/developer --i18n-pending`
   (it scans them), the review of `origin/developer..HEAD` only, and `git push origin developer`.
 - `--main [instructions]`: "Release", below.
+
+### The request to qa
+
+The product's step 8, in the clone (or on `developer` when the session has no clone), before phase 1 ("Ignore from
+the product skill"): the request is the one the work records (the `request=` line of
+`bash tests/caw-work.sh status <work>`), else the one the session ran. Its Execution block appended, then `git mv` from
+`maintainers/requests/doing/<name>` (where `bash tests/caw-work.sh start` put it), or from
+`maintainers/requests/<name>` for one that never went through `doing/`, to `maintainers/requests/qa/<name>`; in
+`maintainers/requests/README.md` its row leaves the pending tables (with its Status) and a row goes to "QA"
+(`qa/<name>`, the merge, the acceptance criteria). Both paths of the move and the README in one commit
+(`docs(requests): ...`). `bash tests/caw-work.sh close <work>` after the merge moves nothing.
+
+The summary (the product's step 10) never offers a request in `doing/` (the Status `doing` of its README row) as the
+next one to run: it names it `in progress: <work>` (the `request=` line of `bash tests/caw-work.sh status`; none: the
+`stale:` line), with no `/caw-request` command (`.claude/rules/process.md` step 6).
 
 ### The two changelogs
 

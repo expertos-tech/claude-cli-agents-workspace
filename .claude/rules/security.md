@@ -34,7 +34,7 @@ The closed list is the product's, with these rows over its rows of the same subj
 | Hard rule | Why |
 | --- | --- |
 | Deleting a remote repository, or rewriting or deleting published history (a force push of any branch; deleting `developer`, `main` or a tag on the remote; a moved tag) | Clones, releases and installations depend on it, and it cannot be undone |
-| `developer` or `main` moved outside `/caw-merge` (a work branch pushes only itself) | The merge is where the owner sees what enters |
+| `developer` or `main` moved outside `/caw-merge` (a work branch pushes only itself). The one exception: the start commit of a request and its reverse, made and pushed only by `bash tests/caw-work.sh start <name>` and `close <work> --discard`, with no suite, review or terms scan, and only within their checks: the root on `developer`, nothing uncommitted, equal to `origin/developer` after a fetch; the request file already on `origin/developer`; one commit, a pure rename of it between `maintainers/requests/` and `doing/` plus the Status cell of its README row; a plain fast-forward push (`.claude/rules/git.md` "Remote") | The merge is where the owner sees what enters; the start commit adds nothing new, and its shape is its check |
 | A merge into a base without the owner's order (the push of `developer` by `/caw-merge`, which the owner types; `main`, the tag and the GitHub release each confirmed) | What enters a base, and from there a release, is the owner's decision |
 | A product hard rule removed or weakened with no plan the owner decided (`product.md`) | The product's protections are code here |
 
