@@ -43,8 +43,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `high` into `main`; the gate's non-secret checks, four asks of `guard-bash` and the copy's unsafe services become
   warnings (decision record 0005).
 - `guard-bash`: a line refused with "Run it alone" shows the warnings of its other commands, as a question does.
-- `/normalize-rules`: the rules of an older workspace brought into the person's own rules, item by item, after a
-  numbered table the person confirms; it lists the projects found with their `/normalize-projects --from` command.
 - The preferred language of communication: asked by `aiwp new` and kept as the Claude Code setting `language`, which
   wins over the language of a request file; the single-agent mode is removed.
 
@@ -134,7 +132,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   before it commits by path, with the paths written out.
 - `README.md` keeps the intro, "Get involved", a short "Quick start", the index of `docs/` and the license.
 - `docs/features.md` lists `/run-tools` and the tools' compose group.
-- `docs/features.md` lists `/normalize-rules`; the `normalize-rules` plan records that it is built.
 - The `rules-config` plan records that it is built, with what the build decided beyond it.
 - Maintenance work ends with a closing board (`.claude/rules/process.md` step 6), like the product's: what was done,
   verified, left and pending, the request, and the next command.
