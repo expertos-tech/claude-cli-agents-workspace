@@ -145,6 +145,9 @@ URL gone from every `.git/config`); nothing was ever pushed to the real server.
 - Checked by a script of 133 checks, all passing: the above, AC-6 (no rule written), AC-7 (no value of the older
   workspace's untracked `.env` files in `custom/` or `projects/`) and AC-8 (every file, mode and git state of the copy
   identical before and after).
+- Each imported project then pushed to its test repository and cloned back (`--mirror`): every commit (913) and tag
+  (12) of each source repository was in its clone, the branches never pushed and the 3 projects with no remote
+  included.
 - The same copy unpacked again with the pointers of the other machine, scanned with no model: each worktree counted
   once with its branch, the move named, the missing objects and the gone `alternates` named.
 - Defects it found, fixed before the final run, each with a scenario test (AC-8b, AC-8c): worktrees of a moved
