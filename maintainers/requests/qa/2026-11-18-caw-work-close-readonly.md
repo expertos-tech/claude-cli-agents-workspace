@@ -40,4 +40,11 @@ branch already deleted).
 Checks: `bash tests/check.sh --base origin/developer --i18n-pending` rc 0 (repo-terms skipped: no terms list found);
 `tests/test-caw-work.sh` 39 scenarios; shellcheck -x clean (the gate's pinned image).
 
+The merge review (APPROVED_WITH_WARNINGS), both accepted by the owner ("ignore warnings", 2026-11-18):
+
+- W-10: an `rm -rf` that fails partway for a reason other than permissions may have removed the clone's `.git`; a
+  second `close` then refuses it and only `--discard` clears it, leaving the remote branch (named in the error).
+- W-11: the remote delete is a `git push --delete` from the root, outside the clone's pre-push hook, limited to a
+  work branch name and never forced.
+
 Left: nothing.
