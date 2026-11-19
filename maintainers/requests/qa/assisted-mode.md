@@ -149,7 +149,8 @@ The subagents of each stage run with the stage's effort, passed in the call. Sta
    `.gitignore`, the `caw-layers` check of the new layer, `docs/maintenance.md` (ab3ce14, 536a865, 9488819).
 4. Proof in real sessions: a pty-driven interactive session and headless runs in test installations, and headless
    runs at the root and in a work clone (below).
-- The fixes of the stage's warnings board: dfc0b11, 93247d7, 88bf581, 0add3cc, db85bf6. Changelogs: f63ca86.
+- The fixes of the stage's warnings board: dfc0b11, 93247d7, 88bf581, 0add3cc, db85bf6. Changelogs: f63ca86. The fix
+  of the merge review's BLOCKER: 2737015.
 
 ### Decisions taken while running
 
@@ -186,7 +187,8 @@ The subagents of each stage run with the stage's effort, passed in the call. Sta
   subject showed no Context box while the Branches box still showed; a new session showed the Context box again.
 - AC-7, AC-10: proven by the scenarios of the start hook (no file, `auto`, `assisted`, an unknown value, `/pilot`
   turned off).
-- AC-8: the rules say it (`rules/assisted.md`, `models.md`, `/pilot`); not run in a session.
+- AC-8: proven, headless in a test installation in `assisted`: the session delegated to `code-explorer` with a brief
+  opening `VERIFICATION: auto` and nothing about boxes (the word `assisted` only inside the line the task searched for).
 - AC-9: proven, headless at a copy of the root: no file → the M1 box; ``Pilot mode: `auto`.`` → none; the file
   git-ignored; also in a work clone through the hook line; `caw-layers` passes for `/caw-pilot` and
   `.claude/assisted.md`.
@@ -202,6 +204,15 @@ The subagents of each stage run with the stage's effort, passed in the call. Sta
   88bf581 (the aiwp suite split: 43, 41 and 37 s), W-3 fix (AC-5 proven in a session, above), W-4 fix in 88bf581
   (rollback keeps `assisted`), W-5 fix in dfc0b11 (the mode in a work clone). Found while fixing: `pilot-mode.sh set`
   wrote into a linked folder, fixed in 0add3cc.
+- Merge board: W-1 fix (AC-8 proven in a session).
+
+### The merge review
+
+- `reviewer`, effort `medium`: REJECTED, one BLOCKER: `/caw-pilot` gave a session in a work clone the root's file as
+  `../../../.claude/pilot-mode.local.md`, which resolves to `<root>/tmp`; fixed in 2737015 (four levels up, the file
+  `tests/caw-session-index.py` reads). The return review, focused (`high`) and light (`medium`): both APPROVED, no
+  other place with the same defect, no regression of the fixes.
+- Its warning W-1 (AC-8 proven only by the rule text): the owner answered `fix`; proven in a session (above).
 
 ### Left
 

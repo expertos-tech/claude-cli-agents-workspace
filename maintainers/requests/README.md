@@ -82,7 +82,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
-| `qa/assisted-mode.md` | this merge | All proven: AC-1, AC-5, AC-6 in interactive and headless sessions of a test installation, AC-2 and AC-9 headless (AC-9 at the root and in a work clone), AC-3, AC-4, AC-7, AC-10 by scenario tests; AC-8 by the rule text only |
+| `qa/assisted-mode.md` | this merge | All proven: AC-1, AC-5, AC-6 in interactive and headless sessions of a test installation, AC-2 and AC-9 headless (AC-9 at the root and in a work clone), AC-8 headless, AC-3, AC-4, AC-7, AC-10 by scenario tests |
 | `qa/import-workspace.md` | this merge | All proven: AC-1 to AC-9 by scenario tests, AC-10 by a headless run on a copy of a real older workspace |
 | `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |
