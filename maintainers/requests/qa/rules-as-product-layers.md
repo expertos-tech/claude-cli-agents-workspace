@@ -146,6 +146,11 @@ Warnings of the stages, decided by the owner: W-1 no terms list in the default l
 not committed at the root: fixed (`b946b09`, merged); W-3 markdownlint not run: fixed (installed as the product's
 image and run, 0 issues).
 
+The merge review's return round (focused, high; light, medium): APPROVED and APPROVED_WITH_WARNINGS, no BLOCKER
+open. Its two warnings, decided by the owner: W-1 "rerun the suite" in neither the product rule nor the layer: fixed
+(a CAW rule of `.claude/rules/review.md`, its AC-4 row); W-2 the AC-4 row of "the owner's words": fixed (it names the
+`/merge` skill).
+
 Left: nothing of this request. Follow-ups: `warnings-board.md`, `preferred-language.md`.
 
 ### AC-4: where each line of the maintenance rules went
@@ -177,7 +182,7 @@ the layer's "Ignore from the product rule" / "Mapping" / "CAW rules".
 | review | Into `main`: since the last tag, widened; high | P |
 | review | When the owner asks, with the owner's effort | P (further round) + L-C (effort) |
 | review | One reviewer per merge; split; a script's difference only | P |
-| review | Clean context; brief: range, requests of `qa/`, owner's words, what the suite proved, authorizations | P + L-M (`maintainers/requests/qa/`, the suite) |
+| review | Clean context; brief: range, requests of `qa/`, owner's words, what the suite proved, authorizations | P + L-M (`maintainers/requests/qa/`, the suite); the owner's words: the `/merge` skill, "Which work" (through `/caw-merge`) |
 | review | Never give it your conclusion | L-C (found lost by the merge review, restored) |
 | review | Brief: changelog sections of the range | L-C |
 | review | Q1 with Execution blocks and changelogs at every merge | P (Q1) + L-C (at every merge) |
@@ -185,6 +190,7 @@ the layer's "Ignore from the product rule" / "Mapping" / "CAW rules".
 | review | Check findings against authorizations; report defects with path:line; hotfix rule | P |
 | review | The return review (focused, light, approach change, third round) | P |
 | review | BLOCKER list | P |
+| review | A BLOCKER: fix it, rerun the suite, then the return review | L-C (restored after the return review) |
 | review | A security BLOCKER needs a second clean-context review | L-C |
 | review | WARNING: never blocks; at `developer` listed once, fix / `ready` request / accept; at the release per warning | P + L-C + L-M (request path) |
 | review | A finding is not accepted only because it came | P |

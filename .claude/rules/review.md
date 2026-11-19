@@ -33,6 +33,7 @@ The sections below win where they differ; its `paths:` do not limit it here.
   a product change.
 - Question 1, at every merge, not only at the release: also an Execution block the code contradicts, and a changelog
   entry with no change behind it, or a change a user would notice with no entry.
+- A BLOCKER: fix it, rerun the suite, then the return review.
 - A security BLOCKER counts only when a second clean-context review confirms it from the code.
 - The warnings: at a merge into `developer` the summary lists each one once, and the owner decides: fix, a `ready`
   request, or accept. At the release the owner chooses per warning: fix now, a request, or accept.
