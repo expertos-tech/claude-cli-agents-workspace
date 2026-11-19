@@ -9,7 +9,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BASE="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'real_cleanup; rm -rf "$BASE"' EXIT
+trap 'real_cleanup; chmod -R u+rwX "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE AIWP_TERMS_FILE
@@ -1331,6 +1331,96 @@ test_close_discard() {
   has "discarded: tmp/work/$W"
   [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
   eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+}
+
+# Builds a test installation inside the clone as tests/test-install.sh leaves it (git-ignored tmp/test-install/
+# <timestamp>/: core folders 555, files 444, executables 555, a bare remote.git), with two symlinks out of the work
+# folder: to a read-only file and to a read-only folder of $BASE, which close must leave as they are.
+read_only_install_in_clone() {
+  local d="$C/tmp/test-install/20261118-101500"
+  mkdir -p "$d/workspace/rules/skills/merge" "$d/workspace/scripts" "$d/home" "$BASE/outside.$CURRENT/dir"
+  git init -q --bare "$d/remote.git"
+  printf '# agents\n' >"$d/workspace/AGENTS.md"
+  printf '# merge\n' >"$d/workspace/rules/skills/merge/SKILL.md"
+  printf '#!/usr/bin/env bash\n' >"$d/workspace/scripts/aiwp.sh"
+  printf 'keep\n' >"$BASE/outside.$CURRENT/file"
+  printf 'keep\n' >"$BASE/outside.$CURRENT/dir/inner"
+  ln -s "$BASE/outside.$CURRENT/file" "$d/workspace/link-to-file"
+  ln -s "$BASE/outside.$CURRENT/dir" "$d/workspace/link-to-dir"
+  chmod 444 "$d/workspace/AGENTS.md" "$d/workspace/rules/skills/merge/SKILL.md" "$BASE/outside.$CURRENT/file" \
+    "$BASE/outside.$CURRENT/dir/inner"
+  chmod 555 "$d/workspace/scripts/aiwp.sh" "$BASE/outside.$CURRENT/dir"
+  find "$d/remote.git" -type f -exec chmod 444 {} +
+  find "$d/remote.git" "$d/workspace" -type d -exec chmod 555 {} +
+}
+# Checks that what the symlinks of read_only_install_in_clone point at kept its modes and content.
+outside_untouched() {
+  [ ! -w "$BASE/outside.$CURRENT/file" ] && [ ! -w "$BASE/outside.$CURRENT/dir" ] &&
+    [ ! -w "$BASE/outside.$CURRENT/dir/inner" ] && [ "$(cat "$BASE/outside.$CURRENT/dir/inner")" = keep ]
+  check "the targets of the symlinks kept their modes" $?
+}
+
+test_close_after_a_test_installation_in_the_clone() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  read_only_install_in_clone
+  merge_into_developer
+  run close "$W"
+  rc_is 0
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed completely" $?
+  eq "remote branch deleted" none "$(remote_sha "heads/$B")"
+  case "$OUT" in *"closed: tmp/work/$W"*"deleted on origin: $B"*) check "folder first, then the remote" 0 ;;
+    *) check "folder first, then the remote" 1 ;; esac
+  outside_untouched
+}
+
+test_close_discard_with_a_read_only_tree() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  read_only_install_in_clone
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  run close "$W" --discard
+  rc_is 0
+  has "discarded: tmp/work/$W"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed completely" $?
+  eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+  outside_untouched
+}
+
+# An rm first on PATH that fails as a delete the owner cannot complete does: close stops before the remote, says what
+# is left, and a later close (rm working again) finishes, the remote branch deleted then.
+test_close_failed_delete_keeps_the_remote_branch() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  merge_into_developer
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  mkdir -p "$BASE/rmstub.$CURRENT"
+  printf '#!/usr/bin/env bash\necho "rm: cannot remove: Permission denied" >&2\nexit 1\n' >"$BASE/rmstub.$CURRENT/rm"
+  chmod +x "$BASE/rmstub.$CURRENT/rm"
+  OUT="$(cd "$R" && PATH="$BASE/rmstub.$CURRENT:$PATH" bash "$R/tests/caw-work.sh" close "$W" 2>&1)"
+  RC=$?
+  rc_is 1
+  has "could not delete tmp/work/$W"
+  has "left: tmp/work/$W/claude-cli-agents-workspace"
+  has "the remote branch stays: $B"
+  hasnt "deleted on origin"
+  eq "remote branch kept" "$pushed" "$(remote_sha "heads/$B")"
+  [ -d "$C/.git" ]; check "clone kept" $?
+  OUT="$(cd "$R" && PATH="$BASE/rmstub.$CURRENT:$PATH" bash "$R/tests/caw-work.sh" close "$W" --discard 2>&1)"
+  RC=$?
+  rc_is 1
+  has "could not delete tmp/work/$W"
+  hasnt "discarded:"
+  run close "$W"
+  rc_is 0
+  has "deleted on origin: $B"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
+  eq "remote branch deleted" none "$(remote_sha "heads/$B")"
 }
 
 # Writes a tool of the clone: workspace/tools/<id>/compose.yaml (with $2 as its text) and an app file.
