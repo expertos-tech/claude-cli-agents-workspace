@@ -146,6 +146,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The `rules-config` plan records that it is built, with what the build decided beyond it.
 - Maintenance work ends with a closing board (`.claude/rules/process.md` step 6), like the product's: what was done,
   verified, left and pending, the request, and the next command.
+- The recommended order of the pending requests (`maintainers/requests/README.md`): round 0 is what comes before
+  the first installation and the first release, `final-review` last with `rules-size-budget` folded in; round 1 the
+  next release, round 2 the later ones; the requests running now are named.
 - The test installation runs from a work clone: the clone's pre-push lets its snapshot reach the throwaway repository
   inside the clone's own `tmp/` (an absolute path, no named remote or URL, links resolved), any branch; a tag, a
   non-branch ref and a force push stay refused there, `main` and `developer` to `origin` too, and the company-terms
