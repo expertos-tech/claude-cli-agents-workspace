@@ -24,34 +24,45 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
-0. First, before round 2: `assisted-mode` (`validators-warn-not-block` is in qa).
-1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
-   (except `measure-quality-indicators`, which waits for `import-from-fork`).
-2. Round 2: `import-workspace` first (the owner needs it to migrate the final project), then `fork-my-rules`,
-   `tools-hub`, `onboard`.
-3. `import-from-fork`: the first release after the publication, right after `import-workspace`; then
-   `measure-quality-indicators` (both change `measure.py`).
-4. Before that first release: the findings of the merge and release flow (the small ready requests below), above all
-   `release-developer-moved` and `release-main-sha-check`, and `release-per-project-proof`, which proves the qa
-   lifecycle and the release per project in a real run. The small ones mostly touch `/caw-merge` and the rules and can
-   run together in one session.
+Running now, each in its own clone: `request-in-progress` (at its merge) and `assisted-mode`.
+
+0. **Round 0, before the first installation and the first release** (`/caw-merge --main`):
+   1. `request-in-progress`, then `assisted-mode` (both running).
+   2. Once `request-in-progress` is on `developer` (it changes `/caw-merge` and the request rules), two sessions at
+      once, on disjoint paths: `draft-prompt`; and the four findings of `/caw-merge` in one session, all in
+      `.claude/skills/caw-merge/SKILL.md`: `release-developer-moved` and `release-main-sha-check` first (without them
+      the first `--main` runs with both known defects), then `execution-block-after-fixes` and
+      `clone-path-findings-loop`.
+   3. `final-review` last, once everything above is on `developer`, with `rules-size-budget` folded in when the owner
+      has answered its decisions.
+   4. The first installation, then `/caw-merge --main`.
+1. **Round 1, the next release:** `import-workspace-code-folders` (the owner needs it to migrate a whole older
+   workspace; its paths are disjoint from round 0, so it may also run now, in parallel); `import-from-fork`, the
+   first real test of `aiwp update` from the first release, then `measure-quality-indicators` (both change
+   `measure.py`); `merge-project-name` and `release-per-project-proof` (both prove or change `/merge` after
+   `request-in-progress`); `merge-queue`.
+2. **Round 2:** `fork-my-rules` (needs `rules`), `tools-hub` (needs `run-tools`), `onboard`, and the ideas
+   `prompt-log-results`, `gate-audit-gaps` and `aiwp-remove` once the owner answers their decisions.
+
+The ideas with no round wait for their design. `rules`, `run-tools`, `import-workspace` and
+`validators-warn-not-block` are in qa.
 
 ### Ready: the plan
 
 | Round | Request | Notes |
 | --- | --- | --- |
-| 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
-| 0 | `request-in-progress.md` | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
+| 0 | `request-in-progress.md` | Running, at its merge. The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
+| 0 | `assisted-mode.md` | Running. After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 0 | `draft-prompt.md` | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
-| 2 | `import-workspace-code-folders.md` | After `import-workspace`: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
-| 2 | `import-from-fork.md` | After `import-workspace`: the first release after the publication, the first real test of `aiwp update` |
+| 0 | `final-review.md` | Last of round 0, before the first release, with `rules-size-budget` folded in; a whole-product review in a new session; every release now also ends with a final review |
+| 1 | `import-workspace-code-folders.md` | After `import-workspace`; may run now, in parallel with round 0: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
+| 1 | `import-from-fork.md` | After the first release: the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
 | 2 | `tools-hub.md` | Needs `run-tools`; design: `plans/tools-hub.md` |
-| 3 | `final-review.md` | A whole-product review in a new session; every release now also ends with a final review |
 
 ### Ready: findings of the reviews
 
-Small adjustments, effort low unless noted.
+Small adjustments, effort low unless noted. Round 0: the first four, in one session; round 1: the other three.
 
 | Request | What it fixes |
 | --- | --- |
@@ -67,12 +78,12 @@ Small adjustments, effort low unless noted.
 
 | Round | Request | What is missing |
 | --- | --- | --- |
-| 1 | `prompt-log-results.md` | Two decisions |
-| 1 | `gate-audit-gaps.md` | Three decisions |
-| 1 | `aiwp-remove.md` | Whether to build it |
+| 0 | `rules-size-budget.md` | Two decisions; folded into `final-review` or right before it |
+| 1 | `measure-quality-indicators.md` | Three decisions; after `import-from-fork` (both change `measure.py`) |
+| 2 | `prompt-log-results.md` | Two decisions |
+| 2 | `gate-audit-gaps.md` | Three decisions |
+| 2 | `aiwp-remove.md` | Whether to build it |
 | 2 | `onboard.md` | Four decisions; needs `rules`; design: `plans/distribution.md` |
-| 2 | `measure-quality-indicators.md` | Three decisions; after `import-from-fork` (both change `measure.py`) |
-| 3 | `rules-size-budget.md` | Two decisions; folded into `final-review` or right before it |
 | — | `qa-validation-on-developer.md` | The owner completes the design of `--qa` |
 | — | `release-tag-after-pull-request.md` | The design of the tag after a pull request into a protected `main` |
 | — | `repo-terms-skip-stops-merge.md` | Today no terms list exists here |

@@ -5,8 +5,8 @@
 This is a development environment; the only concern is data security.
 
 **Where it runs:** at the repository root, where the project is maintained, with the product in `workspace/`
-(`AGENTS.md`, `rules/`, `tests/check.sh`). It changes the same texts as `final-review` (round 3 of
-`maintainers/requests/README.md`), so it fits **round 3, merged into `final-review`** as an extra rule and criterion,
+(`AGENTS.md`, `rules/`, `tests/check.sh`). It changes the same texts as `final-review` (the last of round 0
+of `maintainers/requests/README.md`), so it fits **round 0, merged into `final-review`** as an extra rule and criterion,
 or right after it (decision 1). Running it earlier would be undone by `rules`, `import-from-fork` and the other
 requests, which all add text.
 

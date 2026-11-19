@@ -6,8 +6,8 @@ This is a development environment; the only concern is data security.
 
 **Where it runs:** at the repository root, where the project is maintained, with the product in `workspace/`
 (`scripts/aiwp-gate.sh` and its suite, `rules/skills/merge/SKILL.md`, `rules/git.md` "Gate", `docs/usage.md`). It
-depends on no other request; it fits **round 1** of `maintainers/requests/README.md`, beside `rules` and `run-tools`
-(neither touches the gate). The `final-review` request (round 3) then reviews it with the rest.
+depends on no other request; it fits **round 2** of `maintainers/requests/README.md`, after the first release; `rules` and
+`run-tools` do not touch the gate. The final review of the release that ships it then reviews it with the rest.
 
 ## 1. Objective
 
