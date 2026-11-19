@@ -122,3 +122,36 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
 | 2. The skill `/import-workspace`, its docs, the run on a copy of a real older workspace (AC-10) | medium | The round trip and the person's confirmation over a tested script |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+---
+
+## AC-10 proof — 2026-11-19, on 372ba51
+
+`/import-workspace` ran end to end, headless (`claude -p`, claude-opus-5-5), in a test installation made from
+`372ba51`, on a copy of a real older workspace: a snapshot taken on another machine while its agents were running. Its
+remotes were moved to a throwaway test project (the tracking refs pushed there, `origin` set to it, the real server's
+URL gone from every `.git/config`); nothing was ever pushed to the real server.
+
+- Inventory: 16 repositories (the older workspace itself, 13 in its projects folder, 3 of them with no remote; 2 in
+  its scratch: a clone of a removed worktree of its own and a local experiment), 13 project worktrees and 67 of its
+  own, 12 code folders with no git, 21 scratch folders, 77 markdown files in backlog folders (38 its backlog, the
+  rest copies in its scratch), 4 instruction entries.
+  One ref of the older workspace's own repository points to a missing object.
+- The run: 31 turns to the plan, then one message as the person (two answers changed, the rest confirmed): 13
+  projects brought with every local branch and tag of their sources at the same sha and their `origin`; the 3 with no
+  remote said once to be unpushed work as a whole; 8 pending-work requests, which name each changed file, branch and
+  commit not pushed; 38 backlog items (16 requests `idea`, 22 dropped and listed); the rest listed as not imported;
+  one commit of `custom/`, not pushed. Cost: $2.59.
+- Checked by a script of 133 checks, all passing: the above, AC-6 (no rule written), AC-7 (no value of the older
+  workspace's untracked `.env` files in `custom/` or `projects/`) and AC-8 (every file, mode and git state of the copy
+  identical before and after).
+- The same copy unpacked again with the pointers of the other machine, scanned with no model: each worktree counted
+  once with its branch, the move named, the missing objects and the gone `alternates` named.
+- Defects it found, fixed before the final run, each with a scenario test (AC-8b, AC-8c): worktrees of a moved
+  workspace counted twice; the older workspace's own worktrees one line each; a ref to a missing object or a gone
+  `alternates` failing `bring`; a project with no remote listed branch by branch; a clone of the older workspace
+  itself (also of a removed worktree, also under an old root) asked as a project; backlog files in scratch (an
+  editor's local history) and in a repository answered `data` asked as items; one drop reason for every `workspace`
+  answer (`8deaaf5`, `7c1baf9`).
+- The proof holds for its sha. The release need not repeat it unless `workspace/rules/skills/import-workspace/`,
+  `workspace/scripts/workspace-import.py` or `bring`/`bring-branch` of `workspace/scripts/aiwp-gate.sh` change.
