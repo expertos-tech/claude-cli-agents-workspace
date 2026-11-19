@@ -25,6 +25,14 @@ reply language and saved in English, with one line saying so.
 Translations live in `i18n/<locale>/`, only for documents and READMEs (`.claude/rules/docs.md`).
 The project is documented in `docs/` (install, contribute, maintain, release); the product in `workspace/docs/`.
 
+## Pilot mode
+
+The mode of this session (`/caw-pilot`) is `assisted` unless the file below says otherwise. In `assisted`, read
+`.claude/assisted.md` in full before the first reply and follow it; in `auto`, nothing more. `/caw-pilot auto` and
+`/caw-pilot assisted` write that file (git-ignored, this clone only); `/caw-pilot manual` lasts this session only.
+
+@.claude/pilot-mode.local.md
+
 ## Layout
 
 Maintenance skills carry the prefix `caw-` (`/caw-merge`, `/caw-request`...), so they never mix with the product's
@@ -39,10 +47,11 @@ product's index (`workspace/AGENTS.md` "Reference") with the layer `.claude/sess
 defines the pointer: a line holding only `@<path>`, in this file or a rule or skill of `.claude/`, names a file to read in
 full from the root when the file holding it applies; an `@` anywhere else, a file of `workspace/` included, is not
 one. The layers of
-skills, of rules and of the index are the only cases where this session follows a product file as instructions;
-nothing else of `workspace/` is read as instructions, and `tests/check.sh` checks every layer.
+skills, of rules, of the index and of the boxes (`.claude/assisted.md`, "Pilot mode") are the only cases where this
+session follows a product file as instructions; nothing else of `workspace/` is read as instructions, and
+`tests/check.sh` checks every layer.
 
-`.claude/` (settings with the two hooks, the session index; `rules/`, `skills/`, `agents/`), `tests/` (`check.sh`; `test-install.sh` arrives with
+`.claude/` (settings with the two hooks, the session index, the boxes; `rules/`, `skills/`, `agents/`), `tests/` (`check.sh`; `test-install.sh` arrives with
 the installer), `maintainers/` (`plans/`, `requests/` with `qa/` and `done/`, `reviews/`: public), `tmp/` (git-ignored: test
 installations, private analyses, `tmp/request.md`), `logs/` (git-ignored), `workspace/` (the product), `docs/` (the project's documentation),
 `i18n/`, `README.md`, `CHANGELOG.md` (the repository's; the product's is `workspace/CHANGELOG.md`), `LICENSE`.
