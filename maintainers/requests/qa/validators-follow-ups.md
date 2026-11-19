@@ -112,8 +112,9 @@ Deviations from the request:
 
 Acceptance criteria:
 
-- AC-1: proven: 9/9 at the expected level (`tests/review-fixtures.sh judge`, reports in the clone's git-ignored
-  `tmp/review-fixtures/20261118-proof/`); the judge itself by `tests/test-review-fixtures.sh`.
+- AC-1: proven: 9/9 at the expected level (`tests/review-fixtures.sh judge`; the reports in the git-ignored
+  `tmp/review-fixtures/20261118-proof/` of the root, copied there when the clone closed); the judge itself by
+  `tests/test-review-fixtures.sh`.
 - AC-2: done, not proven: step 5 of `/caw-merge --main` runs the fixtures and step 7 lists a failing one as a
   WARNING; proven at the first release.
 - AC-3: proven: `test_run_it_alone_shows_the_warnings_of_the_line` and the scenario of
