@@ -183,7 +183,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
 | `/import-workspace <folder>` | Brings the work of an older workspace: repositories, worktree and work-clone branches, pending work and backlog (below, "Changing the workspace itself") |
 
-The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `hotfix`, `hotfix-tag`, `hotfix-down`, `apply`, `developer`, `checkpoint`, `bring`).
+The work area's command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `hotfix`, `hotfix-tag`, `hotfix-down`, `apply`, `developer`, `checkpoint`, `bring`, `bring-branch`).
 
 Claude Code's own commands that help most here:
 

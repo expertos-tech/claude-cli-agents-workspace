@@ -121,7 +121,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lists the state of every project and POC; or analyses one (four analysts, a plan you approve, the language of its docs) and migrates it on a tested branch, with checkpoint tags, into `developer` and `main` |
 | `/import-workspace <folder>` | Brings the work of an older workspace of yours: its repositories into `projects/` (you choose which, seeing each one's size), the branches of its worktrees and work clones, its pending work and its backlog as requests; its rules are listed, never imported |
 
-The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `apply`, and `developer`, `checkpoint`, `bring` for the normalization). Claude Code's own commands still apply: `/rewind`, `/rename`, `/usage`.
+The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `apply`, and `developer`, `checkpoint`, `bring`, `bring-branch` for the normalization and the import). Claude Code's own commands still apply: `/rewind`, `/rename`, `/usage`.
 
 ## Prompt project
 
