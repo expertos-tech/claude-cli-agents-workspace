@@ -7,7 +7,7 @@ This is a development environment; the only concern is data security.
 **Where it runs:** at the repository root, where the project is maintained, with the product in `workspace/`
 (`scripts/performance/measure.py`, `scripts/tests/test_performance.py`, the performance README). It must run **after
 `import-from-fork`**, which also changes `measure.py` (hook median and p90, BR-9 there); it runs after that one, in
-round 2 of `maintainers/requests/README.md`.
+round 1 of `maintainers/requests/README.md`.
 
 ## 1. Objective
 

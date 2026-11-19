@@ -19,14 +19,17 @@ priorities reorganized where needed.
   with `rules-size-budget` folded in. Round 1 is the next release (`import-workspace-code-folders`, which may also run
   now on disjoint paths, `import-from-fork`, `measure-quality-indicators`, `merge-project-name`,
   `release-per-project-proof`, `merge-queue`); round 2 the later ones. The tables follow the rounds. The requests
-  that cited a round follow it: `aiwp-remove` and `gate-audit-gaps` to round 2, `rules-size-budget` to round 0.
-  Root `CHANGELOG.md` (6fc6cee).
+  that cited a round follow it: `aiwp-remove` and `gate-audit-gaps` to round 2, `rules-size-budget` to round 0;
+  `prompt-log-results` to round 2, `measure-quality-indicators` to round 1, and `onboard` no longer beside
+  `import-workspace`, which is in qa (the fix of W-2). Root `CHANGELOG.md` (6fc6cee).
 - **Decisions:** the four findings of `/caw-merge` enter round 0, though the owner named only three requests: they
   fix `/caw-merge --main` itself, which the first release runs. The owner can overturn it.
 - **Deviations:** none.
 - **Done when:** every pending request file has its row and a round or "no round"; checked against
   `git ls-tree origin/developer maintainers/requests/`.
 - **Checks:** `bash tests/check.sh --base origin/developer --i18n-pending` passed (repo-terms skipped: no terms list).
-- **Warnings:** none.
+- **Warnings:** the merge review: W-1 accept (`final-review.md` still says it runs after `fork-my-rules` and the hub,
+  which the new order puts in round 2; the owner reviews that request before running it), W-2 fix (three requests
+  still cited their old round).
 - **Left:** `request-in-progress` changes the same tables (a Status column): its merge resolves the conflict, with
   `assisted-mode` as `doing`.

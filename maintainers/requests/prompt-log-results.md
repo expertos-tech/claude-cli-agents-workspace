@@ -6,8 +6,8 @@ This is a development environment; the only concern is data security.
 
 **Where it runs:** at the repository root, where the project is maintained, with the product in `workspace/`
 (`scripts/prompt-log.py` and `scripts/tests/test_prompt_log.py`, the scripts README, `docs/usage.md`). It depends on
-no other request and touches only the prompt log; it fits **round 1** of `maintainers/requests/README.md`, beside
-`rules` and `run-tools`.
+no other request and touches only the prompt log; it fits **round 2** of `maintainers/requests/README.md`, after the
+first release.
 
 ## 1. Objective
 
