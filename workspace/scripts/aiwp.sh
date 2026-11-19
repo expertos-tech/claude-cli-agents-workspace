@@ -1315,15 +1315,13 @@ setup_custom() {
   fi
 }
 
-# Prints why $1 is not a language name (English letters, spaces, hyphens and parentheses, at least one letter, at
-# most 40 characters); prints nothing when it is one. The letters are listed, never a range: a range depends on the
-# locale.
+# Prints why $1 is not a language name (English letters, spaces, hyphens and parentheses, at most 40 characters);
+# prints nothing when it is one. The letters are listed, never a range: a range depends on the locale.
 language_problem() {
   local value="$1" letters='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
   case "$value" in
     *[!"$letters"' ()-']*) echo "use only English letters, spaces, hyphens and parentheses" ;;
-    *[$letters]*) [ "${#value}" -le 40 ] || echo "at most 40 characters" ;;
-    *) echo "give at least one letter" ;;
+    *) [ "${#value}" -le 40 ] || echo "at most 40 characters" ;;
   esac
 }
 

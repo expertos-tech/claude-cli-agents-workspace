@@ -652,15 +652,14 @@ test_new_asks_the_language_on_a_terminal() {
   long="$(printf 'a%.0s' $(seq 1 41))"
   # Invalid answers are asked again; the valid one is stored trimmed, as typed.
   answers "$T/answers" "custom layer repository" "" "Preferred language" "portugu3se" "Preferred language" "português" \
-    "Preferred language" "$long" "Preferred language" "( - )" "Preferred language" "  portuguese  "
+    "Preferred language" "$long" "Preferred language" "  portuguese  "
   in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" new "$WS"
   rc_is 0
   has "created: $WS"
   has "not a language name: use only English letters, spaces, hyphens and parentheses."
   has "not a language name: at most 40 characters."
-  has "not a language name: give at least one letter."
-  [ "$(grep -o 'Preferred language of communication with Claude' <<<"$OUT" | wc -l | tr -d ' ')" = 5 ]
-  check "asked five times" $?
+  [ "$(grep -o 'Preferred language of communication with Claude' <<<"$OUT" | wc -l | tr -d ' ')" = 4 ]
+  check "asked four times" $?
   has "language: portuguese, in .claude/settings.local.json"
   content_is "$WS/.claude/settings.local.json" $'{\n  "language": "portuguese"\n}'
   # The setup ran after the question, and the file stays where the person can edit it.
