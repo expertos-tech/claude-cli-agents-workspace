@@ -35,13 +35,19 @@ Commands:
         or with no developer (the normal flow already works from main: open without --from-main) is refused, and
         nothing is created for any repo of the call.
         --request <file>: the request the work runs (/request): a bare name is custom/requests/<name>, else
-        custom/requests/doing/<name>; a path must be one of the two. Checked before any clone: a request file that is
-        not committed in custom/ (untracked or changed), a pending one whose doing/ copy exists, a request another
-        work records, or a work that records another request is refused, and nothing is created. After every clone is
-        open, a pending request moves to custom/requests/doing/<name> (git mv), committed by path in custom/
-        ("chore(requests): start <name>", its body naming the work, the branch and the repos) and pushed to the
-        remote of custom/ (no remote, or a failed push: the commit stays, with an attention: line). A request already
-        in doing/ does not move. The work records it in tmp/work/<work>/.request.
+        custom/requests/doing/<name>; a path must be one of the two. A pending request written by hand may be
+        untracked or changed in custom/: before any clone it is scanned for secrets (scripts/validate.sh --only
+        secrets --path custom, the scan guard-bash runs on a commit in custom/). Checked before any clone, refused
+        with nothing created: a secret found; a scan that did not run (no Docker, a tool error: commit the file by
+        path in custom/ yourself, where guard-bash asks you to confirm, then open again); a pending file ignored by
+        git in custom/ or named local.settings.json; a request of doing/ not committed (untracked or changed); a
+        pending one whose doing/ copy exists; a request another work records; a work that records another request.
+        After every clone is open, a pending request written by hand is committed as it is on disk, by its path only
+        ("chore(requests): add <name>"; other changes of custom/, staged or not, stay out), then it moves to
+        custom/requests/doing/<name> (git mv), committed by path in custom/ ("chore(requests): start <name>", its
+        body naming the work, the branch and the repos) and pushed to the remote of custom/ (no remote, or a failed
+        push: the commits stay, with an attention: line). A request already in doing/ does not move. The work
+        records it in tmp/work/<work>/.request.
         --resume: a branch that already exists on the remote is checked out from it (the work goes on there), instead
         of being refused; a repo where it does not exist starts from the base, with an attention: line.
   run <work>/<clone> -- <command>...
@@ -152,6 +158,7 @@ is refused, even when named. The groups of a clone: the names in its override fi
 compose folder label lies in the clone. The work is in scripts/agent-copy.py.
 
 Environment: AIWP_SECRETS_CMD replaces the gitleaks run (tests); it gets the repo and the range as arguments.
+AIWP_DOCKER and AIWP_VALIDATE replace docker and scripts/validate.sh in the scan of a request open commits (tests).
 AIWP_CUSTOM_DIR (as in run-tools.sh): binds under custom/ of the workspace are read from that folder instead.
 Exit: 0 ok; 1 refused or failed; 2 usage error.
 USAGE
@@ -427,6 +434,51 @@ require_committed_request() {
     die 1 "custom/$rel has changes not committed: commit them by path in custom/ first; nothing was changed"
 }
 
+# Scans one file of custom/ (relative to custom/) for secrets the way guard-bash scans a commit in custom/:
+# scripts/validate.sh --only secrets --path custom --files <list>, once docker info answers. Its output goes to stderr.
+# Returns 0 when clean, 1 when a secret is found (exit 1 with a finding in the output), 2 when the scan did not run,
+# with the reason on stdout.
+scan_custom_file() {
+  local rel="$1" docker="${AIWP_DOCKER:-docker}" validate="${AIWP_VALIDATE:-$root/scripts/validate.sh}" list out rc=0
+  if ! command -v "$docker" >/dev/null 2>&1 || ! timeout 15 "$docker" info >/dev/null 2>&1; then
+    echo "Docker did not respond"
+    return 2
+  fi
+  list="$(mktemp "${TMPDIR:-/tmp}/aiwp-request-scan.XXXXXX")" || { echo "no temporary file for the list"; return 2; }
+  printf 'custom/%s\n' "$rel" >"$list"
+  out="$(cd "$root" && timeout 180 bash "$validate" --only secrets --path custom --files "$list" 2>&1 </dev/null)" || rc=$?
+  rm -f "$list"
+  out="$(printf '%s\n' "$out" | sed "s/$(printf '\033')\\[[0-9;]*[A-Za-z]//g")"
+  [ "$rc" -eq 0 ] && return 0
+  printf '%s\n' "$out" | tail -n 30 >&2
+  if [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -Eq 'leaks found|RuleID|Finding:|tracked by git'; then return 1; fi
+  echo "scripts/validate.sh exit $rc with no finding"
+  return 2
+}
+
+# Prints the git blob of a pending request (relative to custom/) that open must commit before it moves (untracked, or
+# changed in the index or on disk), or nothing when it is committed with no change. Exits 1, before anything changes,
+# when custom/ is no git repo, the file is ignored there or named like a local secret file, or its secret scan finds
+# a secret or does not run.
+request_to_commit() {
+  local rel="$1" why
+  [ "$(git -C "$custom_root" rev-parse --show-toplevel 2>/dev/null)" = "$(physical "$custom_root" || true)" ] ||
+    die 1 "custom/ is not a git repo: the request cannot move (bash scripts/setup-claude.sh clones it); nothing was changed"
+  if git -C "$custom_root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 &&
+    [ -z "$(git -C "$custom_root" status --porcelain -- "$rel")" ]; then
+    return 0
+  fi
+  [ "${rel##*/}" != local.settings.json ] ||
+    die 1 "custom/$rel is named like a local secret file, which never goes into git: rename it; nothing was created"
+  ! git -C "$custom_root" check-ignore -q --no-index -- "$rel" ||
+    die 1 "custom/$rel is ignored by git in custom/: open cannot commit it; change custom/.gitignore or rename it; nothing was created"
+  why="$(scan_custom_file "$rel")" || case "$?" in
+    1) die 1 "custom/$rel holds a secret (the scan above): take it out of the file, then open again; nothing was created" ;;
+    *) die 1 "the secret scan of custom/$rel did not run ($why): open commits a request only after the scan passes. Start Docker and open again, or commit it by path in custom/ yourself (guard-bash asks you to confirm), then open again; nothing was created" ;;
+  esac
+  git -C "$custom_root" hash-object -- "$rel"
+}
+
 # Pushes the branch of custom/ to its remote. Never fails: no remote, a detached HEAD or a refused push leave the commit
 # in custom/ with an attention: line.
 push_custom() {
@@ -454,11 +506,12 @@ commit_custom() {
   push_custom
 }
 
-# Resolves the --request of open to "<state> <name>": pending (custom/requests/<name>) or doing
-# (custom/requests/doing/<name>), checked as require_committed_request does; a pending one whose doing/ copy exists, or
-# one another work records, is refused. Exits 2 for a path elsewhere, 1 for the refusals.
+# Resolves the --request of open to "<state> <name> [<blob>]": pending (custom/requests/<name>, checked by
+# request_to_commit: <blob> when open must commit it first) or doing (custom/requests/doing/<name>, checked as
+# require_committed_request does); a pending one whose doing/ copy exists, or one another work records, is refused.
+# Exits 2 for a path elsewhere, 1 for the refusals.
 resolve_request() {
-  local given="$1" work="$2" rel name state other
+  local given="$1" work="$2" rel name state other blob=""
   case "$given" in
     */*)
       rel="$given"
@@ -485,7 +538,7 @@ resolve_request() {
   fi
   [ "$state" = doing ] || [ ! -e "$custom_root/requests/doing/$name" ] ||
     die 1 "custom/requests/doing/$name exists: that request is in progress (/request $name resumes it or starts over); nothing was created"
-  require_committed_request "$rel"
+  if [ "$state" = pending ]; then blob="$(request_to_commit "$rel")" || exit 1; else require_committed_request "$rel"; fi
   other="$(work_request "$work")"
   [ -z "$other" ] || [ "$other" = "custom/requests/doing/$name" ] ||
     die 1 "tmp/work/$work records another request ($other): use another <work>; nothing was created"
@@ -493,12 +546,25 @@ resolve_request() {
     [ -z "$other" ] || [ "$other" = "$work" ] ||
       die 1 "custom/requests/doing/$name is in progress in tmp/work/$other: resume it there, or start over (bash scripts/aiwp-cmds.sh close $other --discard --start-over); nothing was created"
   done < <(works_recording "custom/requests/doing/$name")
-  echo "$state $name"
+  echo "$state $name${blob:+ $blob}"
 }
 
 # Moves a pending request to custom/requests/doing/, committed by path in custom/ and pushed; then the work records it.
+# With the blob its scan passed on (a request written by hand), the file is first committed as it is, by its path only,
+# when it still holds that text.
 request_to_doing() {
-  local name="$1" work="$2" branch="$3" repos="$4"
+  local name="$1" work="$2" branch="$3" repos="$4" blob="${5:-}" msg
+  if [ -n "$blob" ]; then
+    [ "$(git -C "$custom_root" hash-object -- "requests/$name" 2>/dev/null || true)" = "$blob" ] ||
+      die 1 "custom/requests/$name changed after its secret scan: nothing committed in custom/; the clones stay open: run the same open again (it scans it again), or close them with bash scripts/aiwp-cmds.sh close $work --discard"
+    msg="chore(requests): add $name"$'\n\n'"- written by hand, committed as it was by open --request for tmp/work/$work"
+    [ -z "${CLAUDECODE:-}" ] || msg+=$'\n\n[#automatic-agent-commit]'
+    if ! git -C "$custom_root" add -- "requests/$name" ||
+      ! git -C "$custom_root" commit -q -m "$msg" -- "requests/$name"; then
+      die 1 "the commit of custom/requests/$name failed: nothing moved; the clones stay open: commit it by path in custom/, then run the same open again"
+    fi
+    echo "committed in custom/: $(git -C "$custom_root" rev-parse --short HEAD) chore(requests): add $name"
+  fi
   mkdir -p "$custom_root/requests/doing"
   git -C "$custom_root" mv -- "requests/$name" "requests/doing/$name" ||
     die 1 "custom/requests/$name could not move to doing/ (another session took it?): the clones stay open; close them with bash scripts/aiwp-cmds.sh close $work --discard"
@@ -510,7 +576,7 @@ request_to_doing() {
 # open: one clone per repo, branch from the base, hooks, env files, first push.
 cmd_open() {
   local work="" branch="" repos=() repo src name clone base url slug start from_main=0 kind request="" resume=0 \
-    resolved="" request_state="" request_name="" resumed=0
+    resolved="" request_state="" request_name="" request_blob="" resumed=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --branch) [ $# -ge 2 ] || die 2 "--branch needs a value"; branch="$2"; shift ;;
@@ -539,8 +605,7 @@ cmd_open() {
   if [ -n "$request" ]; then
     # Checked before the first clone: a refusal leaves nothing behind.
     resolved="$(resolve_request "$request" "$work")"
-    request_state="${resolved%% *}"
-    request_name="${resolved#* }"
+    read -r request_state request_name request_blob <<<"$resolved"
   fi
   if [ "$from_main" = 1 ]; then
     # Every repo is checked before the first clone: a refusal leaves nothing behind.
@@ -644,7 +709,7 @@ cmd_open() {
   done
   [ -n "$request" ] || return 0
   # Only once every clone is open: a failed open leaves no request in doing/.
-  [ "$request_state" = doing ] || request_to_doing "$request_name" "$work" "$branch" "${repos[*]}"
+  [ "$request_state" = doing ] || request_to_doing "$request_name" "$work" "$branch" "${repos[*]}" "$request_blob"
   printf 'custom/requests/doing/%s\n' "$request_name" >"$work_root/$work/.request"
   echo "request: custom/requests/doing/$request_name (in progress in tmp/work/$work)"
 }

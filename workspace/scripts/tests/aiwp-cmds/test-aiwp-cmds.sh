@@ -71,6 +71,29 @@ STUB
   chmod +x "$BASE/scan.sh"
   export AIWP_SECRETS_CMD="$BASE/scan.sh"
   unset SCAN_EXIT
+  # The file scan open --request runs on a request it commits: docker info answers DOCKER_INFO_EXIT (default 0); the
+  # validate.sh stub logs each call and finds a GitHub token shape in a listed file, printing what gitleaks prints.
+  cat >"$BASE/docker-info.sh" <<'STUB'
+#!/usr/bin/env bash
+exit "${DOCKER_INFO_EXIT:-0}"
+STUB
+  cat >"$BASE/validate.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "validate $*" >>"$VALIDATE_LOG"
+list=""
+while [ $# -gt 0 ]; do [ "$1" = --files ] && list="$2"; shift; done
+while IFS= read -r p; do
+  if grep -Eq 'ghp_[0-9A-Za-z]{36}' "$p"; then
+    printf 'Finding:     REDACTED\nRuleID:      github-pat\nFile:        /work/%s\nleaks found: 1\n' "$p"
+    exit 1
+  fi
+done <"$list"
+echo "PASS secrets"
+STUB
+  chmod +x "$BASE/docker-info.sh" "$BASE/validate.sh"
+  export AIWP_DOCKER="$BASE/docker-info.sh" AIWP_VALIDATE="$BASE/validate.sh" VALIDATE_LOG="$BASE/validate.$CURRENT.log"
+  rm -f "$VALIDATE_LOG"
+  unset DOCKER_INFO_EXIT
 }
 
 run() {
@@ -1146,20 +1169,134 @@ test_open_request_moves_it_to_doing_once() {
   eq "no second start commit" "$((before + 1))" "$(custom_commits)"
 }
 
-test_open_request_refuses_before_anything_is_created() {
+# The state of custom/ the tests compare: every commit and the porcelain status with untracked files.
+custom_state() { git -C "$R/custom" rev-parse HEAD; git -C "$R/custom" status --porcelain --untracked-files=all; }
+
+test_open_request_commits_an_untracked_request_then_moves_it() {
   fixture
-  printf '# untracked\n' >"$R/custom/requests-untracked.md"
+  mkdir -p "$R/custom/requests"
+  printf '# U, written by hand\n' >"$R/custom/requests/u.md"
+  # Unrelated work in custom/: an untracked note, a staged file and a changed tracked one stay as they are.
+  printf 'draft\n' >"$R/custom/notes.md"
+  printf 'staged\n' >"$R/custom/staged.md"
+  git -C "$R/custom" add -- staged.md
+  printf 'changed\n' >>"$R/custom/README.md"
+  local before
+  before="$(custom_commits)"
+  run open "$W" app --request u.md
+  rc_is 0
+  has "committed in custom/: "
+  has "chore(requests): add u.md"
+  has "chore(requests): start u.md"
+  has "request: custom/requests/doing/u.md (in progress in tmp/work/$W)"
+  [ -f "$R/custom/requests/doing/u.md" ] && [ ! -e "$R/custom/requests/u.md" ]; check "moved to doing/" $?
+  eq "two commits in custom/" "$((before + 2))" "$(custom_commits)"
+  eq "the add commit holds only the request" "A	requests/u.md" "$(git -C "$R/custom" show --format= --name-status HEAD~1)"
+  eq "the file as written" "# U, written by hand" "$(git -C "$R/custom" show HEAD~1:requests/u.md)"
+  eq "then a pure rename" "R100	requests/u.md	requests/doing/u.md" "$(git -C "$R/custom" show -M --format= --name-status HEAD)"
+  grep -q "^validate --only secrets --path custom --files " "$VALIDATE_LOG"; check "the file was scanned" $?
+  eq "the rest of custom/ untouched" "A  staged.md
+ M README.md
+?? notes.md" "$(git -C "$R/custom" status --porcelain --untracked-files=all | sort)"
+  eq "staged.md still staged, not committed" "staged" "$(git -C "$R/custom" show :staged.md)"
+  eq "the work records it" "custom/requests/doing/u.md" "$(cat "$R/tmp/work/$W/.request")"
+}
+
+test_open_request_commits_a_changed_request_then_moves_it() {
+  fixture
+  request_in_custom requests/c.md "# C"
+  printf 'more, not committed\n' >>"$R/custom/requests/c.md"
+  printf 'draft\n' >"$R/custom/notes.md"
+  local before
+  before="$(custom_commits)"
+  run open "$W" app --request c.md
+  rc_is 0
+  has "chore(requests): add c.md"
+  has "chore(requests): start c.md"
+  eq "two commits in custom/" "$((before + 2))" "$(custom_commits)"
+  eq "the change committed first" "M	requests/c.md" "$(git -C "$R/custom" show --format= --name-status HEAD~1)"
+  eq "with the text on disk" "# C
+more, not committed" "$(git -C "$R/custom" show HEAD:requests/doing/c.md)"
+  eq "then a pure rename" "R100	requests/c.md	requests/doing/c.md" "$(git -C "$R/custom" show -M --format= --name-status HEAD)"
+  eq "only notes.md left out" "?? notes.md" "$(git -C "$R/custom" status --porcelain --untracked-files=all)"
+  # A committed request needs no scan: the next one goes straight to the rename.
+  rm -f "$VALIDATE_LOG"
+  request_in_custom requests/d.md "# D"
+  run open 2026-11-17-other app --branch feat/other --request d.md
+  rc_is 0
+  hasnt "chore(requests): add d.md"
+  [ ! -e "$VALIDATE_LOG" ]; check "no scan of a committed request" $?
+}
+
+test_open_request_with_a_secret_is_refused_with_nothing_changed() {
+  fixture
+  mkdir -p "$R/custom/requests"
+  # An invented token in the shape gitleaks' github-pat rule finds, built at run time so no file holds it.
+  printf '# S\ntoken: %s%s\n' "ghp_" "0123456789abcdefghijABCDEFGHIJabcdef" >"$R/custom/requests/s.md"
+  printf 'draft\n' >"$R/custom/notes.md"
+  local before
+  before="$(custom_state)"
+  run open "$W" app --request s.md
+  rc_is 1
+  has "leaks found"
+  has "custom/requests/s.md holds a secret"
+  hasnt "ghp_0123"
+  [ ! -e "$R/tmp/work/$W" ]; check "nothing cloned" $?
+  eq "no branch on the remote" none "$(remote_sha feat/sample-change)"
+  eq "custom/ unchanged" "$before" "$(custom_state)"
+  [ ! -e "$R/custom/requests/doing" ]; check "nothing moved" $?
+  # The same file tracked, with the secret as a change not committed: refused the same way.
+  printf '# S\n' >"$R/custom/requests/t.md"
+  git -C "$R/custom" add -- requests/t.md
+  git -C "$R/custom" commit -q -m "add t" -- requests/t.md
+  cp "$R/custom/requests/s.md" "$R/custom/requests/t.md"
+  before="$(custom_state)"
+  run open "$W" app --request t.md
+  rc_is 1
+  has "custom/requests/t.md holds a secret"
+  eq "custom/ unchanged again" "$before" "$(custom_state)"
+  [ ! -e "$R/tmp/work/$W" ]; check "still nothing cloned" $?
+}
+
+test_open_request_refuses_when_the_scan_cannot_run() {
+  fixture
   mkdir -p "$R/custom/requests"
   printf '# U\n' >"$R/custom/requests/u.md"
+  local before
+  before="$(custom_state)"
+  export DOCKER_INFO_EXIT=1
+  run open "$W" app --request u.md
+  unset DOCKER_INFO_EXIT
+  rc_is 1
+  has "the secret scan of custom/requests/u.md did not run (Docker did not respond)"
+  has "commit it by path in custom/"
+  [ ! -e "$VALIDATE_LOG" ]; check "validate not called without Docker" $?
+  [ ! -e "$R/tmp/work/$W" ]; check "nothing cloned" $?
+  eq "custom/ unchanged" "$before" "$(custom_state)"
+  # validate.sh failing with no finding (a tool error) is no pass either.
+  printf '#!/usr/bin/env bash\necho "FAIL secrets: image pull failed"\nexit 1\n' >"$BASE/validate.sh"
   run open "$W" app --request u.md
   rc_is 1
-  has "custom/requests/u.md is not committed in custom/"
-  request_in_custom requests/c.md "# C"
-  printf 'more\n' >>"$R/custom/requests/c.md"
-  run open "$W" app --request c.md
+  has "the secret scan of custom/requests/u.md did not run"
+  eq "custom/ still unchanged" "$before" "$(custom_state)"
+  # A request named like a local secret file, which the scan skips, is never committed by open.
+  printf '{}\n' >"$R/custom/requests/local.settings.json"
+  run open "$W" app --request local.settings.json
   rc_is 1
-  has "has changes not committed"
-  git -C "$R/custom" checkout -q -- requests/c.md
+  has "local secret file"
+  # Ignored by custom/.gitignore: refused before any scan.
+  printf 'requests/ignored.md\n' >"$R/custom/.gitignore"
+  printf '# I\n' >"$R/custom/requests/ignored.md"
+  run open "$W" app --request ignored.md
+  rc_is 1
+  has "custom/requests/ignored.md is ignored by git in custom/"
+  [ ! -e "$R/tmp/work/$W" ]; check "still nothing cloned" $?
+}
+
+test_open_request_refuses_before_anything_is_created() {
+  fixture
+  mkdir -p "$R/custom/requests"
+  request_in_custom requests/c.md "# C"
   run open "$W" app --request nope.md
   rc_is 1
   has "request not found: custom/requests/nope.md nor custom/requests/doing/nope.md"
