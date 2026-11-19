@@ -24,9 +24,12 @@ configuration. The same in the product and at the root (`/caw-draft-prompt`, `/c
 
 - BR-1: `/draft-request` is renamed `/new-request` (folder, `name:` and every current reference), and
   `/caw-draft-request` is renamed `/caw-new-request`, with no alias. History stays as written: past changelog
-  entries, `maintainers/requests/qa/`, `maintainers/requests/done/`, the plan and this request. The 0.2.0 line of
-  `workspace/CHANGELOG.md` says "`/prompt` and `/draft-prompt` are renamed `/request` and `/new-request`", and a new
-  line says what `/draft-prompt` does now.
+  entries, `maintainers/requests/qa/`, `maintainers/requests/done/`, the plan and this request. The 0.2.0 sections of
+  `workspace/CHANGELOG.md` and of the root `CHANGELOG.md` are not released, so they are no history: every mention of
+  `/draft-request` or `/caw-draft-request` there names the new command, but an entry that records this rename (in
+  the product's, the rename line becomes
+  "`/prompt` and `/draft-prompt` are renamed `/request` and `/new-request`", and the line on the warnings, "Also when
+  `/draft-request` writes a request", names `/new-request`), and a new line says what `/draft-prompt` does now.
 - BR-2: The files. A plan is saved in the person's language: the Claude Code setting `language`, else the language
   the person writes in. A request is saved in English, as today, its template headings and bold labels included.
   Not translated in a plan: the labels of its status line (`Status:`, `Criticality:`). Code, rules, skills, documents,

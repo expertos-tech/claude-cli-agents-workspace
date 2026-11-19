@@ -42,7 +42,7 @@ screen instead of the whole text.
 - It asks only when what is being asked is too vague to organize (no goal can be read, or two readings would be two
   different things): one message, few questions, each with a suggested answer. Every other gap goes to the plan,
   unanswered.
-- The plan, in the person's language (section 3.5), with these three sections, headings in that language:
+- The plan, in the person's language (section 3.4), with these three sections, headings in that language:
   - **Context**: what exists today and why the idea came up.
   - **Instructions**: what is wanted, grouped by subject, one bullet per point; constraints and preferences as said.
   - **Final guidance**: always the same order to the agent that will read it, then the gaps found:
@@ -53,8 +53,8 @@ screen instead of the whole text.
     4. Do not hold only to this text: evolve the idea and propose improvements.
     5. The gaps found, one per line, as questions.
 - It saves the plan with a status line `Status: draft (<date>). Criticality: <level>.` and a row in the plans
-  README, in the place of the priority order it suggests (section 3.4).
-- It ends with the screen summary (section 3.6), never the whole plan, and the line to continue:
+  README, in the place of the priority order it suggests (section 3.3).
+- It ends with the screen summary (section 3.5), never the whole plan, and the line to continue:
   `/new-request <plan path>`.
 
 ### 3.2 `/new-request` (renamed `/draft-request`, two changes)
@@ -71,11 +71,11 @@ screen instead of the whole text.
   researches, and proposes improvements, numbered, in the same message as the blocking doubts; each one enters the
   request only if the person accepts it (D-8), so no rule the person did not choose is written. The plan's row in the
   README then names the request, and its status line says `request: <file>`.
-- Delivery: the screen summary (section 3.6) instead of the full text. The whole request only when the person asks
+- Delivery: the screen summary (section 3.5) instead of the full text. The whole request only when the person asks
   for it, or when there is no write access (the separate Claude project of `request-writing.md`), because then no file
   holds it.
 
-### 3.4 The plans README and the priority order
+### 3.3 The plans README and the priority order
 
 - Product: `custom/plans/<yyyy-mm-dd>-<kebab-slug>.md` and `custom/plans/README.md` (D-7), committed and pushed in the
   custom layer like a request of `/new-request` today. Root: `maintainers/plans/<kebab-name>.md` and
@@ -93,7 +93,7 @@ screen instead of the whole text.
 - The new plan is placed by its criticality, then by what it depends on; the rows already there keep their level and
   relative order. The summary says where it went and why, so the person can move it.
 
-### 3.5 The language: what is shown and what is saved
+### 3.4 The language: what is shown and what is saved
 
 Two rules, placed apart: one governs every reply, the other the files. The person's language is the Claude Code
 setting `language`, else the language the person writes in.
@@ -123,7 +123,7 @@ before the build stay as they are. Its place is where a file is written:
 
 `request-writing.md` "Role" and `templates/request.md` keep "saved in English": they speak of requests.
 
-### 3.6 The screen summaries
+### 3.5 The screen summaries
 
 Both are short, in the reply language, formatted for a person to read, with the saved file named once.
 
@@ -168,11 +168,11 @@ Steps: 1. report (medium) · 2. sending (medium)
 - D-3: the draft is a plan, saved in plans; it becomes a request only through `/new-request`. Owner: answered by D-2.
 - D-4 and D-6: a plan is saved in the person's language and a request in English, in the product and at the root;
   whatever is shown on screen is in the person's language, but code and configuration, shown as they are; comments and
-  documentation in code, shown, in the person's language (section 3.5). Owner: yes, revised 2026-11-19 (it replaced
+  documentation in code, shown, in the person's language (section 3.4). Owner: yes, revised 2026-11-19 (it replaced
   "plans and requests in the language of the input text").
 - D-5: no alias and no transition for `/draft-request` or the old `/draft-prompt`: no workspace is installed yet.
   Owner: yes.
-- `/new-request` shows a summary instead of the whole request (section 3.6). Owner: asked for it.
+- `/new-request` shows a summary instead of the whole request (section 3.5). Owner: asked for it.
 - D-7: the product's plans in `custom/plans/`, beside `custom/requests/`. Owner: yes.
 - D-8: the improvements `/new-request` proposes enter the request only when the person accepts each one. Owner: yes;
   and `/new-request` never requires a plan: given a text, it does what it does today, organizing it first by the
@@ -199,6 +199,6 @@ Assumed, the owner can overturn:
 
 | Stage | Effort | Why |
 | --- | --- | --- |
-| 1. Rename `/draft-request` to `/new-request`, product and root, with every reference and the changelog; the two language rules of section 3.5 | high | It touches a hook (`session-title.py`, docstring and test): `/caw-test-install` too |
+| 1. Rename `/draft-request` to `/new-request`, product and root, with every reference and the changelog; the two language rules of section 3.4 | high | It touches a hook (`session-title.py`, docstring and test): `/caw-test-install` too |
 | 2. `/draft-prompt` and `/caw-draft-prompt`: the plan, its three sections, the plans README with priority and criticality, the summary, their docs | medium | A new skill with a clear scope |
 | 3. `/new-request`: a plan as input with its "Final guidance", the accepted improvements, the summary instead of the full text (`request-writing.md` "Flow" and "Delivery") | medium | A change of a procedure people use every day, with a clear scope |
