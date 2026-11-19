@@ -128,7 +128,8 @@ Commands:
         --discard it never moves (/caw-merge moved it to qa/).
         --start-over (with --discard: start the request again): the work branch of each clone is deleted on the
         remote first (only a work branch, never developer or main; --force-with-lease with the sha the clone pushed
-        last, so a commit pushed there from elsewhere refuses the close and keeps the folder), then the folder goes;
+        last, caw.pushed, so a commit pushed there from elsewhere refuses the close and keeps the folder; a clone
+        with no caw.pushed refuses it too, never leasing on its tracking ref), then the folder goes;
         the request stays in doing/ and nothing is committed. Then: open <type>/<slug> --request <name>.
 
 Git hooks of a clone (written by open into the clone's .git/hooks, with the clone's core.hooksPath set to it; never
@@ -1157,8 +1158,9 @@ cmd_status() {
 }
 
 # Deletes the work branch of a clone on origin for a start over, from this repository: only a work branch, never
-# developer or main, with --force-with-lease against the sha the clone pushed last (caw.pushed, else its tracking ref),
-# so a commit pushed there from elsewhere is never deleted. Returns 1 when the branch stays.
+# developer or main, with --force-with-lease against the sha the clone pushed last (caw.pushed, only that: a tracking
+# ref a fetch moved may hold a commit pushed from elsewhere), so a commit pushed there from elsewhere is never deleted.
+# Returns 1 when the branch stays.
 delete_for_start_over() {
   local clone="$1" branch url remote pushed
   branch="$(clone_branch "$clone")" || { echo "refused: ${clone#"$root"/} is not a clone made by open" >&2; return 1; }
@@ -1174,9 +1176,10 @@ delete_for_start_over() {
     echo "not on origin: $branch"
     return 0
   fi
-  pushed="$(git -C "$clone" config --get caw.pushed || git -C "$clone" rev-parse -q --verify "refs/remotes/origin/$branch" || true)"
+  # The lease is only the sha this clone pushed: its tracking ref may hold a commit another clone pushed.
+  pushed="$(git -C "$clone" config --get caw.pushed || true)"
   if [ -z "$pushed" ]; then
-    echo "refused: no sha this clone pushed is known: $branch stays on origin" >&2
+    echo "refused: ${clone#"$root"/} records no sha it pushed (caw.pushed): $branch stays on origin, since what it holds may have been pushed from elsewhere; the owner checks it (git log origin/$branch) and deletes it by hand at the root (git push origin --delete $branch), then closes again; or the work goes on in this clone instead" >&2
     return 1
   fi
   if with_timeout 120 git -C "$root" push -q --force-with-lease="refs/heads/$branch:$pushed" "$url" ":refs/heads/$branch" 2>/dev/null; then

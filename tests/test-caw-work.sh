@@ -2043,6 +2043,33 @@ test_close_start_over_keeps_a_branch_pushed_from_elsewhere() {
   eq "remote branch kept" "$pushed" "$(remote_sha "heads/$B")"
 }
 
+# Start over with no caw.pushed (a clone from before it existed) is refused, never leasing on the tracking ref: here a
+# fetch brought a commit pushed from elsewhere into it, which that lease would have deleted.
+test_close_start_over_refuses_without_caw_pushed() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  commit_in a.txt one
+  local other="$BASE/other.$CURRENT" pushed
+  rm -rf "$other"
+  git clone -q "$REMOTE" "$other"
+  git -C "$other" switch -q "$B"
+  git -C "$other" commit -q --allow-empty -m "from elsewhere"
+  git -C "$other" push -q origin "$B"
+  pushed="$(remote_sha "heads/$B")"
+  git -C "$C" config --unset caw.pushed
+  git -C "$C" fetch -q origin
+  eq "the tracking ref holds the commit from elsewhere" "$pushed" "$(git -C "$C" rev-parse "refs/remotes/origin/$B")"
+  run close "$W" --discard --start-over
+  rc_is 1
+  has "records no sha it pushed (caw.pushed)"
+  has "git push origin --delete $B"
+  has "nothing else was deleted"
+  [ -d "$C" ]; check "clone kept" $?
+  eq "remote branch kept" "$pushed" "$(remote_sha "heads/$B")"
+  on_remote maintainers/requests/doing/sample.md; check "still in doing/" $?
+}
+
 # AC-4, resume: the folder gone, the branch on the remote: --resume checks it out, with no commit on the base.
 test_open_resume() {
   requests_fixture
