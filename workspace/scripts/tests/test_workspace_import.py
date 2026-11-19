@@ -319,7 +319,7 @@ class GitReadTest(Base):
                 ('local', SHA, '', ''),
             ],
         )
-        self.fake.facts[path].count = 'x'
+        self.fake.facts[path].count = '0'
         self.fake.facts[path].log = 'abc1234 change\ndef5678 use token=' + 'abcdefgh12345678'
         found = {b['name']: b for b in wi.local_branches(path)}
         self.assertFalse(found['main']['pending'])
@@ -328,6 +328,14 @@ class GitReadTest(Base):
         # With no upstream (or a gone one), only commits no remote-tracking ref holds are pending.
         self.assertFalse(found['gone']['pending'] or found['local']['pending'])
         self.assertEqual(found['local']['count'], 0)
+        # A count git cannot make (a missing object in the history) is never taken for 0: pending, unread.
+        self.fake.facts[path].count = 'x'
+        found = {b['name']: b for b in wi.local_branches(path)}
+        self.assertTrue(found['local']['pending'] and found['local']['unread'])
+        self.assertIsNone(found['local']['count'])
+        found = {b['name']: b for b in wi.local_branches(path, ['refs/heads/local', 'refs/remotes/origin/gone'])}
+        self.assertNotIn('local', found)
+        self.assertTrue(found['gone']['gone'])
         self.fake.facts[path].count = '2'
         found = {b['name']: b for b in wi.local_branches(path)}
         self.assertTrue(found['gone']['pending'] and found['local']['pending'])

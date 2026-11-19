@@ -109,14 +109,21 @@ bring <git-url | folder> <path relative to projects/>
       what a clone cannot carry is reported: uncommitted files (names only), stashes, local commits that remote lacks (per branch: not on the remote, or N commit(s) the remote does not have).
       The checkout ends on developer, else main. An existing projects/<path> is refused, but an empty folder (the
       checkout of a parent repo that tracks the nested one as a gitlink).
+      A folder with missing objects (a snapshot taken while git wrote in it; a clone made with --shared or --reference
+      whose objects/info/alternates names a folder that is gone, named in an attention: line): every branch and tag
+      whose objects are complete is brought, by name, and each one that is not is named ("not brought, a missing
+      object in it or in its history: <refs>"); with no complete branch it fails, saying so, and leaves nothing.
       Also a step of /import-workspace (scripts/workspace-import.py). The source is only read: its own filters and
       fsmonitor never run.
 bring-branch <folder> <repo> <ref> <branch>
       For /import-workspace: fetches one commit of a local repository outside the workspace (a worktree or a work
       clone of an older workspace) into projects/<repo> as the new local branch <branch>: <ref> is a branch of the
-      folder, HEAD (a detached worktree) or the full sha a branch or HEAD of the folder points at. Refused when
-      <branch> exists in projects/<repo> or is no valid branch name. Never touches the folder nor the checkout of
-      projects/<repo>, never pushes. The folder's own filters, fsmonitor and hooks never run.
+      folder, HEAD (a detached worktree) or the full sha a branch or HEAD of the folder points at. The folder may be
+      the own git folder of a linked worktree, <repo>/.git/worktrees/<name>: a worktree moved with its workspace,
+      whose .git file names a path that is gone. Refused when <branch> exists in projects/<repo> or is no valid
+      branch name, and when <ref> points to a missing object or misses one in its history, saying so. Never touches
+      the folder nor the checkout of projects/<repo>, never pushes. The folder's own filters, fsmonitor and hooks
+      never run.
 apply <repo> <module folder>
       Phase 1: in a temporary worktree of main (equal to the remote) under tmp/work/_apply/, terraform init and plan
       -out, prints the plan and the apply command, and records it as the latest plan of that module. Changes nothing
@@ -1088,10 +1095,52 @@ source_git() {
   git --no-optional-locks -c core.fsmonitor=false -c log.showSignature=false ${off[@]+"${off[@]}"} -C "$from" "$@"
 }
 
+# The damage of a local source folder (a snapshot taken while git wrote in it, a clone made with --shared or
+# --reference whose objects/info/alternates names a folder that is gone): sets GONE_ALTERNATES (those folders),
+# DAMAGED_REFS (each branch and tag with a missing object in it or in its history) and COMPLETE_REFS (the others). A
+# folder with every object of its branches and tags sets only COMPLETE_REFS, after one walk of them.
+source_damage() {
+  local from="$1" objects line ref
+  GONE_ALTERNATES=() DAMAGED_REFS=() COMPLETE_REFS=()
+  objects="$(source_git "$from" rev-parse --git-path objects 2>/dev/null)" || return 0
+  case "$objects" in /*) ;; *) objects="$from/$objects" ;; esac
+  if [ -f "$objects/info/alternates" ]; then
+    while IFS= read -r line; do
+      case "$line" in '' | '#'*) continue ;; /*) ;; *) line="$objects/$line" ;; esac
+      [ -d "$line" ] || GONE_ALTERNATES+=("$line")
+    done <"$objects/info/alternates"
+  fi
+  if source_git "$from" rev-list --objects --quiet --branches --tags >/dev/null 2>&1; then
+    while IFS= read -r ref; do COMPLETE_REFS+=("$ref"); done < <(source_git "$from" for-each-ref --format='%(refname)' refs/heads/ refs/tags/)
+    return 0
+  fi
+  # One walk per ref, stopping at the refs already found complete.
+  while IFS= read -r ref; do
+    if { printf '%s\n' "$ref"; [ ${#COMPLETE_REFS[@]} -eq 0 ] || printf '^%s\n' "${COMPLETE_REFS[@]}"; } |
+      source_git "$from" rev-list --objects --quiet --stdin >/dev/null 2>&1; then
+      COMPLETE_REFS+=("$ref")
+    else
+      DAMAGED_REFS+=("$ref")
+    fi
+  done < <(source_git "$from" for-each-ref --format='%(refname)' refs/heads/ refs/tags/)
+}
+
+# The --exclude options that keep the remote-tracking refs of a folder that point to a missing object out of a
+# --remotes of rev-list, one per line.
+broken_remote_refs() {
+  local listing
+  listing="$(source_git "$1" for-each-ref --format='%(objectname) %(refname)' refs/remotes/ 2>/dev/null)" || return 0
+  [ -n "$listing" ] || return 0
+  # cat-file answers one line per object, in order: "<sha> <type> <size>", or "<sha> missing".
+  paste -d ' ' <(printf '%s\n' "$listing" | cut -d ' ' -f 1 | source_git "$1" cat-file --batch-check 2>/dev/null) \
+    <(printf '%s\n' "$listing" | cut -d ' ' -f 2) |
+    awk '$2 == "missing" { sub("^refs/remotes/", "", $3); print "--exclude=" $3 }'
+}
+
 # Prints what a clone of a local folder cannot carry: uncommitted files (names only), stashes, local commits the
 # folder's remote lacks, per branch.
 source_leftovers() {
-  local from="$1" files stashes b n only=""
+  local from="$1" files stashes b n only="" excludes=()
   files="$(source_git "$from" status --porcelain --ignore-submodules=all 2>/dev/null | cut -c4- || true)"
   if [ -n "$files" ]; then
     echo "attention: uncommitted in the source, not brought (a clone carries only commits):"
@@ -1099,9 +1148,12 @@ source_leftovers() {
   fi
   stashes="$(source_git "$from" stash list 2>/dev/null | wc -l | tr -d ' ')"
   [ "$stashes" = 0 ] || echo "attention: $stashes stash(es) in the source, not brought"
+  # A remote-tracking ref to a missing object would fail every count: it is left out of them.
+  while IFS= read -r b; do excludes+=("$b"); done < <(broken_remote_refs "$from")
   while IFS= read -r b; do
     [ -n "$b" ] || continue
-    n="$(git -C "$from" rev-list --count "refs/heads/$b" --not --remotes=origin 2>/dev/null || echo 0)"
+    case " ${DAMAGED_REFS[*]-} " in *" refs/heads/$b "*) continue ;; esac
+    n="$(git -C "$from" rev-list --count "refs/heads/$b" --not ${excludes[@]+"${excludes[@]}"} --remotes=origin 2>/dev/null || echo 0)"
     [ "$n" != 0 ] || continue
     # A branch the remote has, but behind the local one, is named with its count; a branch the remote lacks, alone.
     if git -C "$from" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null; then
@@ -1128,21 +1180,49 @@ cmd_bring() {
     case "$local_src/" in "$root/"*) die 1 "the source is inside this workspace: $from" ;; esac
     [ "$(git -C "$local_src" rev-parse --show-toplevel 2>/dev/null)" = "$local_src" ] || die 1 "not the root of a git repo: $from"
   fi
-  mkdir -p "$(dirname "$dest")"
   if [ -n "$local_src" ]; then
+    source_damage "$local_src"
+    if [ ${#GONE_ALTERNATES[@]} -gt 0 ] && [ ${#DAMAGED_REFS[@]} -gt 0 ]; then
+      echo "attention: its objects/info/alternates names ${GONE_ALTERNATES[*]}, which is gone: the objects it borrowed from there are missing (a clone made with --shared or --reference)"
+    fi
+    if [ ${#DAMAGED_REFS[@]} -gt 0 ] && ! printf '%s\n' ${COMPLETE_REFS[@]+"${COMPLETE_REFS[@]}"} | grep -q '^refs/heads/'; then
+      die 1 "nothing of $from can be brought: every branch has a missing object in it or in its history (${DAMAGED_REFS[*]}); bring it from its remote, if it has one, then its local branches with bring-branch"
+    fi
+  fi
+  mkdir -p "$(dirname "$dest")"
+  if [ -n "$local_src" ] && [ ${#DAMAGED_REFS[@]} -gt 0 ]; then
+    # A damaged folder: only its complete branches and tags, fetched by name into a new repository, so no missing
+    # object is carried over. On a failure nothing is left but the empty folder.
+    local specs=() head err
+    for ref in "${COMPLETE_REFS[@]}"; do specs+=("+$ref:$ref"); done
+    git -c init.defaultBranch=main init -q "$dest" || die 1 "could not create projects/$rel"
+    if ! err="$(git -C "$dest" fetch -q --no-tags --update-head-ok "$local_src" "${specs[@]}" 2>&1 | tr -d '\000')"; then
+      rm -rf "$dest/.git"
+      [ -z "$err" ] || printf '%s\n' "$err" >&2
+      die 1 "could not fetch the complete branches of $from"
+    fi
+    head="$(source_git "$local_src" symbolic-ref -q HEAD || true)"
+    git -C "$dest" rev-parse -q --verify "$head" >/dev/null 2>&1 ||
+      head="$(git -C "$dest" for-each-ref --count=1 --format='%(refname)' refs/heads/)"
+    git -C "$dest" symbolic-ref HEAD "$head"
+    echo "attention: not brought, a missing object in it or in its history: ${DAMAGED_REFS[*]}"
+  elif [ -n "$local_src" ]; then
     git clone -q --no-checkout "$local_src" "$dest" || die 1 "could not clone $from"
     # Every local branch and tag of the folder, the ones never pushed included.
     git -C "$dest" fetch -q --update-head-ok --tags "$local_src" '+refs/heads/*:refs/heads/*' || die 1 "could not fetch the branches of $from"
     git -C "$dest" for-each-ref --format='%(refname)' refs/remotes/origin | while IFS= read -r ref; do
       git -C "$dest" update-ref -d "$ref"
     done
+  fi
+  if [ -n "$local_src" ]; then
     url="$(git -C "$local_src" remote get-url origin 2>/dev/null || true)"
     if [ -n "$url" ]; then
+      git -C "$dest" remote get-url origin >/dev/null 2>&1 || git -C "$dest" remote add origin "$url"
       git -C "$dest" remote set-url origin "$url"
       timeout 120 git -C "$dest" fetch -q origin 2>/dev/null || echo "attention: could not fetch from the remote of the source; run the fetch later"
       echo "origin: the source's remote"
     else
-      git -C "$dest" remote remove origin
+      ! git -C "$dest" remote get-url origin >/dev/null 2>&1 || git -C "$dest" remote remove origin
       echo "attention: the source has no remote; /normalize-projects stops at stage 2 until the repository has one"
     fi
     source_leftovers "$local_src"
@@ -1178,8 +1258,18 @@ cmd_bring_branch() {
   dest="$(project_repo "$repo")"
   src="$(physical "$from")" || die 1 "not found: $from"
   case "$src/" in "$root/"*) die 1 "the source is inside this workspace: $from" ;; esac
-  [ "$(source_git "$src" rev-parse --show-toplevel 2>/dev/null)" = "$src" ] || die 1 "not the root of a git repo: $from"
-  sha="$(source_git "$src" rev-parse -q --verify "$ref^{commit}")" || die 1 "no commit $ref in $from"
+  if [ "$(source_git "$src" rev-parse --show-toplevel 2>/dev/null)" != "$src" ]; then
+    # The own git folder of a linked worktree, <repo>/.git/worktrees/<name>: a worktree moved with its workspace,
+    # whose .git file names a path that is gone, is read through it.
+    case "$src" in */.git/worktrees/*/*) die 1 "not the root of a git repo: $from" ;; */.git/worktrees/?*) ;; *) die 1 "not the root of a git repo: $from" ;; esac
+    [ -f "$src/commondir" ] && [ "$(source_git "$src" rev-parse --absolute-git-dir 2>/dev/null)" = "$src" ] ||
+      die 1 "not the root of a git repo: $from"
+  fi
+  if ! sha="$(source_git "$src" rev-parse -q --verify "$ref^{commit}")"; then
+    ! source_git "$src" rev-parse -q --verify "$ref" >/dev/null ||
+      die 1 "$ref of $from points to a missing object: it cannot be brought (a snapshot taken while git wrote it?)"
+    die 1 "no commit $ref in $from"
+  fi
   ! git -C "$dest" rev-parse -q --verify "refs/heads/$branch" >/dev/null ||
     die 1 "projects/$repo has a branch $branch already: choose another name"
   # A local folder serves its branches and HEAD by name, not a bare sha: a sha is fetched through the branch or HEAD
@@ -1191,7 +1281,15 @@ cmd_bring_branch() {
       die 1 "no branch or HEAD of $from points at $ref"
     ref="$holder"
   fi
-  git -C "$dest" fetch -q --no-tags "$src" "$ref:refs/heads/$branch" || die 1 "could not fetch $ref of $from"
+  # git's own errors, NUL bytes of a broken pack taken out, are shown only when the reason is not a missing object.
+  local err
+  if ! err="$(git -C "$dest" fetch -q --no-tags "$src" "$ref:refs/heads/$branch" 2>&1 | tr -d '\000')"; then
+    source_git "$src" rev-list --objects --quiet "$sha" >/dev/null 2>&1 ||
+      die 1 "$ref of $from misses an object of its history (a missing object): it cannot be brought"
+    [ -z "$err" ] || printf '%s\n' "$err" >&2
+    die 1 "could not fetch $ref of $from"
+  fi
+  [ -z "$err" ] || printf '%s\n' "$err" >&2
   [ "$(git -C "$dest" rev-parse "refs/heads/$branch")" = "$sha" ] ||
     echo "attention: $ref of $from moved while it was fetched: $branch is at $(git -C "$dest" rev-parse --short "refs/heads/$branch")"
   echo "brought: $branch into projects/$repo, at $(git -C "$dest" rev-parse --short "refs/heads/$branch")"

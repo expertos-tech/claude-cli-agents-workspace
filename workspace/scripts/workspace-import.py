@@ -7,15 +7,29 @@ signature checks; .env files (but .env.example), keys, certificates and credenti
 it runs. The script does every step that is a fact and keeps the state in custom/migrations/import-<yyyy-mm-dd>.json
 (-2, -3... for another scan the same day). It asks only what needs judgement, as questions with their evidence:
   R-n  a repository outside the projects folder: "project", "data" (of the older workspace) or "backlog" (its
-       markdown files become backlog items; not brought); a clone of it follows the answer
+       markdown files become backlog items; not brought); a clone of it follows the answer. Its evidence says when
+       it sits in scratch of the older workspace (a dot folder, or a folder its own repository ignores). One whose
+       origin is the older workspace itself or one of its worktrees is its own work: listed, never asked
   P-n  the destination in projects/ of a repository whose path is no kebab-case path under the projects folder, or
        is taken: a kebab-case path, or "skip" (not brought)
   C-n  a code folder with no git that no tool of tools/ covers: "project" or "tool" (of the older workspace). None
        is asked inside a repository or a worktree (valid or orphan), nor for scratch of the older workspace (inside a
        dot folder, or a folder its own repository ignores, outside the projects folder): counted only
-An orphan worktree (a .git file whose gitdir <repository>/.git/worktrees/<name> is gone) belongs to that repository:
-its project's pending-work request names it, to compare its files by hand; nothing of it is fetched.
   B-n  a backlog item: the project it is about, or "workspace" (the older workspace's own process: dropped)
+An orphan worktree (a .git file whose gitdir <repository>/.git/worktrees/<name> is gone, and no such entry left)
+belongs to that repository: its project's pending-work request names it, to compare its files by hand; nothing of it
+is fetched. A worktree moved with the older workspace (copied from another machine or folder: its .git file and the
+entry <repository>/.git/worktrees/<name> still name the old place) is paired with that entry and counted once, where it
+is now: its branch or detached head from the entry, its changed files read through it (nothing written); its branch
+comes with its repository, a detached head is fetched from the entry. The plan says the workspace was moved; the
+person may repair the pointers there with git worktree repair, the import never does. The worktrees of the older
+workspace itself are one line of the plan: their count and the folders they live under.
+Missing objects (a snapshot taken while git wrote, a clone whose objects/info/alternates names a folder that is gone):
+scan names each repository's refs that point to a missing object and its gone alternates; counts leave those refs out,
+and a count git cannot make is said, never taken for 0. bring brings every complete branch and names the others; a
+project with nothing complete, or a branch that cannot be fetched for a missing object, is recorded as not brought and
+apply goes on; the pending-work request names each. A project with no remote: its request says once that the whole
+repository is unpushed work, every local branch brought as it is.
 
 Commands:
   scan <folder>        the inventory (read only) and the questions; writes a new state
@@ -102,6 +116,12 @@ SECRET_NOTE = (
 )
 UNREAD_NOTE = 'Its text was not copied: it could not be read. Read it at its source.'
 GIT_SAFE = ('-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false')
+SHA = re.compile(r'[0-9a-f]{40}(?:[0-9a-f]{24})?\Z')
+GLOB_PREFIX = {'branches': 'refs/heads/', 'remotes': 'refs/remotes/'}
+MOVED_NOTE = (
+    'its worktrees still point there; each is read where it is now. The person may repair those pointers in the '
+    'older workspace with `git worktree repair`; the import never does'
+)
 FILTERS = {}
 PATTERNS = []
 
@@ -165,11 +185,56 @@ def filter_options(path):
     return FILTERS[path]
 
 
-def git(path, *args):
+def git(path, *args, stdin=None):
     """The output of a read-only git command in a folder of the older workspace, or None when git fails. Nothing of
     the folder runs: no optional lock, fsmonitor off, its filters emptied, no signature check."""
-    result = run(['git', '--no-optional-locks', *GIT_SAFE, *filter_options(path), '-C', path, *args])
+    result = run(['git', '--no-optional-locks', *GIT_SAFE, *filter_options(path), '-C', path, *args], stdin=stdin)
     return result.stdout if result.returncode == 0 else None
+
+
+def missing_objects(path, shas):
+    """The shas, of the ones given, whose object a repository does not have; empty when git cannot tell."""
+    shas = [s for s in shas if SHA.fullmatch(s or '')]
+    found = git(path, 'cat-file', '--batch-check', stdin=''.join(s + '\n' for s in shas)) if shas else None
+    return {line.split(' ')[0] for line in (found or '').splitlines() if line.endswith(' missing')}
+
+
+def broken_refs(path):
+    """The refs of a repository that point to a missing object (one written while the folder was copied, or whose
+    object was in a gone alternates), and HEAD when it is detached at one."""
+    refs = []
+    for line in (git(path, 'for-each-ref', '--format=%(objectname) %(refname)') or '').splitlines():
+        sha, _, ref = line.partition(' ')
+        if SHA.fullmatch(sha) and ref:
+            refs.append((sha, ref))
+    if git(path, 'symbolic-ref', '-q', 'HEAD') is None:
+        head = (git(path, 'rev-parse', '-q', '--verify', 'HEAD') or '').strip()
+        refs += [(head, 'HEAD')] if head else []
+    missing = missing_objects(path, [sha for sha, _ in refs])
+    return [ref for sha, ref in refs if sha in missing]
+
+
+def gone_alternates(path):
+    """The folders a repository's objects/info/alternates names that are gone (a clone made with --shared or
+    --reference where the older workspace was before): the objects it borrowed from them are missing."""
+    objects = os.path.join(path, '.git', 'objects')
+    gone = []
+    for line in (read_text(os.path.join(objects, 'info', 'alternates')) or '').splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and not os.path.isdir(os.path.join(objects, line)):
+            gone.append(scrub(line))
+    return gone
+
+
+def excluding(broken, *globs):
+    """The rev-list arguments --branches or --remotes, each after an --exclude of the broken refs it would take, so a
+    ref that points to a missing object never fails a count."""
+    args = []
+    for glob in globs:
+        prefix = GLOB_PREFIX[glob]
+        args += [f'--exclude={ref[len(prefix) :]}' for ref in broken if ref.startswith(prefix)]
+        args.append(f'--{glob}')
+    return args
 
 
 def secret_name(name):
@@ -311,33 +376,43 @@ def parse_status(out):
 
 
 def unpushed(path, refs):
-    """(count, ['<sha> <subject>'...]) of the commits of a range, at most MAX_COMMITS listed."""
+    """(count, ['<sha> <subject>'...]) of the commits of a range, at most MAX_COMMITS listed; count None when git
+    cannot walk it (a missing object in its history)."""
     count = git(path, 'rev-list', '--count', *refs)
+    if count is None or not count.strip().isdigit():
+        return None, []
     listed = git(path, 'log', f'-n{MAX_COMMITS}', '--format=%h %s', *refs) or ''
-    number = int(count.strip()) if count and count.strip().isdigit() else 0
-    return number, [scrub(line) for line in listed.splitlines()]
+    return int(count.strip()), [scrub(line) for line in listed.splitlines()]
 
 
-def local_branches(path):
-    """The local branches of a repository: name, sha, upstream, and for one that is not pushed (no upstream, its
-    upstream gone, or ahead of it) its commits not pushed."""
+def local_branches(path, broken=()):
+    """The local branches of a repository but those that point to a missing object (broken): name, sha, upstream,
+    and for one that is not pushed (no upstream, its upstream gone or broken, or ahead of it) its commits not pushed;
+    'unread' when a missing object in its history keeps them from being counted."""
     fmt = '%(refname)%00%(objectname)%00%(upstream)%00%(upstream:track,nobracket)'
     result = []
     for line in (git(path, 'for-each-ref', f'--format={fmt}', 'refs/heads/') or '').splitlines():
         ref, sha, upstream, track = (line.split('\0') + ['', '', ''])[:4]
+        if ref in broken:
+            continue
         name = ref[len('refs/heads/') :]
         ahead = re.search(r'ahead (\d+)', track)
-        branch = {'name': name, 'sha': sha, 'upstream': upstream, 'gone': track == 'gone', 'ahead': 0, 'commits': []}
-        if upstream and not branch['gone']:
+        gone = track == 'gone' or upstream in broken
+        branch = {'name': name, 'sha': sha, 'upstream': upstream, 'gone': gone, 'ahead': 0, 'commits': []}
+        if upstream in broken:
+            branch['upstream_broken'] = True
+        if upstream and not gone:
             branch['ahead'] = int(ahead.group(1)) if ahead else 0
             refs = [f'{upstream}..{ref}'] if branch['ahead'] else None
         else:
-            refs = [ref, '--not', '--remotes']
+            refs = [ref, '--not', *excluding(broken, 'remotes')]
         branch['pending'] = refs is not None
         if refs:
             branch['count'], branch['commits'] = unpushed(path, refs)
             # A branch with no upstream whose commits a remote-tracking ref already holds is no pending work.
-            branch['pending'] = bool(branch['count']) or bool(upstream and not branch['gone'])
+            branch['pending'] = bool(branch['count']) or bool(upstream and not gone) or branch['count'] is None
+            if branch['count'] is None:
+                branch['unread'] = True
         result.append(branch)
     return result
 
@@ -396,51 +471,148 @@ def read_repo(folder, rel, repo_rels, projects):
         'in_projects': bool(projects) and rel.startswith(projects + '/'),
     }
     status = git(path, 'status', '--porcelain=v2', '--branch', '-z', '--ignore-submodules=all')
-    if status is None:
+    broken, alternates = broken_refs(path), gone_alternates(path)
+    if status is None and not broken and not alternates:
         repo['error'] = 'git could not read it'
         return repo
-    repo['branch'], repo['head'], repo['changes'] = parse_status(status)
+    if broken:
+        repo['broken'] = broken
+    if alternates:
+        repo['alternates'] = alternates
+    if status is None:
+        # A HEAD on a missing object: the rest is read, its changed files are not.
+        head_ref = (git(path, 'symbolic-ref', '-q', 'HEAD') or '').strip()
+        repo['branch'] = head_ref[len('refs/heads/') :] if head_ref.startswith('refs/heads/') else None
+        repo['head'], repo['changes'] = None, []
+        missing = 'HEAD' in broken or head_ref in broken
+        repo['unread'] = 'its HEAD points to a missing object' if missing else 'git status failed on a missing object'
+    else:
+        repo['branch'], repo['head'], repo['changes'] = parse_status(status)
     urls = remote_urls(path)
     repo['remotes'] = {name: redact(url) for name, url in sorted(urls.items())}
     repo['origin_key'] = url_key(urls['origin'], path) if 'origin' in urls else None
-    repo['branches'] = local_branches(path)
+    repo['branches'] = local_branches(path, broken)
     repo['stashes'] = len((git(path, 'stash', 'list', '--format=%h') or '').splitlines())
-    repo['detached'] = None if repo['branch'] else detached_commits(path, repo['head'])
+    repo['detached'] = None
+    if not repo['branch'] and repo['head'] and 'HEAD' not in broken:
+        repo['detached'] = detached_commits(path, repo['head'], broken)
     repo['worktrees'] = worktree_list(path)
     return repo
 
 
-def detached_commits(path, head):
-    """{sha, count, commits} of a detached HEAD: its commits on no branch and no remote."""
-    count, commits = unpushed(path, ['HEAD', '--not', '--branches', '--remotes'])
-    return {'sha': head or '', 'count': count, 'commits': commits}
+def detached_commits(path, head, broken=(), rev='HEAD'):
+    """{sha, count, commits} of a detached HEAD (or of a commit, rev): its commits on no branch and no remote; count
+    None ('unread') when a missing object in its history keeps them from being counted."""
+    count, commits = unpushed(path, [rev, '--not', *excluding(broken, 'branches', 'remotes')])
+    found = {'sha': head or '', 'count': count, 'commits': commits}
+    if count is None:
+        found['unread'] = True
+    return found
 
 
-def read_worktree(main, entry):
+def read_worktree(folder, main, entry, broken=()):
     """The facts of one linked worktree: its path, branch or detached head, changed files; 'missing' when its folder
-    is gone."""
+    is gone, 'unread' when git cannot read it there (a HEAD on a missing object)."""
     worktree = {'path': entry['path'], 'main': main, 'branch': entry['branch'], 'head': entry['head']}
     worktree['name'] = kebab(os.path.basename(entry['path'].rstrip('/')))
-    status = None
-    if os.path.isdir(entry['path']):
-        status = git(entry['path'], 'status', '--porcelain=v2', '--branch', '-z', '--ignore-submodules=all')
-    if status is None:
+    if not os.path.isdir(entry['path']):
         worktree['missing'] = True
         return worktree
-    worktree['changes'] = parse_status(status)[2]
-    worktree['detached'] = None if entry['branch'] else detached_commits(entry['path'], entry['head'])
+    status = git(entry['path'], 'status', '--porcelain=v2', '--branch', '-z', '--ignore-submodules=all')
+    worktree['changes'] = parse_status(status)[2] if status is not None else []
+    if status is None:
+        worktree['unread'] = True
+    worktree['detached'] = None if entry['branch'] else worktree_detached(folder, main, worktree, broken)
     return worktree
 
 
-def classify(repos):
+def worktree_detached(folder, main, worktree, broken):
+    """The commits of a detached worktree on no branch and no remote, counted in its repository; with its head on a
+    missing object, 'head_missing' is set on the worktree and nothing is counted."""
+    path = os.path.join(folder, main)
+    if worktree['head'] in missing_objects(path, [worktree['head']]):
+        worktree['head_missing'] = True
+        return {'sha': worktree['head'], 'count': None, 'commits': [], 'unread': True}
+    if not SHA.fullmatch(worktree['head'] or ''):
+        return {'sha': worktree['head'] or '', 'count': 0, 'commits': []}
+    return detached_commits(path, worktree['head'], broken, rev=worktree['head'])
+
+
+def moved_worktree(folder, rel, mains):
+    """{main, admin, old, old_root} of a worktree moved with the older workspace (copied from another machine or
+    folder): its .git file names <old root>/<main>/.git/worktrees/<name>, which is gone, and the admin entry
+    <main>/.git/worktrees/<name> of the folder names <old root>/<rel>/.git back. None for any other .git file. mains:
+    the repositories of the folder, longest path first, '.' (the older workspace itself) last."""
+    text = read_text(os.path.join(folder, rel, '.git')) or ''
+    if rel == '.' or not text.startswith('gitdir:'):
+        return None
+    gitdir = os.path.normpath(os.path.join(folder, rel, text[len('gitdir:') :].strip()))
+    if os.path.exists(gitdir) or '/.git/worktrees/' not in gitdir:
+        return None
+    old_main, name = gitdir.rsplit('/.git/worktrees/', 1)
+    for main in mains:
+        if main == '.':
+            old_root = old_main
+        elif old_main.endswith('/' + main):
+            old_root = old_main[: -len(main) - 1]
+        else:
+            continue
+        admin = os.path.normpath(os.path.join(folder, main, '.git', 'worktrees', name))
+        recorded = read_text(os.path.join(admin, 'gitdir')) or ''
+        old = os.path.join(old_root, rel)
+        if recorded.strip() and os.path.normpath(recorded.strip()) == os.path.join(old, '.git'):
+            return {'main': main, 'admin': admin, 'old': old, 'old_root': old_root}
+    return None
+
+
+def read_moved(folder, rel, moved, broken):
+    """The facts of a worktree moved with the older workspace, read where it is now through its own git folder
+    (<main>/.git/worktrees/<name>) with git's safe options, nothing written to either: its branch or detached head
+    (from that folder's HEAD), its changed files ('unread' when git cannot read them)."""
+    path = os.path.join(folder, rel)
+    main_path = os.path.normpath(os.path.join(folder, moved['main']))
+    head = (read_text(os.path.join(moved['admin'], 'HEAD')) or '').strip()
+    branch = head[len('ref: refs/heads/') :] if head.startswith('ref: refs/heads/') else None
+    sha = (git(main_path, 'rev-parse', '-q', '--verify', f'refs/heads/{branch}') or '').strip() if branch else head
+    worktree = {'path': path, 'main': moved['main'], 'branch': branch, 'head': sha, 'moved': True}
+    worktree.update(name=kebab(os.path.basename(rel)), admin=moved['admin'])
+    status = run(
+        [
+            'git', '--no-optional-locks', *GIT_SAFE, *filter_options(main_path), f'--git-dir={moved["admin"]}',
+            f'--work-tree={path}', 'status', '--porcelain=v2', '--branch', '-z', '--ignore-submodules=all',
+        ],
+        cwd=path,
+    )  # fmt: skip
+    worktree['changes'] = parse_status(status.stdout)[2] if status.returncode == 0 else []
+    if status.returncode != 0:
+        worktree['unread'] = True
+    worktree['detached'] = None if branch else worktree_detached(folder, moved['main'], worktree, broken)
+    return worktree
+
+
+def own_keys(folder, paths):
+    """The url_key of each path that is the older workspace itself: the folder, where it was before it was copied,
+    and its own worktrees, there and here; a repository with one of them as its origin is its own clone."""
+    return {'local:' + os.path.realpath(p) for p in [folder, *paths]}
+
+
+def classify(repos, own=frozenset()):
     """Sets the kind of each repository: 'project' (the first of its remote in the projects folder), 'clone' (another
     repository of the same remote: a work clone, clone_of its project), 'candidate' (outside the projects folder,
-    alone with its remote: an R question) or 'unreadable'."""
+    alone with its remote: an R question), 'self' (outside the projects folder, its origin the older workspace itself
+    or one of its worktrees, own: its own work) or 'unreadable'."""
     groups = {}
     for repo in repos:
+        key = repo.get('origin_key') or ''
+        key = key[: -len('/.git')] if key.endswith('/.git') else key
+        if 'error' not in repo and not repo['in_projects'] and key in own:
+            repo['kind'] = 'self'
+            continue
         if repo.get('origin_key'):
             groups.setdefault(repo['origin_key'], []).append(repo)
     for repo in repos:
+        if repo.get('kind') == 'self':
+            continue
         if 'error' in repo:
             repo['kind'] = 'unreadable'
             continue
@@ -597,14 +769,32 @@ def inventory(root, folder):
     repo_rels = set(found['repos'])
     projects = 'projects' if os.path.isdir(os.path.join(folder, 'projects')) else None
     repos = [read_repo(folder, rel, repo_rels, projects) for rel in sorted(repo_rels - {'.'}, key=depth)]
-    classify(repos)
-    root_worktrees = worktree_list(folder) if '.' in repo_rels else []
+    # A workspace copied from elsewhere: each worktree once, where it is now, paired with its admin entry.
+    mains = sorted(repo_rels - {'.'}, key=lambda r: (-len(r), r)) + (['.'] if '.' in repo_rels else [])
+    moved = {rel: m for rel in found['git_files'] for m in [moved_worktree(folder, rel, mains)] if m}
+    replaced = {(m['main'], m['old']) for m in moved.values()}
+    root_listed = [w['path'] for w in worktree_list(folder)] if '.' in repo_rels else []
+    root_worktrees = [p for p in root_listed if ('.', os.path.normpath(p)) not in replaced]
+    root_worktrees += [os.path.join(folder, rel) for rel, m in sorted(moved.items()) if m['main'] == '.']
+    old_roots = sorted({m['old_root'] for m in moved.values()})
+    classify(repos, own_keys(folder, [*old_roots, *root_listed, *root_worktrees]))
+    broken = {r['path']: r.get('broken', []) for r in repos}
     worktrees, seen = [], set()
     for repo in repos:
         for entry in repo.pop('worktrees', []):
-            worktrees.append(read_worktree(repo['path'], entry))
+            if (repo['path'], os.path.normpath(entry['path'])) in replaced:
+                continue
+            worktrees.append(read_worktree(folder, repo['path'], entry, broken[repo['path']]))
             seen.add(os.path.realpath(entry['path']))
-    seen |= {os.path.realpath(w['path']) for w in root_worktrees}
+    for rel, m in sorted(moved.items()):
+        seen.add(os.path.realpath(os.path.join(folder, rel)))
+        if m['main'] != '.':
+            worktrees.append(read_moved(folder, rel, m, broken.get(m['main'], [])))
+    seen |= {os.path.realpath(p) for p in root_worktrees}
+    outside = [r['path'] for r in repos if r['kind'] == 'candidate']
+    for rel in scratch_of(folder, found, projects, outside):
+        dot = any(part.startswith('.') for part in rel.split('/'))
+        next(r for r in repos if r['path'] == rel)['scratch'] = 'dot' if dot else 'ignored'
     roots = {os.path.realpath(os.path.join(folder, rel)) for rel in repo_rels} | seen
     for repo in repos:
         if 'changes' in repo:
@@ -616,7 +806,7 @@ def inventory(root, folder):
         repo['size'] = {'files': folder_size(path, roots), 'git': folder_size(os.path.join(path, '.git'), set())}
     others = []
     for rel in found['git_files']:
-        if os.path.realpath(os.path.join(folder, rel)) in seen:
+        if rel in moved or os.path.realpath(os.path.join(folder, rel)) in seen:
             continue
         main = orphan_main(folder, rel, repos)
         if main is None:
@@ -631,7 +821,8 @@ def inventory(root, folder):
     kinds = {r['path']: r['kind'] for r in repos}
     # The tree of a worktree, valid or orphan, is a repository's: no code folder, backlog or instruction file in it.
     trees = set(found['git_files'])
-    owned = {rel for rel, kind in kinds.items() if kind in ('project', 'clone')} | trees
+    # A clone of the older workspace itself holds its own files: no backlog item or instruction file of it is asked.
+    owned = {rel for rel, kind in kinds.items() if kind in ('project', 'clone', 'self')} | trees
     instruction_dirs = {i.rstrip('/') for i in found['instructions'] if i.endswith('/')}
     code, scratch = code_folders(root, folder, found, repo_rels | trees, instruction_dirs, projects)
     backlog = []
@@ -658,7 +849,8 @@ def inventory(root, folder):
         'scanned': today(),
         'projects_folder': projects,
         'root_repo': '.' in repo_rels,
-        'root_worktrees': [w['path'] for w in root_worktrees],
+        'root_worktrees': root_worktrees,
+        'moved_from': old_roots,
         'repos': repos,
         'worktrees': worktrees,
         'other_git_files': others,
@@ -789,7 +981,7 @@ def r_evidence(state, repo):
     """The evidence of an R question: where the repository is, its remotes, branches, changes, clones, README."""
     path = os.path.join(state['source'], repo['path'])
     readme = read_text(os.path.join(path, 'README.md'))
-    return {
+    evidence = {
         'repository': path,
         'remotes': repo['remotes'],
         'branch': repo['branch'],
@@ -799,6 +991,10 @@ def r_evidence(state, repo):
         'readme_heading': first_heading(readme) if readme else '',
         'entries': entries(path),
     }
+    if repo.get('scratch'):
+        where = 'inside a dot folder' if repo['scratch'] == 'dot' else 'in a folder its own repository ignores'
+        evidence['scratch'] = f'it sits {where}: scratch of the older workspace, so most likely its data'
+    return evidence
 
 
 def p_evidence(state, repo, parent, parent_dest, taken):
@@ -944,16 +1140,35 @@ def cmd_scan(root, folder):
     save(path, state)
     print(f'state: {rel_to(root, path)} (source: {real})')
     print(summary(state))
+    if state['moved_from']:
+        print(f'attention: copied here from {", ".join(state["moved_from"])}: {MOVED_NOTE}')
+    for repo in state['repos']:
+        for note in damage_notes(repo):
+            print(f'attention: {repo["path"]}: {note}')
     count = len(open_questions(state))
     print(f'questions: {count} open' + (' (questions --json)' if count else '; next: plan'))
+
+
+def damage_notes(repo):
+    """What a repository misses, one note each: refs that point to a missing object, a gone alternates, a status git
+    could not read."""
+    notes = []
+    if repo.get('broken'):
+        notes.append(f'{len(repo["broken"])} ref(s) point to a missing object: {", ".join(repo["broken"])}')
+    if repo.get('alternates'):
+        notes.append(f'its objects/info/alternates names {", ".join(repo["alternates"])}, which is gone')
+    if repo.get('unread'):
+        notes.append(f'its changed files were not read: {repo["unread"]}')
+    return notes
 
 
 def summary(state):
     """One line with the counts of the inventory."""
     kinds = [r['kind'] for r in state['repos']]
+    own = f', {kinds.count("self")} clone(s) of the older workspace itself' if 'self' in kinds else ''
     parts = [
         f'{len(kinds)} repositories ({kinds.count("project")} in the projects folder, {kinds.count("clone")} work '
-        f'clone(s), {kinds.count("candidate")} outside it)',
+        f'clone(s), {kinds.count("candidate")} outside it{own})',
         f'{len(state["worktrees"])} worktree(s)',
         f'{len(state["code_folders"])} code folder(s) with no git',
         f'{(state.get("scratch") or {"count": 0})["count"]} scratch folder(s)',
@@ -1109,7 +1324,13 @@ def branch_steps(state, repos, role, path, where, skipped):
     steps = []
     clones = [r for r in state['repos'] if r.get('clone_of') == path and role[r['path']] == 'clone']
     for worktree in [w for w in state['worktrees'] if w['main'] in [path] + [c['path'] for c in clones]]:
-        if worktree.get('missing') or worktree.get('orphan') or worktree['branch']:
+        if worktree.get('missing') or worktree.get('orphan') or worktree['branch'] or worktree.get('head_missing'):
+            continue
+        if worktree.get('moved'):
+            # Its .git file names the old path: its HEAD is read through its own git folder.
+            if worktree['head']:
+                name = unique_branch(taken, worktree['name'], '')
+                steps.append(step('branch', worktree['admin'], where, 'HEAD', name, worktree['head'], worktree['path']))
             continue
         name = unique_branch(taken, worktree['name'], '')
         steps.append(step('branch', worktree['path'], where, 'HEAD', name, worktree['head']))
@@ -1133,41 +1354,57 @@ def branch_steps(state, repos, role, path, where, skipped):
     return steps
 
 
-def step(kind, source, where, ref, branch, sha):
-    """A bring-branch step."""
-    return {'kind': kind, 'source': source, 'dest': where, 'ref': ref, 'branch': branch, 'sha': sha}
+def step(kind, source, where, ref, branch, sha, shown=None):
+    """A bring-branch step; shown: the path the person knows the source by, when git reads it elsewhere."""
+    found = {'kind': kind, 'source': source, 'dest': where, 'ref': ref, 'branch': branch, 'sha': sha}
+    if shown:
+        found['shown'] = shown
+    return found
+
+
+def counted(detached):
+    """A detached HEAD that is pending work: commits on no branch, or commits git could not count."""
+    return detached if detached and (detached['count'] or detached.get('unread')) else None
 
 
 def pending_sources(state, repos, role, path):
-    """The sources of a project with pending work: the repository, its worktrees, its work clones and theirs."""
+    """The sources of a project with pending work: the repository, its worktrees, its work clones and theirs. A
+    repository with no remote at all is pending work as a whole; one with missing objects names them."""
     sources = []
     clones = [r['path'] for r in state['repos'] if r.get('clone_of') == path and role[r['path']] == 'clone']
     for rel in [path] + clones:
         repo = repos[rel]
         what = 'repository' if rel == path else 'work clone'
+        no_remote = not repo.get('remotes')
         worktrees = [w for w in state['worktrees'] if w['main'] == rel and not w.get('missing') and not w.get('orphan')]
-        # The branch of a worktree is shown with the worktree.
+        # The branch of a worktree is shown with the worktree; with no remote, the whole repository is unpushed.
         branches = [b for b in repo['branches'] if b['pending'] and b['name'] not in {w['branch'] for w in worktrees}]
-        detached = repo['detached'] if repo['detached'] and repo['detached']['count'] else None
-        if repo['changes'] or branches or repo['stashes'] or detached:
-            sources.append(
-                {
-                    'path': os.path.join(state['source'], rel), 'what': what, 'branch': repo['branch'],
-                    'head': repo['head'], 'changes': repo['changes'], 'branches': branches,
-                    'stashes': repo['stashes'], 'detached': detached,
-                }
-            )  # fmt: skip
+        branches = [] if no_remote else branches
+        detached = counted(repo['detached'])
+        damage = {key: repo[key] for key in ('broken', 'alternates', 'unread') if repo.get(key)}
+        if repo['changes'] or branches or repo['stashes'] or detached or damage or no_remote:
+            source = {
+                'path': os.path.join(state['source'], rel), 'what': what, 'branch': repo['branch'],
+                'head': repo['head'], 'changes': repo['changes'], 'branches': branches, 'stashes': repo['stashes'],
+                'detached': detached, **damage,
+            }  # fmt: skip
+            if no_remote:
+                source['no_remote'] = [b['name'] for b in repo['branches']]
+            sources.append(source)
         main_branches = {b['name']: b for b in repo['branches']}
         for worktree in worktrees:
             mine = main_branches.get(worktree['branch'])
-            branches = [mine] if mine and mine['pending'] else []
-            detached = worktree['detached'] if worktree['detached'] and worktree['detached']['count'] else None
-            if worktree['changes'] or branches or detached:
+            branches = [mine] if mine and mine['pending'] and not no_remote else []
+            detached = counted(worktree['detached'])
+            moved = ', moved with the older workspace' if worktree.get('moved') else ''
+            if worktree['changes'] or branches or detached or worktree.get('unread'):
                 sources.append(
                     {
-                        'path': worktree['path'], 'what': f'worktree of {os.path.join(state["source"], rel)}',
+                        'path': worktree['path'], 'what': f'worktree of {os.path.join(state["source"], rel)}{moved}',
                         'branch': worktree['branch'], 'head': worktree['head'], 'changes': worktree['changes'],
                         'branches': branches, 'stashes': 0, 'detached': detached,
+                        'unread': worktree.get('unread') and 'git could not read its files',
+                        'head_missing': worktree.get('head_missing'),
                     }
                 )  # fmt: skip
         for worktree in [w for w in state['worktrees'] if w['main'] == rel and w.get('orphan')]:
@@ -1182,20 +1419,50 @@ def source_lines(source, brought):
             f'- {code(source["path"])} (orphan worktree): its repository no longer tracks it; only its files are '
             'left, compare them by hand'
         ]
-    head = f'branch {code(source["branch"])}' if source['branch'] else f'detached at {code(source["head"][:12])}'
+    if source['branch']:
+        head = f'branch {code(source["branch"])}'
+    else:
+        head = f'detached at {code(source["head"][:12])}' if source['head'] else 'HEAD unknown'
     lines = [f'- {code(source["path"])} ({source["what"]}), {head}']
+    if source.get('no_remote') is not None:
+        names = ', '.join(code(n) for n in source['no_remote'][:MAX_ENTRIES])
+        more = len(source['no_remote']) - MAX_ENTRIES
+        lines.append(
+            '  - No remote: the whole repository is unpushed work; every local branch is brought as it is'
+            + (f': {names}' if names else '')
+            + (f' and {more} more' if more > 0 else '')
+        )
+    if source.get('unread'):
+        lines.append(f'  - Changed files: not read ({source["unread"]})')
     if source['changes']:
         names = ', '.join(code(c) for c in source['changes'][:MAX_FILES])
         more = len(source['changes']) - MAX_FILES
         lines.append(f'  - Changed files: {names}' + (f' and {more} more' if more > 0 else ''))
+    if source.get('broken'):
+        refs = ', '.join(code(r) for r in source['broken'])
+        lines.append(f'  - Refs that point to a missing object, not brought: {refs}')
+    if source.get('alternates'):
+        lines.append(
+            f'  - Its objects/info/alternates names {", ".join(code(a) for a in source["alternates"])}, which is gone: '
+            'the objects it borrowed from there are missing (a clone made with --shared or --reference); only the '
+            'branches whose objects are complete can be brought'
+        )
     for branch in source['branches']:
         upstream = branch['upstream'].replace('refs/remotes/', '')
         how = 'no upstream' if not upstream else ('its upstream is gone' if branch['gone'] else f'ahead of {upstream}')
+        if branch.get('upstream_broken'):
+            how = f'its upstream {upstream} points to a missing object'
         count = branch.get('count', 0)
         pushed = f'{count} commit(s) not pushed' if count else 'every commit of it is on a remote'
+        if count is None:
+            pushed = 'a missing object in its history: its commits could not be counted'
         lines.append(f'  - Branch {code(branch["name"])}: {how}, {pushed}')
         lines += [f'    - {code(c)}' for c in branch['commits']]
-    if source['detached']:
+    if source.get('head_missing'):
+        lines.append('  - Detached HEAD: it points to a missing object; it cannot be brought')
+    elif source['detached'] and source['detached']['count'] is None:
+        lines.append('  - Detached HEAD: a missing object in its history: its commits could not be counted')
+    elif source['detached']:
         lines.append(f'  - Detached HEAD: {source["detached"]["count"]} commit(s) on no branch and no remote')
         lines += [f'    - {code(c)}' for c in source['detached']['commits']]
     if source['stashes']:
@@ -1207,9 +1474,15 @@ def source_lines(source, brought):
 
 def brought_by_source(model):
     """{source path: [branch names]} of the bring-branch steps."""
+    return brought_of(model['branches'])
+
+
+def brought_of(steps):
+    """{source path as the person knows it: [branch names]} of bring-branch steps, but those not brought."""
     found = {}
-    for item in model['branches']:
-        found.setdefault(item['source'], []).append(item['branch'])
+    for item in steps:
+        if not item.get('missing'):
+            found.setdefault(item.get('shown', item['source']), []).append(item['branch'])
     return found
 
 
@@ -1223,6 +1496,10 @@ def render_plan(root, state, path, model):
         '',
         f'**State:** {code(rel_to(root, path))}',
         '',
+    ]
+    if state.get('moved_from'):
+        out += [f'**Moved:** copied here from {", ".join(code(p) for p in state["moved_from"])}: {MOVED_NOTE}.', '']
+    out += [
         'Nothing is written until `python3 -I -B scripts/workspace-import.py apply --yes`. To change a row, answer its '
         'question again (`answer <id> <value>`), then `plan`. Nothing is pushed: the projects keep the remotes of '
         'their sources, and `custom/` is committed by path.',
@@ -1320,9 +1597,11 @@ def not_imported(state, model):
     lines = []
     if state['root_repo']:
         lines.append(f'- {code(source)}: the older workspace itself, a repository; not a project')
-    lines += [f'- {code(w)}: a worktree of the older workspace itself' for w in state['root_worktrees']]
+    lines += root_worktree_lines(state)
     for repo in state['repos']:
+        origin = repo.get('remotes', {}).get('origin', '')
         why = {
+            'self': f'a clone of the older workspace itself (origin {code(origin)}): its own work, not a project',
             'data': 'data of the older workspace',
             'backlog': 'the backlog of the older workspace: its markdown files are the backlog items above',
             'skip': 'a project not imported (skip)',
@@ -1366,6 +1645,22 @@ def not_imported(state, model):
         for g in state['other_git_files']
     ]
     return lines or ['Nothing.']
+
+
+def root_worktree_lines(state):
+    """One line for the worktrees of the older workspace itself: their count and the folders they live under."""
+    paths = state['root_worktrees']
+    if not paths:
+        return []
+    source = state['source']
+    here = [os.path.relpath(p, source) for p in paths if inside(os.path.normpath(p), source)]
+    folders = sorted({(os.path.dirname(rel) or '.') + '/' for rel in here})
+    shown = ', '.join(code(f) for f in folders[:MAX_ENTRIES]) + (' and others' if len(folders) > MAX_ENTRIES else '')
+    gone = len(paths) - len(here)
+    line = f'- {len(paths)} worktree(s) of the older workspace itself'
+    line += f', under {shown}' if here else ''
+    line += ': its own work, not projects'
+    return [line + (f'; {gone} of them no longer there' if gone else '')]
 
 
 def pending_name(where):
@@ -1511,15 +1806,35 @@ class Apply:
             if all(self.ref_sha(item['dest'], f'refs/heads/{b["name"]}') == b['sha'] for b in repo['branches']):
                 return f'projects/{item["dest"]} was already brought'
             raise StepFailed(f'projects/{item["dest"]} exists without the branches of its source: tell the person')
-        self.script('scripts/aiwp-cmds.sh', 'bring', os.path.join(self.state['source'], item['repo']), item['dest'])
+        try:
+            self.script('scripts/aiwp-cmds.sh', 'bring', os.path.join(self.state['source'], item['repo']), item['dest'])
+        except StepFailed as error:
+            # Nothing of it complete (bring left nothing): the rest of the import goes on; its request says so.
+            if 'missing object' not in str(error):
+                raise
+            reason = re.sub(r'^error: ', '', str(error))
+            self.state.setdefault('not_brought', {})[item['dest']] = reason
+            return f'not brought: {reason}'
         return f'projects/{item["dest"]}'
 
     def step_branch(self, item):
-        """bring-branch of one branch; one already there at its sha is taken as done."""
+        """bring-branch of one branch; one already there at its sha is taken as done; one with a missing object, or
+        of a project not brought, is recorded as not brought and the import goes on."""
+        if item['dest'] in self.state.get('not_brought', {}):
+            item['missing'] = f'its project projects/{item["dest"]} was not brought'
+            return f'not brought: {item["missing"]}'
         have = self.ref_sha(item['dest'], f'refs/heads/{item["branch"]}')
         if have == item['sha']:
             return f'{item["branch"]} was already in projects/{item["dest"]}'
-        self.script('scripts/aiwp-cmds.sh', 'bring-branch', item['source'], item['dest'], item['ref'], item['branch'])
+        try:
+            self.script(
+                'scripts/aiwp-cmds.sh', 'bring-branch', item['source'], item['dest'], item['ref'], item['branch']
+            )
+        except StepFailed as error:
+            if 'missing object' not in str(error):
+                raise
+            item['missing'] = re.sub(r'^error: ', '', str(error))
+            return f'not brought: {item["missing"]}'
         return f'{item["branch"]} in projects/{item["dest"]}'
 
     def kept_items(self):
@@ -1600,10 +1915,8 @@ class Apply:
     def step_pending(self, item):
         """The pending-work request of a project."""
         where = item['dest']
-        brought = {}
-        for other in self.state['steps']:
-            if other['kind'] == 'branch' and other['dest'] == where:
-                brought.setdefault(other['source'], []).append(other['branch'])
+        steps = [other for other in self.state['steps'] if other['kind'] == 'branch' and other['dest'] == where]
+        brought = brought_of(steps)
         lines = [
             f'# Pending work of {where} from an older workspace',
             '',
@@ -1621,10 +1934,22 @@ class Apply:
         ]
         for source in self.state['pending_sources'][where]:
             lines += source_lines(source, brought)
+        for other in [s for s in steps if s.get('missing')]:
+            lines.append(
+                f'- Not brought: {code(other["ref"])} of {code(other.get("shown", other["source"]))} as '
+                f'{code(other["branch"])}: {other["missing"]}'
+            )
+        not_brought = self.state.get('not_brought', {}).get(where)
+        if not_brought:
+            held = f'`projects/{where}` was not brought: {not_brought}. Everything above is only in the source.'
+        else:
+            held = (
+                f'`projects/{where}` holds every local branch of its source whose objects are complete, and the '
+                'branches named above. Changed files and stashes were not copied: they are only in the source.'
+            )
         lines += [
             '',
-            f'`projects/{where}` holds every local branch of its source, and the branches named above. Changed files '
-            'and stashes were not copied: they are only in the source.',
+            held,
             '',
             '**Done when:** each item above is merged, in a request of its own, or dropped by the person.',
             '',

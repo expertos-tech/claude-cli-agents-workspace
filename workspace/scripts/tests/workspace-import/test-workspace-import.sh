@@ -187,6 +187,11 @@ remote_refs() {
 import_to_plan() {
   imp scan "$OLD"
   rc_is 0
+  answers_to_plan
+}
+
+# The answers of the person to the questions of the main fixture, then the plan.
+answers_to_plan() {
   imp answer R-1 data
   rc_is 0
   imp answer C-1 project
@@ -577,6 +582,143 @@ test_a_branch_already_on_the_remote_is_no_pending_work_and_scratch_is_no_rule() 
   file_has "$W/custom/requests/$TODAY-acme-billing-web-pending-work.md" "feat/local-change"
   eq "the branch on the remote is still brought" "$(git -C "$OLD/projects/acme" rev-parse feat/same-as-main)" \
     "$(git -C "$W/projects/acme" rev-parse -q --verify refs/heads/feat/same-as-main)"
+}
+
+# F-1, F-3: a workspace copied from another machine: every worktree pointer names the old root, which is gone here.
+test_a_workspace_copied_from_another_folder_counts_each_worktree_once() {
+  workspace
+  older
+  local moved="$BASE/moved.$CURRENT" before plan pending spike
+  # Two worktrees of the older workspace itself, and a clone of it, made where it was before.
+  git -C "$OLD" worktree add -q -b agent/one "$OLD/tmp/agents/one"
+  git -C "$OLD" worktree add -q --detach "$OLD/tmp/agents/two"
+  git clone -q "$OLD" "$OLD/tmp/agents/self"
+  spike="$(git -C "$OLD/worktrees/billing-api-spike" rev-parse HEAD)"
+  mv "$OLD" "$moved"
+  OLD="$moved"
+  before="$(fingerprint "$OLD")"
+  imp scan "$OLD"
+  rc_is 0
+  has "2 worktree(s)"
+  imp questions --json
+  hasnt "tmp/agents"
+  answers_to_plan
+  plan="$W/custom/migrations/import-$TODAY.md"
+  file_has "$plan" "git worktree repair"
+  file_has "$plan" "2 worktree(s) of the older workspace itself, under \`tmp/agents/\`"
+  file_has "$plan" "\`$OLD/tmp/agents/self\`: a clone of the older workspace itself"
+  ! grep -qF "a .git file of no repository" "$plan"; check "no pointer left as a stray .git file" $?
+  ! grep -qF "orphan" "$plan"; check "no moved worktree taken for an orphan" $?
+  eq "the detached worktree once, from its git folder" 1 "$(grep -cF "billing-api/.git/worktrees/billing-api-spike\` | \`HEAD\`" "$plan")"
+  imp apply --yes
+  rc_is 0
+  eq "worktree branch" "$(git -C "$OLD/projects/billing-api" rev-parse feat/wt)" \
+    "$(git -C "$W/projects/billing-api" rev-parse -q --verify refs/heads/feat/wt)"
+  eq "detached worktree" "$spike" "$(git -C "$W/projects/billing-api" rev-parse -q --verify refs/heads/import/billing-api-spike)"
+  pending="$W/custom/requests/$TODAY-billing-api-pending-work.md"
+  file_has "$pending" "\`$OLD/worktrees/billing-api-wt\` (worktree of $OLD/projects/billing-api, moved with the older workspace), branch \`feat/wt\`"
+  file_has "$pending" "Changed files: \`billing-api.txt\`, \`draft.txt\`"
+  file_has "$pending" "\`$OLD/worktrees/billing-api-spike\` (worktree of $OLD/projects/billing-api, moved with the older workspace), detached"
+  file_has "$pending" "Brought into the project as the branch \`import/billing-api-spike\`"
+  eq "older workspace unchanged" "$before" "$(fingerprint "$OLD")"
+}
+
+# F-2: a repository outside the projects folder whose origin is the older workspace itself, or one of its worktrees.
+test_a_clone_of_the_older_workspace_is_its_own_work_and_scratch_leans_to_data() {
+  workspace
+  older
+  local plan
+  git clone -q "$OLD" "$OLD/tmp/self-copy"
+  git -C "$OLD" worktree add -q -b agent/x "$OLD/tmp/agents/x"
+  git clone -q "$OLD/tmp/agents/x" "$OLD/tmp/agents/x-clone"
+  remote sdk
+  git clone -q "$REMOTES/sdk.git" "$OLD/.cache/sdk"
+  imp scan "$OLD"
+  rc_is 0
+  imp questions --json
+  has '"id": "R-2"'
+  hasnt '"id": "R-3"'
+  hasnt "self-copy"
+  hasnt "x-clone"
+  has '"scratch": "'
+  has "a dot folder"
+  imp answer R-2 data
+  rc_is 0
+  answers_to_plan
+  plan="$W/custom/migrations/import-$TODAY.md"
+  file_has "$plan" "\`$OLD/tmp/self-copy\`: a clone of the older workspace itself"
+  file_has "$plan" "\`$OLD/tmp/agents/x-clone\`: a clone of the older workspace itself"
+  eq "listed once" 1 "$(grep -cF "$OLD/tmp/self-copy" "$plan")"
+  file_has "$plan" "1 worktree(s) of the older workspace itself, under \`tmp/agents/\`"
+}
+
+# F-4: a live snapshot: a branch and a remote-tracking ref written while the folder was copied, their objects not.
+test_a_ref_to_a_missing_object_is_reported_and_the_rest_brought() {
+  workspace
+  older
+  local plan pending lost=1234567890abcdef1234567890abcdef12345678
+  printf '%s\n' "$lost" >"$OLD/projects/reports/.git/refs/heads/feat/lost"
+  printf '%s\n' "$lost" >"$OLD/projects/reports/.git/refs/remotes/origin/wip"
+  imp scan "$OLD"
+  rc_is 0
+  has "attention: projects/reports: 2 ref(s) point to a missing object: refs/heads/feat/lost, refs/remotes/origin/wip"
+  answers_to_plan
+  plan="$W/custom/migrations/import-$TODAY.md"
+  file_has "$plan" "Branch \`feat/never-pushed\`: no upstream, 1 commit(s) not pushed"
+  file_has "$plan" "Refs that point to a missing object, not brought: \`refs/heads/feat/lost\`, \`refs/remotes/origin/wip\`"
+  imp apply --yes
+  rc_is 0
+  has "refs/heads/feat/lost"
+  eq "the complete branch brought" "$(git -C "$OLD/projects/reports" rev-parse feat/never-pushed)" \
+    "$(git -C "$W/projects/reports" rev-parse -q --verify refs/heads/feat/never-pushed)"
+  ! git -C "$W/projects/reports" rev-parse -q --verify refs/heads/feat/lost >/dev/null; check "the broken ref not brought" $?
+  pending="$W/custom/requests/$TODAY-reports-pending-work.md"
+  file_has "$pending" "Refs that point to a missing object, not brought: \`refs/heads/feat/lost\`"
+}
+
+# F-6: a clone made with --shared on the other machine: the folder its objects/info/alternates names is gone.
+test_gone_alternates_are_reported_and_the_project_is_not_brought_with_the_reason() {
+  workspace
+  older
+  local plan pending
+  remote ledger
+  git clone -q --shared "$REMOTES/ledger.git" "$OLD/projects/ledger"
+  commit_in "$OLD/projects/ledger" entries.txt entries
+  mv "$REMOTES/ledger.git" "$REMOTES/ledger.gone"
+  imp scan "$OLD"
+  rc_is 0
+  has "attention: projects/ledger: its objects/info/alternates names $REMOTES/ledger.git/objects, which is gone"
+  answers_to_plan
+  plan="$W/custom/migrations/import-$TODAY.md"
+  file_has "$plan" "objects/info/alternates names \`$REMOTES/ledger.git/objects\`, which is gone"
+  imp apply --yes
+  rc_is 0
+  has "not brought"
+  [ ! -e "$W/projects/ledger/.git" ]; check "the project with missing objects is not brought" $?
+  pending="$W/custom/requests/$TODAY-ledger-pending-work.md"
+  file_has "$pending" "objects/info/alternates names \`$REMOTES/ledger.git/objects\`, which is gone"
+  file_has "$pending" "\`projects/ledger\` was not brought"
+  [ -d "$W/projects/reports/.git" ]; check "the other projects are brought" $?
+}
+
+# F-5: a project with no remote at all: the whole repository is unpushed work, said once.
+test_a_project_with_no_remote_is_unpushed_work_said_once() {
+  workspace
+  older
+  local pending
+  git init -q -b main "$OLD/projects/lab"
+  commit_in "$OLD/projects/lab" a.txt a
+  git -C "$OLD/projects/lab" switch -q -c feat/x
+  commit_in "$OLD/projects/lab" b.txt b
+  git -C "$OLD/projects/lab" switch -q main
+  import_to_plan
+  imp apply --yes
+  rc_is 0
+  eq "every local branch kept" "$(git -C "$OLD/projects/lab" rev-parse feat/x)" "$(git -C "$W/projects/lab" rev-parse -q --verify refs/heads/feat/x)"
+  ! git -C "$W/projects/lab" remote get-url origin >/dev/null 2>&1; check "no origin" $?
+  pending="$W/custom/requests/$TODAY-lab-pending-work.md"
+  file_has "$pending" "No remote: the whole repository is unpushed work"
+  ! grep -qF "no upstream" "$pending"; check "no branch listed as if behind a remote" $?
 }
 
 test_refusals() {
