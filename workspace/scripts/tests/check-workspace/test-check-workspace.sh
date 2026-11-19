@@ -29,7 +29,7 @@ STUB_LOG="$BASE_DIR/stub.log"
 FAKE_BIN="$BASE_DIR/fakebin"
 export STUB_LOG
 # The suites the gate must run, in order. The tree stubs exactly these.
-EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh"
+EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh tests/workspace-import/test-workspace-import.sh"
 # How many suites the gate has: a new suite changes one line of this file, not every count below.
 SUITE_COUNT="$(echo "$EXPECTED_SUITES" | wc -w | tr -d ' ')"
 PASS=0
@@ -2128,11 +2128,12 @@ test_gate_runs_only_the_suite_of_what_changed() {
   new_tree selection-lib
   put scripts/lib/projects.sh
   branch_gate
-  eq "a shared library runs the suites of the scripts that source it, or call one that does" "4" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "a shared library runs the suites of the scripts that source it, or call one that does" "5" "$(grep -c '^suite ' "$STUB_LOG")"
   eq "the projects layout suite" "1" "$(grep -c '^suite tests/test-projects-layout.sh' "$STUB_LOG")"
   eq "and the project state suite" "1" "$(grep -c '^suite tests/aiwp-project-state/' "$STUB_LOG")"
   eq "and the gate suite (its clean checks)" "1" "$(grep -c '^suite tests/aiwp-gate/' "$STUB_LOG")"
   eq "and the work area suite (open)" "1" "$(grep -c '^suite tests/aiwp-cmds/' "$STUB_LOG")"
+  eq "and the import suite (bring)" "1" "$(grep -c '^suite tests/workspace-import/' "$STUB_LOG")"
   new_tree selection-guard
   put scripts/guard-subagent-model.sh
   branch_gate

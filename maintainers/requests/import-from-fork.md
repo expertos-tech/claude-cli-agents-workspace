@@ -5,7 +5,7 @@
 This is a development environment; the only concern is data security.
 
 **Where it runs:** at the repository root, where the project is maintained, with the product in `workspace/`. It runs
-right after `normalize-rules` (the owner needs that one to migrate the final project), on its own: its release is the
+right after `import-workspace` (the owner needs that one to migrate the final project), on its own: its release is the
 first after the 0.1.0 publication and the first real test of updating an installed workspace.
 
 ## 1. Objective

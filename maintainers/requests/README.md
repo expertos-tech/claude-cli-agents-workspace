@@ -32,9 +32,9 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 0. First, before round 2: `assisted-mode` (`validators-warn-not-block` is in qa).
 1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
    (except `measure-quality-indicators`, which waits for `import-from-fork`).
-2. Round 2: `normalize-rules` first (the owner needs it to migrate the final project), then `fork-my-rules`,
+2. Round 2: `import-workspace` first (the owner needs it to migrate the final project), then `fork-my-rules`,
    `tools-hub`, `onboard`.
-3. `import-from-fork`: the first release after the publication, right after `normalize-rules`; then
+3. `import-from-fork`: the first release after the publication, right after `import-workspace`; then
    `measure-quality-indicators` (both change `measure.py`).
 4. Before that first release: the findings of the merge and release flow (the small ready requests below), above all
    `release-developer-moved` and `release-main-sha-check`, and `release-per-project-proof`, which proves the qa
@@ -48,8 +48,8 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 | 0 | `assisted-mode.md` | pending | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 0 | `request-in-progress.md` | pending | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
 | 0 | `draft-prompt.md` | pending | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
-| 2 | `normalize-rules.md` | pending | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
-| 2 | `import-from-fork.md` | pending | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
+| 2 | `import-workspace-code-folders.md` | pending | After `import-workspace`: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
+| 2 | `import-from-fork.md` | pending | After `import-workspace`: the first release after the publication, the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | pending | Needs `rules`; design: `plans/fork-my-rules.md` |
 | 2 | `tools-hub.md` | pending | Needs `run-tools`; design: `plans/tools-hub.md` |
 | 3 | `final-review.md` | pending | A whole-product review in a new session; every release now also ends with a final review |
@@ -88,6 +88,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/import-workspace.md` | this merge | All proven: AC-1 to AC-9 by scenario tests, AC-10 by a headless run on a copy of a real older workspace |
 | `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |
 | `qa/preferred-language.md` | this merge | All proven: AC-1 and AC-2 by headless runs, AC-3 on a pty of the test installation |

@@ -22,6 +22,7 @@ tests/aiwp-project-state/test-aiwp-project-state.sh
 tests/aiwp/test-aiwp.sh
 tests/sync-env/test-sync-env.sh
 tests/run-tools/test-run-tools.sh
+tests/workspace-import/test-workspace-import.sh
 "
 
 # Locales every document of the product repository is translated to (check_i18n).
@@ -524,6 +525,7 @@ suite_inputs() {
     tests/aiwp/test-aiwp.sh) echo "aiwp.sh release-notice.sh tests/aiwp ../rules/agents/settings.json" ;;
     tests/sync-env/test-sync-env.sh) echo "sync-env.sh lib/env.sh tests/sync-env" ;;
     tests/run-tools/test-run-tools.sh) echo "run-tools.sh run-tools.py tests/run-tools tests/test_run_tools.py ../tools/compose.yaml ../tools/observability/compose.yaml ../tools/login-simulator/compose.yaml ../tools/safe-browsing-simulator/compose.yaml ../tools/azurite-console/compose.yaml" ;;
+    tests/workspace-import/test-workspace-import.sh) echo "workspace-import.py prompt-log.py aiwp-cmds.sh aiwp-gate.sh lib/projects.sh tests/workspace-import tests/test_workspace_import.py" ;;
   esac
 }
 

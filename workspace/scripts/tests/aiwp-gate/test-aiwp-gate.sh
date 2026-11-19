@@ -1281,6 +1281,159 @@ test_bring_from_a_url_checks_out_developer() {
   has "could not clone"
 }
 
+test_bring_branch_fetches_a_head_or_a_branch_and_never_runs_the_source() {
+  fixture
+  local src="$BASE/old-$CURRENT" wt="$BASE/old-$CURRENT-spike" sha before
+  rm -rf "$src" "$wt" "$BASE/ran"
+  git clone -q -b developer "$REMOTE" "$src"
+  git -C "$src" worktree add -q --detach "$wt"
+  printf 'spike\n' >"$wt/spike.txt"
+  git -C "$wt" add spike.txt
+  git -C "$wt" commit -q -m spike
+  sha="$(git -C "$wt" rev-parse HEAD)"
+  git -C "$src" branch -q feature/side
+  # A source whose fsmonitor and clean filter would leave a mark if git ran them.
+  printf '#!/bin/sh\ntouch "%s/ran"\ncat\n' "$BASE" >"$BASE/mark.sh"
+  chmod +x "$BASE/mark.sh"
+  printf '*.txt filter=mark\n' >"$src/.gitattributes"
+  git -C "$src" config filter.mark.clean "$BASE/mark.sh"
+  git -C "$src" config core.fsmonitor "$BASE/mark.sh"
+  touch "$src/app.txt"
+  before="$(git -C "$REMOTE" for-each-ref)"
+  gate bring-branch "$wt" app HEAD import/spike
+  rc_is 0
+  has "brought: import/spike into projects/app"
+  eq "branch at the detached head" "$sha" "$(git -C "$R/projects/app" rev-parse refs/heads/import/spike)"
+  eq "checkout untouched" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
+  gate bring-branch "$src" app feature/side imported/side
+  rc_is 0
+  eq "a branch of the source" "$(git -C "$src" rev-parse feature/side)" "$(git -C "$R/projects/app" rev-parse imported/side)"
+  gate bring-branch "$wt" app "$sha" import/by-sha
+  rc_is 0
+  eq "a full sha through the HEAD that holds it" "$sha" "$(git -C "$R/projects/app" rev-parse import/by-sha)"
+  gate bring-branch "$wt" app HEAD import/spike
+  rc_is 1
+  has "has a branch import/spike already"
+  gate bring-branch "$wt" app HEAD "bad..name"
+  rc_is 2
+  gate bring-branch "$wt" app --upload-pack=x import/x
+  rc_is 2
+  gate bring-branch "$R/projects/app" app HEAD import/x
+  rc_is 1
+  has "inside this workspace"
+  gate bring-branch "$src" app nope import/x
+  rc_is 1
+  has "no commit nope"
+  gate bring-branch "$src" missing HEAD import/x
+  rc_is 1
+  gate bring-branch "$src" app HEAD
+  rc_is 2
+  gate bring "$src" from-old
+  rc_is 0
+  has "uncommitted in the source"
+  [ ! -e "$BASE/ran" ]; check "nothing of the source ran" $?
+  eq "nothing pushed" "$before" "$(git -C "$REMOTE" for-each-ref)"
+  # An empty folder (a parent's checkout of a gitlink) takes the project; a folder with files does not.
+  mkdir -p "$R/projects/slot" "$R/projects/full"
+  printf 'x\n' >"$R/projects/full/x.txt"
+  gate bring "$src" slot
+  rc_is 0
+  has "brought: projects/slot"
+  gate bring "$src" full
+  rc_is 1
+  has "exists already"
+}
+
+# A snapshot of a folder taken while git wrote in it: a branch whose commit was not copied, one whose file was not.
+test_bring_a_snapshot_with_missing_objects_brings_the_complete_refs() {
+  fixture
+  local src="$BASE/old-$CURRENT" none="$BASE/none-$CURRENT" dest blob sha
+  rm -rf "$src" "$none"
+  git clone -q -b developer "$REMOTE" "$src"
+  git -C "$src" switch -q -c feature/kept
+  printf 'kept\n' >"$src/kept.txt"
+  git -C "$src" add kept.txt
+  git -C "$src" commit -q -m kept
+  git -C "$src" switch -q -c feature/torn developer
+  printf 'torn\n' >"$src/torn.txt"
+  git -C "$src" add torn.txt
+  git -C "$src" commit -q -m torn
+  git -C "$src" switch -q developer
+  blob="$(git -C "$src" rev-parse feature/torn:torn.txt)"
+  rm -f "$src/.git/objects/${blob:0:2}/${blob:2}"
+  printf '1234567890abcdef1234567890abcdef12345678\n' >"$src/.git/refs/heads/feature/lost"
+  gate bring "$src" acme/snap
+  rc_is 0
+  has "brought: projects/acme/snap, on developer"
+  has "not brought, a missing object in it or in its history: refs/heads/feature/lost refs/heads/feature/torn"
+  dest="$R/projects/acme/snap"
+  eq "a complete branch brought" "$(git -C "$src" rev-parse feature/kept)" "$(git -C "$dest" rev-parse -q --verify feature/kept)"
+  ! git -C "$dest" rev-parse -q --verify refs/heads/feature/lost >/dev/null; check "the ref to a missing commit not brought" $?
+  ! git -C "$dest" rev-parse -q --verify refs/heads/feature/torn >/dev/null; check "the ref missing a file not brought" $?
+  git -C "$dest" fsck --connectivity-only >/dev/null 2>&1; check "the project has every object it names" $?
+  eq "origin is the real remote" "$REMOTE" "$(git -C "$dest" remote get-url origin)"
+  gate bring-branch "$src" app feature/lost import/lost
+  rc_is 1
+  has "feature/lost of $src points to a missing object"
+  gate bring-branch "$src" app feature/torn import/torn
+  rc_is 1
+  has "feature/torn of $src misses an object of its history"
+  ! git -C "$R/projects/app" rev-parse -q --verify refs/heads/import/torn >/dev/null; check "no branch left by a refusal" $?
+  # Nothing complete: a clear failure, and no project left behind.
+  git init -q -b main "$none"
+  printf 'x\n' >"$none/x.txt"
+  git -C "$none" add x.txt
+  git -C "$none" commit -q -m x
+  sha="$(git -C "$none" rev-parse HEAD)"
+  rm -f "$none/.git/objects/${sha:0:2}/${sha:2}"
+  gate bring "$none" none
+  rc_is 1
+  has "nothing of $none can be brought: every branch has a missing object in it or in its history (refs/heads/main)"
+  [ ! -e "$R/projects/none" ]; check "nothing left in projects/" $?
+}
+
+# A clone made with --shared on another machine: the folder its objects/info/alternates names is gone.
+test_bring_a_source_whose_alternates_are_gone_fails_with_the_reason() {
+  fixture
+  local base="$BASE/shared-$CURRENT.git" src="$BASE/old-$CURRENT"
+  rm -rf "$base" "$base.gone" "$src"
+  git clone -q --bare "$REMOTE" "$base"
+  git clone -q --shared -b developer "$base" "$src"
+  printf 'local\n' >"$src/local.txt"
+  git -C "$src" add local.txt
+  git -C "$src" commit -q -m local
+  mv "$base" "$base.gone"
+  gate bring "$src" shared
+  rc_is 1
+  has "its objects/info/alternates names $base/objects, which is gone"
+  has "nothing of $src can be brought"
+  [ ! -e "$R/projects/shared" ]; check "nothing left in projects/" $?
+}
+
+# A worktree moved with its workspace: its .git file names a path that is gone; its own git folder is read instead.
+test_bring_branch_from_the_git_folder_of_a_moved_worktree() {
+  fixture
+  local old="$BASE/old-$CURRENT" moved="$BASE/moved-$CURRENT" sha
+  rm -rf "$old" "$moved"
+  mkdir -p "$old"
+  git clone -q -b developer "$REMOTE" "$old/app"
+  git -C "$old/app" worktree add -q --detach "$old/spike"
+  printf 'spike\n' >"$old/spike/spike.txt"
+  git -C "$old/spike" add spike.txt
+  git -C "$old/spike" commit -q -m spike
+  sha="$(git -C "$old/spike" rev-parse HEAD)"
+  mv "$old" "$moved"
+  gate bring-branch "$moved/spike" app HEAD import/spike
+  rc_is 1
+  has "not the root of a git repo"
+  gate bring-branch "$moved/app/.git/worktrees/spike" app HEAD import/spike
+  rc_is 0
+  eq "the moved worktree's head" "$sha" "$(git -C "$R/projects/app" rev-parse -q --verify refs/heads/import/spike)"
+  gate bring-branch "$moved/app/.git" app HEAD import/main-git
+  rc_is 1
+  has "not the root of a git repo"
+}
+
 # Creates projects/$1 as a repo on developer with a bare remote, one committed file and, when given, a .gitignore $2.
 nested_project() {
   local dir="$R/projects/$1" remote="$BASE/remote.$CURRENT.${1//\//-}.git"

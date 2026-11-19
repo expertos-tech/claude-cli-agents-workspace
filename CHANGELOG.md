@@ -45,6 +45,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `guard-bash`: a line refused with "Run it alone" shows the warnings of its other commands, as a question does.
 - The preferred language of communication: asked by `aiwp new` and kept as the Claude Code setting `language`, which
   wins over the language of a request file; the single-agent mode is removed.
+- `/import-workspace`: the work of an older workspace (repositories, worktree and work-clone branches, pending work,
+  backlog) brought into this one by `scripts/workspace-import.py`, never its rules; `aiwp-cmds.sh bring-branch`, and
+  `bring` with a read-only source and partial bring of a folder with missing objects.
 
 ### Added
 
@@ -106,6 +109,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   of communication first and save it there; with one, it prints nothing; it never fails a session start. Its
   scenarios run in `tests/check.sh` (`caw-language`). `bash tests/caw-work.sh open` copies that `language` into the
   clone's own `.claude/settings.local.json`, so a session inside a clone replies in it too.
+- The plan and request `import-workspace`, proven on a copy of a real older workspace (its AC-10, recorded in the
+  request without names); the request `import-workspace-code-folders` with its plan (every code folder found by
+  extension, POC, tool or project in rounds, a local repository with its history), from a warning of that run; the
+  plan `terms-list` (the company-terms list of the maintainer machine), decided as is.
 
 ### Changed
 
@@ -148,6 +155,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Removed
 
 - `/release`: replaced by `/caw-merge --main`.
+- The plan and request `normalize-rules` (importing an older workspace's rules): replaced by `import-workspace`.
 
 ### Fixed
 

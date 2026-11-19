@@ -7,7 +7,7 @@ This is a development environment; the only concern is data security.
 **Where it runs:** at the repository root, where the project is maintained, with the product in `workspace/`.
 Prerequisite: the `rules` request delivered (`custom/my-rules/` replaces `custom/rules/`, `custom/rules-config.json`,
 `/rules`), because this skill writes its files there. Fits **round 2** of `maintainers/requests/README.md`, beside
-`normalize-rules`, `fork-my-rules` and `tools-hub`; it does not touch what those three change except the session start
+`import-workspace`, `fork-my-rules` and `tools-hub`; it does not touch what those three change except the session start
 hooks, so merge it after `tools-hub` if both add a SessionStart line. Design: `maintainers/plans/distribution.md`
 section 12 "Later" (first-run onboarding), which kept it out of 0.1.0 and asked for its own request.
 
@@ -73,7 +73,7 @@ asks once and writes the answers into `custom/`.
 
 ## 7. Out of scope
 
-- Configuring projects (that is `/normalize-projects`) or importing rules of an older workspace (`/normalize-rules`).
+- Configuring projects (that is `/normalize-projects`) or importing the work of an older workspace (`/import-workspace`).
 - Creating the custom repository or its remote (that is `aiwp new --custom <url>`).
 - Any question asked by a hook.
 

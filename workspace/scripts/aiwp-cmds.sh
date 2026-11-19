@@ -134,7 +134,7 @@ Commands:
   rollback <repo> [-- <docker compose options>...]
         Points each image of the final stack back to its rollback-latest tag and runs docker compose up -d --no-build.
         Volumes are never touched. A clone is refused: a copy has no rollback tags (run up again).
-  gate, release, hotfix, hotfix-tag, hotfix-down, apply, developer, checkpoint, bring
+  gate, release, hotfix, hotfix-tag, hotfix-down, apply, developer, checkpoint, bring, bring-branch
         The only ways into projects/: scripts/aiwp-gate.sh --help.
 
 Git hooks of a clone (written by open; never part of any repo):
@@ -1224,7 +1224,7 @@ case "$command" in
       [ "${#targets[@]}" -eq 0 ] || destroy_copies "${targets[@]}"
     fi
     ;;
-  gate | release | hotfix | hotfix-tag | hotfix-down | apply | developer | checkpoint | bring) exec bash "$root/scripts/aiwp-gate.sh" "$command" "$@" ;;
+  gate | release | hotfix | hotfix-tag | hotfix-down | apply | developer | checkpoint | bring | bring-branch) exec bash "$root/scripts/aiwp-gate.sh" "$command" "$@" ;;
   _autopush)
     # Inside a rebase HEAD is detached and each picked commit fires post-commit: post-rewrite pushes at the end.
     git -C "$1" symbolic-ref -q HEAD >/dev/null || exit 0
