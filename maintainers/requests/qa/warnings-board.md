@@ -153,16 +153,17 @@ The first merge entered `developer` at `58ead34`: `developer` had moved during p
 clone (one conflict, the QA table of `maintainers/requests/README.md`, both sides kept), the suite passed again, rc 0,
 and phase 2 ran on that sha.
 
-- AC-3: proven by two pairs of headless runs on that `developer`, each told the review returned two warnings:
-  `/caw-merge` at the root, and `/merge` in a test installation of the same tree (`bash tests/test-install.sh` PASS).
-  Each first run ended with the warnings board, numbered, a risk per warning, and stopped before phase 2; each run
-  resumed with the answers went on to phase 2, the Execution block with the decisions and the summary, whose
-  `Warnings:` line listed them (`W-1 accept, W-2 request <file>` for `/caw-merge`, `W-1 request <file>, W-2 accept`
-  for `/merge`). The merge of this request had already done the same for real: its review's W-3 and W-4 were shown in
-  the board and phase 2 waited for the owner's answers.
+- AC-3: proven by two pairs of headless runs (rehearsals: no command run) on that `developer`, each told the review
+  returned two warnings: `/caw-merge` at the root, and `/merge` in a test installation of the same tree
+  (`bash tests/test-install.sh` PASS). Each first run ended with the warnings board, numbered, a risk per warning, and
+  stopped before phase 2; each run resumed with the answers described the next steps: phase 2, the Execution block
+  with the decisions, and the summary, whose `Warnings:` line listed them (`W-1 accept, W-2 request <file>` for
+  `/caw-merge`, `W-1 request <file>, W-2 accept` for `/merge`). The merge of this request had already done the same
+  for real: its review's W-3 and W-4 were shown in the board and phase 2 waited for the owner's answers.
 
 Checks: `bash tests/check.sh --base origin/developer --i18n-pending`, rc 0, at the merge.
 
-Warnings: none.
+Warnings: the merge review of this record (medium), APPROVED_WITH_WARNINGS: W-1 the runs not marked as
+rehearsals: fixed (the AC-3 line above).
 
 Left: nothing.
