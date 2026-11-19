@@ -84,3 +84,27 @@ each one.
 | 2. Writing through `/rules`, commit, the projects list | medium | Clear rules over an approved plan |
 
 The agents of each stage run with the stage's effort, passed in the call.
+
+## Execution — 2026-11-18, merged into developer
+
+Steps:
+
+- Stages 1 and 2 in one commit, `324b965` (feat(skills): add /normalize-rules to import an older workspace's rules):
+  the skill `workspace/rules/skills/normalize-rules/` (the four analysts, the conflict check, the plan template, the
+  writing through the `/rules` validation, the projects list), its row in `workspace/rules/models.md`, the README,
+  usage and features tables. `a24ff75`: the plan marked built.
+- At the merge: `developer` merged in with no conflict (`ec76f35`, 68 commits of `developer`); both changelogs
+  (`d09851f`).
+
+Decisions taken while running: a folder found with no git repository is listed with a note that `--from` needs one
+(`bring` clones a repository).
+
+Deviations from the request: none found by the merge.
+
+Acceptance criteria: AC-1 to AC-7 pending: no run of the skill is recorded. Each needs a session on an older
+workspace (AC-6 on a repository with a local branch never pushed, AC-7 on the owner's older workspace and the
+private baseline in `tmp/baselines/`).
+
+Checks: `bash tests/check.sh --base origin/developer --i18n-pending`, rc 0, after the merge of `developer`.
+
+Left: AC-1 to AC-7 by a run of `/normalize-rules`.
