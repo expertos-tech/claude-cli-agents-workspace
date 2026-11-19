@@ -45,6 +45,11 @@ It asks where the workspace goes, on the terminal (it works under `curl | bash`)
 `aiwp new` then asks for the URL of your custom repository: create an empty private repository on your git server and
 give its URL. An empty repository gets a skeleton and a first commit; an empty answer starts a local repository.
 
+Last, it asks your preferred language of communication, by its English name (`portuguese`, `spanish`): Claude replies
+in it in every session of the workspace, even when it runs a request written in English. It is saved as the Claude
+Code setting `language` in the workspace's `.claude/settings.local.json`, which `aiwp update` never touches. An empty
+answer, or an install with no terminal, sets none: Claude then replies in the language you write in.
+
 To skip the questions, give the folder:
 
 ```bash

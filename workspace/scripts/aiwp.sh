@@ -76,6 +76,12 @@ folder above with .aiwp/manifest.json).
                 custom/: --custom <url> clones that repository (an empty one gets a skeleton and a first commit);
                 without it a terminal asks for the URL (empty: a new local repository); with no terminal a local
                 skeleton is created.
+                Language: a terminal then asks, once, the preferred language of communication with Claude, its
+                English name (portuguese, spanish: English letters, spaces, hyphens and parentheses, at most 40;
+                anything else is asked again), and writes it as "language", the native Claude Code setting, in
+                .claude/settings.local.json, keeping its other keys. An empty answer or no terminal writes nothing:
+                Claude replies in the language you write in. update, the opening and scripts/setup-claude.sh never
+                ask it and never change that file.
   list          Print each registered workspace with its version and state: up to date, update available, core
                 changed, folder missing, pinned, or stopped halfway.
   forget <folder>  Remove a workspace from the registry (a folder that is gone, or one you no longer update). The
@@ -215,8 +221,8 @@ semver_max() {
 }
 
 # The helper for what bash does badly: reading git trees with hashes, JSON, verification, the remote tags.
-# Subcommands: tree, manifest-read, manifest-write, verify, ls-remote, changelog, and reg-list, reg-set, reg-del,
-# reg-has for the registry of workspaces (see each function below).
+# Subcommands: tree, manifest-read, manifest-write, verify, ls-remote, changelog, reg-list, reg-set, reg-del,
+# reg-has for the registry of workspaces, and settings-language (see each function below).
 py() {
   AIWP_USER_FOLDERS="$AIWP_WRITABLE_ROOT" python3 -I - "$@" <<'PY'
 """Helper of aiwp.sh; each subcommand prints tab-separated lines for bash."""
@@ -535,7 +541,46 @@ def reg_has(path, folder):
     sys.exit(0 if any(item["path"] in wanted for item in registry_load(path)) else 1)
 
 
+def settings_language(path, value):
+    """Sets "language" to value in the Claude Code settings file at path (created when missing), keeping every other
+    key; written atomically (a temp file in the same folder, then renamed), 2-space indent. A file that is not a
+    regular file holding a JSON object is left as it is: prints a warning and exits 1."""
+    data, mode = {}, None
+    if os.path.lexists(path):
+        try:
+            info = os.lstat(path)
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError("not a regular file")
+            with open(path, encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError) as error:
+            print(f"warning: {path} cannot be read ({error}); it was left as it is", file=sys.stderr)
+            sys.exit(1)
+        if not isinstance(data, dict):
+            print(f"warning: {path} is not a JSON object; it was left as it is", file=sys.stderr)
+            sys.exit(1)
+        mode = stat.S_IMODE(info.st_mode)
+    data["language"] = value
+    tmp = f"{path}.tmp.{os.getpid()}"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666 if mode is None else mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except OSError as error:
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
+        print(f"warning: cannot write {path} ({error})", file=sys.stderr)
+        sys.exit(1)
+
+
 COMMANDS = {
+    "settings-language": settings_language,
     "reg-list": reg_list,
     "reg-set": reg_set,
     "reg-del": reg_del,
@@ -1270,6 +1315,42 @@ setup_custom() {
   fi
 }
 
+# Prints why $1 is not a language name (English letters, spaces, hyphens and parentheses, at least one letter, at
+# most 40 characters); prints nothing when it is one. The letters are listed, never a range: a range depends on the
+# locale.
+language_problem() {
+  local value="$1" letters='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+  case "$value" in
+    *[!"$letters"' ()-']*) echo "use only English letters, spaces, hyphens and parentheses" ;;
+    *[$letters]*) [ "${#value}" -le 40 ] || echo "at most 40 characters" ;;
+    *) echo "give at least one letter" ;;
+  esac
+}
+
+# Asks once, on a terminal, the preferred language of communication with Claude, and writes it as "language", the
+# native Claude Code setting, in .claude/settings.local.json of new workspace $1, keeping the file's other keys. An
+# invalid answer is asked again; an empty answer, the end of input or no terminal writes nothing. A file that cannot
+# take it only warns: the workspace is still created.
+ask_language() {
+  local ws="$1" answer problem
+  has_tty || return 0
+  while :; do
+    printf 'Preferred language of communication with Claude, its English name (e.g. portuguese, spanish; empty: the language you write in): '
+    IFS= read -r answer || { echo; return 0; }
+    answer="${answer#"${answer%%[![:space:]]*}"}"
+    answer="${answer%"${answer##*[![:space:]]}"}"
+    [ -n "$answer" ] || return 0
+    problem="$(language_problem "$answer")"
+    [ -z "$problem" ] && break
+    echo "not a language name: $problem."
+  done
+  if py settings-language "$ws/.claude/settings.local.json" "$answer"; then
+    echo "language: $answer, in .claude/settings.local.json (change it there, key \"language\")"
+  else
+    echo "warning: the language was not written; add \"language\": \"$answer\" to .claude/settings.local.json" >&2
+  fi
+}
+
 # aiwp new <folder> [--custom <url>]
 cmd_new() {
   local target="" url="" commit tag version created=0 d
@@ -1320,6 +1401,7 @@ cmd_new() {
   mkdir -p "$WS/.aiwp"
   write_manifest "$version" "$tag" "$commit" "$WORK/new.tsv"
   setup_custom "$WS" "$url"
+  ask_language "$WS"
   apply_modes "$WORK/new.tsv"
   verify_core "$WORK/new.tsv" || die "the new workspace does not match its manifest"
   register "$WS" "$version" || die "could not add $WS to the registry $(registry)"
