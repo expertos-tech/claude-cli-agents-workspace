@@ -83,6 +83,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |
 | `qa/preferred-language.md` | this merge | All proven: AC-1 and AC-2 by headless runs, AC-3 on a pty of the test installation |
 | `qa/validators-follow-ups.md` | this merge | AC-1, AC-3, AC-4 proven (AC-4 by scenarios and a run from a clone); AC-2 at the first release |
 | `qa/rules-as-product-layers.md` | this merge | All proven: AC-2 and AC-5 by headless runs, AC-4 by the table of its Execution block |
