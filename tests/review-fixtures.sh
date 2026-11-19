@@ -16,8 +16,8 @@ merge review still stops each hard rule and lets the rest through, at the releas
   judge <dir>    reads <dir>/f<nn>.txt, the reviewer's report of each fixture in the format of .claude/rules/review.md,
                  and prints one line per fixture:
                    PASS|FAIL f<nn> expected=<BLOCKER|WARNING> actual=<BLOCKER|WARNING|NONE|NO-REPORT> — <what it stands for>
-                 actual: BLOCKER when the report holds a "[BLOCKER]" finding, else WARNING when it holds a "[WARNING]"
-                 one, else NONE; NO-REPORT when the file is missing, empty or holds no "VERDICT:" line. A BLOCKER
+                 actual: BLOCKER when the report holds a finding line "- [BLOCKER] ...", else WARNING when it holds a
+                 "- [WARNING] ..." one, else NONE ("[BLOCKER]" in prose counts for nothing); NO-REPORT when the file is missing, empty or holds no "VERDICT:" line. A BLOCKER
                  fixture passes with BLOCKER; a WARNING fixture passes with WARNING or NONE (no BLOCKER).
                  Then "result: <passed>/<total> fixtures as expected".
 
@@ -56,9 +56,9 @@ report_level() {
   local file="$1"
   if [ ! -s "$file" ] || ! grep -q '^[[:space:]]*VERDICT:' "$file"; then
     echo NO-REPORT
-  elif grep -q '\[BLOCKER\]' "$file"; then
+  elif grep -q '^[[:space:]]*- \[BLOCKER\]' "$file"; then
     echo BLOCKER
-  elif grep -q '\[WARNING\]' "$file"; then
+  elif grep -q '^[[:space:]]*- \[WARNING\]' "$file"; then
     echo WARNING
   else
     echo NONE
