@@ -540,6 +540,45 @@ test_worktree_trees_scratch_orphans_and_a_backlog_repository() {
   file_has "$W/custom/requests/$TODAY-idea-monthly-report-as-pdf.md" "The reports export a PDF."
 }
 
+test_a_branch_already_on_the_remote_is_no_pending_work_and_scratch_is_no_rule() {
+  workspace
+  older
+  local plan
+  # acme: a branch with no upstream and no commit of its own; billing-web: one with a new commit.
+  git -C "$OLD/projects/acme" branch feat/same-as-main origin/main
+  git -C "$OLD/projects/acme/billing-web" switch -q -c feat/local-change
+  commit_in "$OLD/projects/acme/billing-web" layout.txt layout
+  git -C "$OLD/projects/acme/billing-web" switch -q main
+  # Instruction files in backups, in an ignored folder, and in a tool of the older workspace.
+  mkdir -p "$OLD/.history/backups/rules" "$OLD/tmp/notes" "$OLD/tools/acme-cli/hooks"
+  printf '# Old copy\n' >"$OLD/.history/backups/CLAUDE.md"
+  printf '# Old rule\n' >"$OLD/.history/backups/rules/review.md"
+  printf '# Notes\n' >"$OLD/tmp/notes/AGENTS.md"
+  printf '#!/bin/sh\n' >"$OLD/tools/acme-cli/hooks/pre-run.sh"
+  # A tool of the older workspace with no manifest, named like one of this workspace's tools, with its own hooks.
+  mkdir -p "$OLD/pocs/observability/plugin/hooks"
+  printf '{}\n' >"$OLD/pocs/observability/plugin/hooks/hooks.json"
+  import_to_plan
+  plan="$W/custom/migrations/import-$TODAY.md"
+  ! grep -qF "feat/same-as-main" "$plan"; check "a branch the remote holds is not pending" $?
+  ! grep -qF "### acme:" "$plan"; check "no pending work for acme" $?
+  file_has "$plan" "### acme/billing-web:"
+  file_has "$plan" "Branch \`feat/local-change\`: no upstream, 1 commit(s) not pushed"
+  ! grep -qF ".history/" "$plan"; check "backups are not listed" $?
+  ! grep -qF "$OLD/tmp/notes" "$plan"; check "an ignored folder is not listed" $?
+  file_has "$plan" "\`$OLD/.claude/\`: an instruction file of the older workspace"
+  file_has "$plan" "  - its own instruction files, part of it: \`hooks/\`"
+  file_has "$plan" "\`$OLD/pocs/observability\`: covered by \`tools/observability\` of this workspace (its name)"
+  file_has "$plan" "  - its own instruction files, part of it: \`plugin/hooks/\`"
+  ! grep -qF "\`$OLD/tools/acme-cli/hooks/\`: an instruction file" "$plan"; check "a tool's hooks are not the workspace's rules" $?
+  imp apply --yes
+  rc_is 0
+  [ ! -e "$W/custom/requests/$TODAY-acme-pending-work.md" ]; check "no request for acme" $?
+  file_has "$W/custom/requests/$TODAY-acme-billing-web-pending-work.md" "feat/local-change"
+  eq "the branch on the remote is still brought" "$(git -C "$OLD/projects/acme" rev-parse feat/same-as-main)" \
+    "$(git -C "$W/projects/acme" rev-parse -q --verify refs/heads/feat/same-as-main)"
+}
+
 test_refusals() {
   workspace
   older

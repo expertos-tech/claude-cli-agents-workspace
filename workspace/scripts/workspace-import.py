@@ -251,10 +251,12 @@ def entries(path):
 # The inventory: names first, then git, read only.
 
 
-def walk(folder):
+def walk(folder, tool_names=()):
     """Everything the scan needs that names tell, nothing opened: repositories (.git folders), .git files, manifests,
-    markdown files under a backlog folder, instruction files and folders. Paths relative to the folder."""
+    markdown files under a backlog folder, instruction files and folders, folders named like a tool of this
+    workspace (tool_names). Paths relative to the folder."""
     found = {'repos': [], 'git_files': [], 'manifests': {}, 'markdown': [], 'all_markdown': [], 'instructions': []}
+    found['named'] = []
     for top, dirs, files in os.walk(folder):
         rel = os.path.relpath(top, folder)
         if '.git' in dirs and not os.path.islink(os.path.join(top, '.git')):
@@ -268,6 +270,7 @@ def walk(folder):
         if manifests and rel != '.':
             found['manifests'][rel] = manifests
         here = '' if rel == '.' else rel + '/'
+        found['named'] += [here + d for d in dirs if d in tool_names]
         found['instructions'] += [here + d + '/' for d in dirs if d.lower() in INSTRUCTION_DIRS]
         for name in sorted(files):
             if name.lower() in INSTRUCTION_FILES:
@@ -333,6 +336,8 @@ def local_branches(path):
         branch['pending'] = refs is not None
         if refs:
             branch['count'], branch['commits'] = unpushed(path, refs)
+            # A branch with no upstream whose commits a remote-tracking ref already holds is no pending work.
+            branch['pending'] = bool(branch['count']) or bool(upstream and not branch['gone'])
         result.append(branch)
     return result
 
@@ -528,29 +533,38 @@ def orphan_main(folder, rel, repos):
 
 
 def code_folders(root, folder, found, trees, instruction_dirs, projects):
-    """(code folders, scratch) of the folder: the outermost folders with a manifest that no repository or worktree
-    holds, out of the instruction folders. One inside a dot folder, or one the older workspace's own repository
-    ignores, outside the projects folder, is scratch of the older workspace: counted, never asked."""
-    found_paths, outside = [], []
-    for rel in sorted(found['manifests'], key=depth):
+    """(code folders, scratch) of the folder: the outermost folders with a manifest, or named like a tool of this
+    workspace (a tool of the older workspace with no manifest), that no repository or worktree holds, out of the
+    instruction folders. One inside a dot folder, or one the older workspace's own repository ignores, outside the
+    projects folder, is scratch of the older workspace: counted, never asked."""
+    found_paths = []
+    for rel in sorted(set(found['manifests']) | set(found.get('named', [])), key=depth):
         if rel in trees or nearest(rel, trees - {'.'}) or nearest(rel, set(found_paths)):
             continue
         if not nearest(rel, instruction_dirs):
             found_paths.append(rel)
-            if not (projects and rel.startswith(projects + '/')):
-                outside.append(rel)
+    scratched = scratch_of(folder, found, projects, found_paths)
+    code, scratch, tools = [], [], Tools(root)
+    for rel in found_paths:
+        if rel in scratched:
+            # A folder named like a tool, with no manifest, in scratch is no code folder: not counted.
+            if rel in found['manifests']:
+                scratch.append(rel)
+            continue
+        tool, how = tools.covering(os.path.join(folder, rel))
+        code.append({'path': rel, 'manifests': found['manifests'].get(rel, []), 'covered': tool, 'how': how})
+    tops = sorted({rel.split('/')[0] + '/' for rel in scratch})
+    return code, {'count': len(scratch), 'tops': tops}
+
+
+def scratch_of(folder, found, projects, paths):
+    """The paths, of the ones given, that are scratch of the older workspace: outside the projects folder, and in a
+    dot folder (a part of the path starts with a dot) or ignored by the older workspace's own repository."""
+    outside = [p for p in paths if p != '.' and not (projects and (p + '/').startswith(projects + '/'))]
     ignored = set()
     if '.' in found['repos'] and outside:
         ignored = set((git(folder, 'check-ignore', '--', *outside) or '').splitlines())
-    code, scratch, tools = [], [], Tools(root)
-    for rel in found_paths:
-        if rel in outside and (rel in ignored or any(part.startswith('.') for part in rel.split('/'))):
-            scratch.append(rel)
-            continue
-        tool, how = tools.covering(os.path.join(folder, rel))
-        code.append({'path': rel, 'manifests': found['manifests'][rel], 'covered': tool, 'how': how})
-    tops = sorted({rel.split('/')[0] + '/' for rel in scratch})
-    return code, {'count': len(scratch), 'tops': tops}
+    return {p for p in outside if p in ignored or any(part.startswith('.') for part in p.split('/'))}
 
 
 def heading_of(path):
@@ -579,7 +593,7 @@ def repo_markdown(folder, repo, found, trees):
 
 def inventory(root, folder):
     """The state of a new import: every fact of the folder, read only. Questions come from refresh()."""
-    found = walk(folder)
+    found = walk(folder, set(Tools(root).folders))
     repo_rels = set(found['repos'])
     projects = 'projects' if os.path.isdir(os.path.join(folder, 'projects')) else None
     repos = [read_repo(folder, rel, repo_rels, projects) for rel in sorted(repo_rels - {'.'}, key=depth)]
@@ -629,6 +643,15 @@ def inventory(root, folder):
             repo['markdown'] = repo_markdown(folder, repo['path'], found, repo_rels | trees)
     instructions = [i for i in found['instructions'] if nearest(i.rstrip('/'), owned) is None]
     instructions = [i for i in instructions if not nearest(i.rstrip('/'), instruction_dirs)]
+    # Scratch is no rule: an instruction file in a dot folder or a folder the older workspace ignores is left out.
+    holders = {i: os.path.dirname(i.rstrip('/')) or '.' for i in instructions}
+    scratched = scratch_of(folder, found, projects, sorted(set(holders.values())))
+    instructions = [i for i in instructions if holders[i] not in scratched]
+    # Those of a code folder of the older workspace (a tool's hooks) are listed with it, not as its rules.
+    code_paths = {c['path'] for c in code}
+    for folder_ in code:
+        folder_['instructions'] = [i for i in instructions if nearest(i.rstrip('/'), code_paths) == folder_['path']]
+    instructions = [i for i in instructions if nearest(i.rstrip('/'), code_paths) is None]
     return {
         'version': 1,
         'source': folder,
@@ -1331,6 +1354,9 @@ def not_imported(state, model):
                 f'`git -C {where} init -b main && git -C {where} remote add origin <remote-url>`, commit what belongs '
                 f'(never a .env or a key) and push, then `bash scripts/aiwp-cmds.sh bring {where} <path>`'
             )
+        if folder.get('instructions'):
+            names = ', '.join(code(i[len(folder['path']) + 1 :]) for i in folder['instructions'])
+            lines.append(f'  - its own instruction files, part of it: {names}')
     lines += [
         f'- {code(os.path.join(source, i))}: an instruction file of the older workspace' for i in state['instructions']
     ]

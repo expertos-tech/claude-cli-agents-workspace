@@ -309,7 +309,7 @@ class GitReadTest(Base):
         self.assertIsNone(wi.git(os.path.join(self.old, 'unknown'), 'status'))
 
     def test_branches_pending_or_pushed(self):
-        """No upstream, gone and ahead are pending with their commits; one even with its upstream is not."""
+        """Ahead is pending; no upstream or gone only with commits no remote holds; even with upstream is not."""
         path = self.repo(
             'r',
             branches=[
@@ -324,8 +324,14 @@ class GitReadTest(Base):
         found = {b['name']: b for b in wi.local_branches(path)}
         self.assertFalse(found['main']['pending'])
         self.assertEqual(found['ahead']['ahead'], 2)
-        self.assertTrue(found['gone']['pending'] and found['local']['pending'])
+        self.assertTrue(found['ahead']['pending'])
+        # With no upstream (or a gone one), only commits no remote-tracking ref holds are pending.
+        self.assertFalse(found['gone']['pending'] or found['local']['pending'])
         self.assertEqual(found['local']['count'], 0)
+        self.fake.facts[path].count = '2'
+        found = {b['name']: b for b in wi.local_branches(path)}
+        self.assertTrue(found['gone']['pending'] and found['local']['pending'])
+        self.assertEqual(found['local']['count'], 2)
         self.assertEqual(found['local']['commits'][0], 'abc1234 change')
         self.assertNotIn('abcdefgh12345678', found['local']['commits'][1])
 
@@ -599,6 +605,11 @@ class OlderLayoutTest(Fixture):
         self.write(self.old, 'Notes Repo/.github/pr.md', '# PR\n')
         self.write(self.old, 'Notes Repo/CLAUDE.md', '# rules\n')
         self.write(self.old, 'Notes Repo/backlog/x.md', '# Already an item\n')
+        self.write(self.old, '.history/backups/CLAUDE.md', '# old copy\n')
+        self.write(self.old, 'scratch/probes/CLAUDE.md', '# probe\n')
+        self.write(self.old, 'projects/no-repo/hooks/run.sh', 'true\n')
+        self.write(self.old, 'pocs/observability/plugin/hooks/hooks.json', '{}')
+        self.write(self.old, '.history/observability/notes.txt', 'a backup')
 
     def test_inventory_of_the_layout(self):
         """No code folder in a worktree tree; scratch counted; orphans attributed; a stray .git file listed."""
@@ -608,6 +619,12 @@ class OlderLayoutTest(Fixture):
         self.assertNotIn('worktrees/wt/audio-src', paths)
         self.assertNotIn('worktrees/old/game', paths)
         self.assertIn('projects/no-repo', paths)
+        self.assertEqual(next(c for c in state['code_folders'] if c['path'] == 'projects/no-repo')['instructions'],
+                         ['projects/no-repo/hooks/'])  # fmt: skip
+        self.assertEqual(sorted(state['instructions']), ['.claude/', 'CLAUDE.md', 'Notes Repo/CLAUDE.md', 'rules/'])
+        tool = next(c for c in state['code_folders'] if c['path'] == 'pocs/observability')
+        self.assertEqual((tool['covered'], tool['manifests'], tool['instructions']), (
+            'observability', [], ['pocs/observability/plugin/hooks/']))  # fmt: skip
         self.assertEqual(state['scratch'], {'count': 2, 'tops': ['.history/', 'scratch/']})
         orphans = {os.path.basename(w['path']): w['main'] for w in state['worktrees'] if w.get('orphan')}
         self.assertEqual(orphans, {'old': 'projects/billing-api', 'moved': 'projects/billing-api'})
@@ -633,6 +650,7 @@ class OlderLayoutTest(Fixture):
         scratch = 'Scratch of the older workspace: 2 code folder(s) with no git under `.history/`, `scratch/`'
         self.assertIn(scratch, plan)
         self.assertIn('Notes Repo`: the backlog of the older workspace', plan)
+        self.assertIn('  - its own instruction files, part of it: `hooks/`', plan)
         self.assertFalse(any(s.get('source', '').endswith(('/old', '/moved')) for s in self.state()['steps']))
         self.main('skip', 'billing-api')
         self.main('plan')
