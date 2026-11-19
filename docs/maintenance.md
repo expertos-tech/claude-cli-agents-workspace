@@ -43,6 +43,7 @@ The work of the maintainers, in the open. Nothing there reaches an installed wor
 | --- | --- |
 | `maintainers/plans/` | Designs: problem, options, recommendation, numbered decisions |
 | `maintainers/requests/` | Pending requests, `idea` (decisions open) or `ready`: approved plans, ideas, review findings; the order they run is in its README. There is no backlog |
+| `maintainers/requests/doing/` | Requests in progress, from `bash tests/caw-work.sh start` (run by `/caw-request` before the clone opens) until `/caw-merge`; their README row has the Status `doing`, and no closing board offers them to run |
 | `maintainers/requests/qa/` | Requests on `developer`, not released, each with the "Execution" block of every merge |
 | `maintainers/requests/done/` | Released requests |
 | `maintainers/reviews/` | Reports of independent reviews; created by the first one |
@@ -87,7 +88,7 @@ counterpart and are complete skills.
 | `/caw-check` | `[--base <ref>] [--floor] [extra check.sh options]` | Runs `tests/check.sh` on what changed (`--base origin/developer --i18n-pending`) and explains each failure |
 | `/caw-commit` | `[--all]` | One Conventional Commit per logical change of the session, by path; no push, no branch, no tag |
 | `/caw-draft-request` | `[plan \| request] [ideas \| path]` | Turns ideas into a plan or a request, asking only what has no best alternative |
-| `/caw-request` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `tmp/requests/`, then `tmp/`; no argument reads `tmp/request.md` |
+| `/caw-request` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `maintainers/requests/doing/` (in progress: resume or start over), `tmp/requests/`, then `tmp/`; no argument reads `tmp/request.md` |
 | `/caw-test-install` | `[--keep]` | Installs a disposable workspace from the current tree under `tmp/test-install/` and exercises hooks and scripts |
 | `/caw-merge` | `[<work>/<clone> \| --main [instructions]]` | Takes the work into `developer` through the gates and both changelogs, and moves the request to `qa/`; `--main` validates `qa/` and releases the product ([releases](releases.md)) |
 
@@ -111,10 +112,12 @@ The default is no subagent. Subagents never commit or push: the main session doe
 ## Where the work happens
 
 - **In a clone:** `/caw-request` opens a clone of the repository at `tmp/work/<yyyy-mm-dd>-<slug>/`, on a work branch
-  `<type>/<slug>` from `origin/developer`, and works only there, with no prompt: `tests/caw-work.sh` (`open`, `run`,
-  `status`, `publish`, `push`, `close`) is allowed, and the clone's hooks push the branch after each commit, once the
-  company-terms scan passes. A prompt shows one thing: what needs authorization runs alone, in its own call. The one
-  prompt of a task is the push of `developer` by `/caw-merge`.
+  `<type>/<slug>` from `origin/developer`, and works only there, with no prompt: `tests/caw-work.sh` (`start`, `open`,
+  `run`, `status`, `publish`, `push`, `close`) is allowed, and the clone's hooks push the branch after each commit,
+  once the company-terms scan passes. Before the clone opens, `start` moves a request of `maintainers/requests/` to
+  `doing/` in one commit pushed to `developer`, the one push of `developer` outside `/caw-merge`, refused unless it is
+  only that move. A prompt shows one thing: what needs authorization runs alone, in its own call. The one prompt of a
+  task is the push of `developer` by `/caw-merge`.
 - **Directly on `developer`:** a session at the root that opened no clone works on `developer`.
 - **Plans and requests** are shown to the owner in the owner's language and saved in English.
 

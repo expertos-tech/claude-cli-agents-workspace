@@ -11,11 +11,16 @@ The design behind a large one is in `maintainers/plans/`.
 
 | Folder | State | Moved by |
 | --- | --- | --- |
-| `requests/` | Pending: `idea` (decisions open) or `ready` | An approved plan, an idea, or a finding of a review |
-| `requests/qa/` | On `developer`, not released; an "Execution" block records each merge | `/caw-merge` |
+| `requests/` | Pending: `idea` (decisions open) or `ready`; Status `pending` | An approved plan, an idea, or a finding of a review; `bash tests/caw-work.sh close <work> --discard` puts one back |
+| `requests/doing/` | In progress: its work is open in a clone of `tmp/work/`, from its start until `/caw-merge`; Status `doing` | `/caw-request`, through `bash tests/caw-work.sh start <name>`, before its clone opens |
+| `requests/qa/` | On `developer`, not released; an "Execution" block records each merge | `/caw-merge`, from `doing/` (or from `requests/`, for one that never went through `doing/`) |
 | `requests/done/` | Released; "Released in vX.Y.Z" added | `/caw-merge --main` |
 
-A request never moves while its stages run. There is no backlog: an idea is a pending request in state `idea`.
+A request moves once, to `doing/`, before its clone opens, and never again while its stages run:
+`bash tests/caw-work.sh start <name>` moves it and sets the Status of its row below to `doing`, in one commit pushed
+to `developer` (the one exception to `/caw-merge` moving it, `.claude/rules/security.md`); a stage that stops leaves
+it there, and `/caw-merge` takes it to `qa/`. A request with the Status `doing` is never offered to run: a closing
+board or a summary names it `in progress: <work>`. There is no backlog: an idea is a pending request in state `idea`.
 
 ## Pending
 
@@ -38,46 +43,46 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Ready: the plan
 
-| Round | Request | Notes |
-| --- | --- | --- |
-| 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
-| 0 | `request-in-progress.md` | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
-| 0 | `draft-prompt.md` | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
-| 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
-| 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
-| 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
-| 2 | `tools-hub.md` | Needs `run-tools`; design: `plans/tools-hub.md` |
-| 3 | `final-review.md` | A whole-product review in a new session; every release now also ends with a final review |
+| Round | Request | Status | Notes |
+| --- | --- | --- | --- |
+| 0 | `assisted-mode.md` | pending | After `autonomous-work`; design: `plans/assisted-mode.md` |
+| 0 | `request-in-progress.md` | pending | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
+| 0 | `draft-prompt.md` | pending | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
+| 2 | `normalize-rules.md` | pending | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
+| 2 | `import-from-fork.md` | pending | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
+| 2 | `fork-my-rules.md` | pending | Needs `rules`; design: `plans/fork-my-rules.md` |
+| 2 | `tools-hub.md` | pending | Needs `run-tools`; design: `plans/tools-hub.md` |
+| 3 | `final-review.md` | pending | A whole-product review in a new session; every release now also ends with a final review |
 
 ### Ready: findings of the reviews
 
 Small adjustments, effort low unless noted.
 
-| Request | What it fixes |
-| --- | --- |
-| `release-developer-moved.md` | `/caw-merge --main` when `developer` moves during the release |
-| `release-main-sha-check.md` | The push of `main` and the tag tied to the sha the suite judged |
-| `execution-block-after-fixes.md` | The Execution block written before the results it records |
-| `clone-path-findings-loop.md` | Requests made of findings loop the clone path of `/caw-merge` |
-| `merge-project-name.md` | `<project>` for a plain folder of repos with no root repo |
-| `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
-| `merge-queue.md` | Two merges into one base at the same time: a queue, one merge at a time (effort high) |
+| Request | Status | What it fixes |
+| --- | --- | --- |
+| `release-developer-moved.md` | pending | `/caw-merge --main` when `developer` moves during the release |
+| `release-main-sha-check.md` | pending | The push of `main` and the tag tied to the sha the suite judged |
+| `execution-block-after-fixes.md` | pending | The Execution block written before the results it records |
+| `clone-path-findings-loop.md` | pending | Requests made of findings loop the clone path of `/caw-merge` |
+| `merge-project-name.md` | pending | `<project>` for a plain folder of repos with no root repo |
+| `release-per-project-proof.md` | pending | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
+| `merge-queue.md` | pending | Two merges into one base at the same time: a queue, one merge at a time (effort high) |
 
 ### Ideas
 
-| Round | Request | What is missing |
-| --- | --- | --- |
-| 1 | `prompt-log-results.md` | Two decisions |
-| 1 | `gate-audit-gaps.md` | Three decisions |
-| 1 | `aiwp-remove.md` | Whether to build it |
-| 2 | `onboard.md` | Four decisions; needs `rules`; design: `plans/distribution.md` |
-| 2 | `measure-quality-indicators.md` | Three decisions; after `import-from-fork` (both change `measure.py`) |
-| 3 | `rules-size-budget.md` | Two decisions; folded into `final-review` or right before it |
-| — | `qa-validation-on-developer.md` | The owner completes the design of `--qa` |
-| — | `release-tag-after-pull-request.md` | The design of the tag after a pull request into a protected `main` |
-| — | `repo-terms-skip-stops-merge.md` | Today no terms list exists here |
-| — | `workflow-agent-session-name.md` | The parent session name in the labels of Workflow agents |
-| — | `colima-console-test-on-linux.md` | Three decisions; a real Colima next to docker-ce on Linux to test the Colima console |
+| Round | Request | Status | What is missing |
+| --- | --- | --- | --- |
+| 1 | `prompt-log-results.md` | pending | Two decisions |
+| 1 | `gate-audit-gaps.md` | pending | Three decisions |
+| 1 | `aiwp-remove.md` | pending | Whether to build it |
+| 2 | `onboard.md` | pending | Four decisions; needs `rules`; design: `plans/distribution.md` |
+| 2 | `measure-quality-indicators.md` | pending | Three decisions; after `import-from-fork` (both change `measure.py`) |
+| 3 | `rules-size-budget.md` | pending | Two decisions; folded into `final-review` or right before it |
+| — | `qa-validation-on-developer.md` | pending | The owner completes the design of `--qa` |
+| — | `release-tag-after-pull-request.md` | pending | The design of the tag after a pull request into a protected `main` |
+| — | `repo-terms-skip-stops-merge.md` | pending | Today no terms list exists here |
+| — | `workflow-agent-session-name.md` | pending | The parent session name in the labels of Workflow agents |
+| — | `colima-console-test-on-linux.md` | pending | Three decisions; a real Colima next to docker-ce on Linux to test the Colima console |
 
 ## QA
 
