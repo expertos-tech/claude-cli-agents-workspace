@@ -72,3 +72,68 @@ The subagents of each step run with the step's effort, passed in the call.
 - Open: how the test installation gets past the pre-push. Decided: the hook lets through a local destination inside
   the clone's `tmp/`, an allowlist, instead of `tests/test-install.sh` turning the hooks off. Reason: turning hooks
   off is the kind of bypass the hooks exist to stop.
+
+## Execution — 2026-11-18, merged into developer
+
+Done, by step:
+
+- Step 1, "Run it alone" shows the warnings (high): `21463ee`.
+- Step 2, the test installation from a work clone (high): `2c1e153` (the scratch destination of the pre-push,
+  `/caw-test-install` from the clone); `443aa2d` (a scratch push counts what `origin` has as scanned: a warning of the
+  closing board the owner chose to fix).
+- Step 3, the review fixtures (medium): `d75dcdd`; `e586456` (the triage of a failing fixture at the release, and
+  f09's help lines moved: a warning the owner chose to fix).
+- `3598a17`: `origin/developer` brought in (`rules-as-product-layers`); the conflict in `tests/test-caw-work.sh`
+  kept both stubs.
+- Changelog: `5acc365`.
+
+Decisions taken while running:
+
+- The model is called only by `/caw-merge --main`, through `reviewer` subagents with explicit model and effort; the
+  script `tests/review-fixtures.sh` only lists the fixtures and judges the saved reports, so nothing calls a model
+  outside the rules of `models.md`.
+- The expected levels live in `tests/review-fixtures/levels.txt`, apart from the fixtures, whose files are numbered
+  (`f01.md`...): the reviewer gets no hint of the expected level.
+- A scratch destination is only an absolute path, never a named remote or a URL, strictly inside the clone's own
+  `tmp/` with links resolved; a tag, a ref outside `refs/heads/` and a force push stay refused there too.
+- The owner (2026-11-18), on the warnings of the closing board: the clone's hooks keep running the root's
+  `tests/caw-work.sh` (the reviewed `developer` guards every clone; the branch never judges its own pushes); a
+  scratch push counts what `origin` has as scanned; a failing fixture is triaged in `/caw-merge --main` step 5; the
+  model cost of the fixtures (nine `reviewer` calls per release) and their variance are accepted.
+
+Deviations from the request:
+
+- AC-1 was proven now, with one run of the nine fixtures, beyond BR-2's "at the release only". The warning-only
+  fixtures f07 and f09 needed rewrites: five runs found real defects in their own code (a function never called, a
+  GNU-only `find -printf`, an incomplete option list, a sort before the names were cut, a launcher path left out),
+  so they now carry little or no code (`tests/review-fixtures/README.md`).
+- The test installation of this delivery ran from a copy of the branch without hooks, because the clone's pre-push
+  still runs the root's script, without BR-5, until this merge. The run from the clone follows this merge.
+
+Acceptance criteria:
+
+- AC-1: proven: 9/9 at the expected level (`tests/review-fixtures.sh judge`, reports in the clone's git-ignored
+  `tmp/review-fixtures/20261118-proof/`); the judge itself by `tests/test-review-fixtures.sh`.
+- AC-2: done, not proven: step 5 of `/caw-merge --main` runs the fixtures and step 7 lists a failing one as a
+  WARNING; proven at the first release.
+- AC-3: proven: `test_run_it_alone_shows_the_warnings_of_the_line` and the scenario of
+  `workspace/scripts/tests/guard-bash/test-guard-bash.sh`; the same line in a test installation was refused with
+  "Run it alone" and the WARNING of `deploy`.
+- AC-4: proven by the scenarios of `tests/test-caw-work.sh` (the snapshot reaches the throwaway repository, `main`
+  to `origin` still refused, a tag, a force push, paths outside `tmp/`, a named remote, a URL and a link out of
+  `tmp/` refused, the terms scan still stops a new term); the run of `tests/test-install.sh` from a real clone is
+  pending, right after this merge.
+
+Checks: `bash tests/check.sh --base origin/developer --i18n-pending`, rc 0 (`repo-terms` SKIP: no terms list found by
+the default lookup); `test_guard_bash` 139, `test-guard-bash.sh` 345, `tests/test-caw-work.sh` 32,
+`tests/test-review-fixtures.sh` 45; shellcheck and markdownlint (the product's pinned images) clean;
+`tests/test-install.sh` PASS on every check (from the copy without hooks).
+
+Warnings:
+
+- WARNING: the clone's pre-push runs the root's `tests/caw-work.sh` — BR-5 and the leaner scan apply to every open
+  clone only once this merge is on `developer` — run `/caw-test-install` from a clone right after it.
+- WARNING: the review fixtures are judged by the model, nine `reviewer` calls per release — a failing one may be a
+  defect of the fixture itself — read its report (`/caw-merge --main` step 5); accepted by the owner.
+
+Left: `/caw-test-install` from a work clone after this merge (AC-4's real run, BR-6).
