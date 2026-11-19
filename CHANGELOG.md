@@ -48,6 +48,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `/import-workspace`: the work of an older workspace (repositories, worktree and work-clone branches, pending work,
   backlog) brought into this one by `scripts/workspace-import.py`, never its rules; `aiwp-cmds.sh bring-branch`, and
   `bring` with a read-only source and partial bring of a folder with missing objects.
+- A request in progress: `/request` moves it to `custom/requests/doing/` when its clone opens, no board offers it
+  again, and running it again asks resume or start over; `/merge` takes it to `qa/`.
 
 ### Added
 
@@ -113,6 +115,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   request without names); the request `import-workspace-code-folders` with its plan (every code folder found by
   extension, POC, tool or project in rounds, a local repository with its history), from a warning of that run; the
   plan `terms-list` (the company-terms list of the maintainer machine), decided as is.
+- A request in progress: `bash tests/caw-work.sh start <name>` moves a ready request to `maintainers/requests/doing/`
+  and sets its row's new Status column to `doing`, in one commit pushed to `developer` before the clone opens: the
+  one exception to `developer` moving only by `/caw-merge`, refused unless the root is clean, equal to
+  `origin/developer`, and the commit is only that rename and that cell. `/caw-request` resolves `doing/` and asks
+  resume or start over (`open --resume`, `close --discard --start-over`); `close --discard` makes the reverse
+  commit; `/caw-merge` moves the request from `doing/` to `qa/`; no closing board offers a request in progress.
 
 ### Changed
 
