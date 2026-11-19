@@ -84,3 +84,59 @@ The subagents of each step run with the step's effort, passed in the call.
   person ("o quadro fica parado na tela até o humano resolver, afinal ele vai rodar o merge depois de qualquer
   forma"); `/merge` and `/caw-merge` use the same board ("sim, pode seguir o mesmo padrão").
 - Assumed: the three levels and their meaning (BR-2); the three answers, the same the merge review already offers.
+
+---
+
+## Execution — 2026-11-18, merged into developer
+
+Done, by step:
+
+- Step 1, the product (medium): `a88825e`. `workspace/rules/security.md` "Warnings": the numbered format with
+  "Why", "Risk" (`HIGH`, `MEDIUM`, `LOW`, with their meaning) and "Suggest" with the recommended answer; a validator's
+  one-line `WARNING:` stays its raw output, which the session writes in that format. `workspace/rules/git.md` "Waves":
+  the warnings board as step 2 of the close, after the checkpoint of the work and before the resume point, the
+  `custom/` checkpoint and the closing board; it stops until every warning is decided, and the closing board's
+  `Warnings:` line lists the decisions; "Requests": the Execution block carries them. `/merge`: the warnings of the
+  waves left open come first; the gate's and the review's warnings in the board as its step 6, before phase 2, with
+  the questions of that step after it; the release lists the BLOCKERs as before and the warnings in the board; a
+  hotfix's warnings in the board, answered `request` or `accept`. `workspace/rules/review.md`: the risk in each
+  `[WARNING]` line, and the answered warnings among the authorizations. `AGENTS.md`, `/request` and
+  `docs/usage.md` follow the order.
+- Step 2, the maintenance (medium): `6851799`. `.claude/rules/process.md` step 6 points at the product's board with
+  no copy, and the closing board's `Warnings:` line lists the decisions; the `git`, `security` and `review` layers
+  keep the board where they replace or map the product's close and summary; `/caw-merge` "The warnings board", and
+  its release and hotfix steps.
+- Step 3, the proof (medium): no code. `596e740` and `f891fc4` bring `developer` in (a conflict in `/caw-merge`
+  release step 7 with the review fixtures of `validators-follow-ups`: both kept).
+- Changelog: `a589d58`, the 0.2.0 warnings entries adjusted.
+
+Decisions taken while running:
+
+- The board comes after the checkpoint of the work, so the work is on the remote while it waits; a `fix` answer is
+  committed and pushed the same way, a `request` answer in the `custom/` checkpoint.
+- A hotfix's board offers only `request` or `accept`: that flow already allowed nothing beyond the error.
+- The reviewer's `[WARNING]` line gains the risk; `tests/review-fixtures.sh judge` reads only the tag, so it is
+  unaffected.
+
+Deviations from the request: none.
+
+Acceptance criteria:
+
+- AC-1: met: `workspace/rules/security.md` "Warnings" and `workspace/rules/git.md` "Waves" (the board, the stop, the
+  answers, the decisions in the closing board).
+- AC-2: met: `.claude/rules/process.md` step 6 points at the product rule, with no copy of the board.
+- AC-3: in the text of `/merge` and `/caw-merge`; the run is evaluated after this merge, in its session, on the
+  owner's decision W-1.
+- AC-4: proven by two pairs of headless runs: in the clone (a stage of the maintenance) and in a test installation
+  of the clone's tree (a wave of the product). Each first run ended with the board, numbered, a risk per warning and
+  no closing board; each run resumed with the answers ended with the closing board listing `W-1 accept, W-2 request
+  <file>`.
+- AC-5: proven: `bash tests/check.sh --base origin/developer --i18n-pending`, rc 0.
+
+Checks: the suite, rc 0 (54 translations pending; repo-terms skipped: no terms list, as accepted at the previous
+merge); `bash tests/test-install.sh` PASS.
+
+Warnings of the stage, decided by the owner: W-1 AC-3 proven only by text: accepted, evaluated after this merge; W-2
+the product's wave close not run in an installed workspace: fixed (the second pair of AC-4 runs, no commit).
+
+Left: AC-3 evaluated after this merge.
