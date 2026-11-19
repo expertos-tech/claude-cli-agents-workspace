@@ -113,8 +113,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   request without names); the request `import-workspace-code-folders` with its plan (every code folder found by
   extension, POC, tool or project in rounds, a local repository with its history), from a warning of that run; the
   plan `terms-list` (the company-terms list of the maintainer machine), decided as is.
+- The plan and request `session-names`: session names that follow the life of a request (`ai-workspace-NN` for a new
+  session and after `/clear`, `rq-<words>` on `/request`, `rq-done-` with the closing board, `rq-closed-` at the
+  merge, `ai-workspace-release-<project>` for a release), `/rename-workspace`, and `/rename` left to Claude Code;
+  checked against the Claude Code hooks documentation.
 
 ### Changed
+
+- The request `merge-queue`: one merge at a time per git repository instead of a queue. A second merge on the same
+  repository becomes a hard rule, a BLOCKER shown in red with no override; a queue file of the merges running, a log
+  per merge, the recovery of an unfinished merge (start again in its clone, go on from its log, or finalize one past
+  `main`, judged by what entered `developer` since), a check at every merge, and `--sweep`, in the product and the
+  `caw-` skills.
 
 - `CLAUDE.md` "Language": the session replies in the `language` setting, even when a request file is in English; with
   none set, in the language the person writes in. `.claude/rules/product.md`: the invariant "no language setting"
