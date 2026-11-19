@@ -473,6 +473,73 @@ test_a_skipped_project_is_not_brought_nor_its_branches_nor_its_pending_work() {
   has "apply has started"
 }
 
+test_worktree_trees_scratch_orphans_and_a_backlog_repository() {
+  workspace
+  older
+  local plan pending
+  # A code folder inside a worktree, and one nested in another code folder: never asked.
+  mkdir -p "$OLD/worktrees/billing-api-wt/audio-src" "$OLD/tools/acme-cli/plugins/export"
+  printf '{}\n' >"$OLD/worktrees/billing-api-wt/audio-src/package.json"
+  printf 'module example.com/export\n' >"$OLD/tools/acme-cli/plugins/export/go.mod"
+  # Scratch of the older workspace: in a dot folder, and in a folder its own repository ignores (tmp/).
+  mkdir -p "$OLD/.history/file-backups/acme" "$OLD/tmp/notes/probes"
+  printf '{}\n' >"$OLD/.history/file-backups/acme/package.json"
+  printf '{}\n' >"$OLD/tmp/notes/probes/package.json"
+  # An orphan worktree of reports: its repository pruned it; only its files are left, with a code folder in them.
+  git -C "$OLD/projects/reports" worktree add -q -b feat/old-layout "$OLD/worktrees/reports-old"
+  mkdir -p "$OLD/worktrees/reports-old/charts"
+  printf '{}\n' >"$OLD/worktrees/reports-old/charts/package.json"
+  rm -rf "$OLD/projects/reports/.git/worktrees/reports-old"
+  # notes/ is the older workspace's backlog, with a clone of it in tmp/work/ that follows its answer.
+  printf '# Idea: monthly report as PDF\n\nThe reports export a PDF.\n' >"$OLD/notes/monthly-pdf.md"
+  mkdir -p "$OLD/notes/done"
+  printf '# Shipped\n' >"$OLD/notes/done/shipped.md"
+  printf '# Notes\n' >"$OLD/notes/README.md"
+  git clone -q "$REMOTES/notes.git" "$OLD/tmp/work/2026-10-02-notes/notes"
+  imp scan "$OLD"
+  rc_is 0
+  has "3 worktree(s), 3 code folder(s) with no git, 2 scratch folder(s)"
+  imp questions --json
+  rc_is 0
+  has '"id": "R-1"'
+  hasnt '"id": "R-2"'
+  has '"allowed": [
+   "project",
+   "data",
+   "backlog"'
+  hasnt "audio-src"
+  hasnt "plugins/export"
+  hasnt "file-backups"
+  hasnt "probes"
+  hasnt "charts"
+  imp answer R-1 backlog
+  rc_is 0
+  imp questions --json
+  has '"id": "B-3"'
+  has "Idea: monthly report as PDF"
+  hasnt "Shipped"
+  hasnt "$OLD/notes/README.md"
+  imp answer C-1 tool
+  imp answer B-1 workspace
+  imp answer B-2 workspace
+  imp answer B-3 reports
+  rc_is 0
+  imp plan
+  rc_is 0
+  plan="$W/custom/migrations/import-$TODAY.md"
+  file_has "$plan" "Scratch of the older workspace: 2 code folder(s) with no git under \`.history/\`, \`tmp/\`"
+  file_has "$plan" "\`$OLD/notes\`: the backlog of the older workspace"
+  file_has "$plan" "\`$OLD/tmp/work/2026-10-02-notes/notes\`: a work clone of \`$OLD/notes\`, which is not imported"
+  ! grep -qF "a .git file of no repository" "$plan"; check "the orphan worktree is attributed" $?
+  imp apply --yes
+  rc_is 0
+  [ ! -e "$W/projects/notes" ]; check "the backlog repository is not brought" $?
+  pending="$W/custom/requests/$TODAY-reports-pending-work.md"
+  file_has "$pending" "\`$OLD/worktrees/reports-old\` (orphan worktree): its repository no longer tracks it; only its files are left, compare them by hand"
+  file_has "$W/custom/requests/$TODAY-idea-monthly-report-as-pdf.md" "**Project:** reports"
+  file_has "$W/custom/requests/$TODAY-idea-monthly-report-as-pdf.md" "The reports export a PDF."
+}
+
 test_refusals() {
   workspace
   older

@@ -36,7 +36,7 @@ class Facts:
         self.branches = branches if branches is not None else [('main', SHA, 'refs/remotes/origin/main', '')]
         self.remotes = remotes if remotes is not None else {}
         self.worktrees, self.stashes = worktrees, stashes
-        self.count, self.log, self.filters = '1', 'abc1234 change', ''
+        self.count, self.log, self.filters, self.ignored = '1', 'abc1234 change', '', ''
 
 
 class FakeRun:
@@ -77,6 +77,8 @@ class FakeRun:
             return 0, '\0'.join(fields) + '\0'
         if sub == 'for-each-ref':
             return 0, ''.join(f'refs/heads/{n}\0{s}\0{u}\0{t}\n' for n, s, u, t in facts.branches)
+        if sub == 'check-ignore':
+            return (0, facts.ignored) if facts.ignored else (1, '')
         if sub == 'rev-list':
             return 0, facts.count + '\n'
         if sub == 'log':
@@ -573,6 +575,75 @@ class AnswerTest(Fixture):
         self.answer('P-1', 'notes')
         code, out = self.main('plan')
         self.assertIn('nowhere is no project of this import', out)
+
+
+class OlderLayoutTest(Fixture):
+    """Worktree trees, scratch, orphan worktrees and a repository answered backlog."""
+
+    def setUp(self):
+        """Adds them to the fixture."""
+        super().setUp()
+        self.write(self.old, 'worktrees/wt/audio-src/package.json', '{}')
+        self.write(self.old, '.history/backups/package.json', '{}')
+        self.write(self.old, 'scratch/probes/package.json', '{}')
+        self.write(self.old, 'projects/no-repo/package.json', '{"name": "no-repo"}')
+        self.fake.facts[self.old].ignored = 'scratch/probes\n'
+        gitdir = os.path.join(self.old, 'projects/billing-api/.git/worktrees/old')
+        self.write(self.old, 'worktrees/old/.git', f'gitdir: {gitdir}\n')
+        self.write(self.old, 'worktrees/old/game/package.json', '{}')
+        self.write(self.old, 'worktrees/moved/.git', 'gitdir: /elsewhere/projects/billing-api/.git/worktrees/moved\n')
+        self.write(self.old, 'worktrees/stray/.git', 'gitdir: /elsewhere/unknown/.git/worktrees/stray\n')
+        self.write(self.old, 'worktrees/plain/.git', 'not a gitdir line\n')
+        self.write(self.old, 'Notes Repo/drafts/pdf.md', '# Monthly PDF\n')
+        self.write(self.old, 'Notes Repo/done/old.md', '# Old\n')
+        self.write(self.old, 'Notes Repo/.github/pr.md', '# PR\n')
+        self.write(self.old, 'Notes Repo/CLAUDE.md', '# rules\n')
+        self.write(self.old, 'Notes Repo/backlog/x.md', '# Already an item\n')
+
+    def test_inventory_of_the_layout(self):
+        """No code folder in a worktree tree; scratch counted; orphans attributed; a stray .git file listed."""
+        self.scan()
+        state = self.state()
+        paths = {c['path'] for c in state['code_folders']}
+        self.assertNotIn('worktrees/wt/audio-src', paths)
+        self.assertNotIn('worktrees/old/game', paths)
+        self.assertIn('projects/no-repo', paths)
+        self.assertEqual(state['scratch'], {'count': 2, 'tops': ['.history/', 'scratch/']})
+        orphans = {os.path.basename(w['path']): w['main'] for w in state['worktrees'] if w.get('orphan')}
+        self.assertEqual(orphans, {'old': 'projects/billing-api', 'moved': 'projects/billing-api'})
+        self.assertEqual(sorted(state['other_git_files']), ['submodule', 'worktrees/plain', 'worktrees/stray'])
+        notes = next(r for r in state['repos'] if r['path'] == 'Notes Repo')
+        self.assertEqual([m['path'] for m in notes['markdown']], ['Notes Repo/drafts/pdf.md'])
+
+    def test_a_backlog_repository_and_orphans_in_the_plan(self):
+        """R backlog: its markdown files are B questions; the orphans go to the pending work, never fetched."""
+        self.scan()
+        self.answer('R-1', 'backlog')
+        self.answer('C-1', 'tool')
+        self.answer('C-2', 'project')
+        files = {q['evidence']['file']: qid for qid, q in self.questions().items() if q['kind'] == 'B'}
+        self.assertIn(os.path.join(self.old, 'Notes Repo/drafts/pdf.md'), files)
+        self.assertIn(os.path.join(self.old, 'Notes Repo/backlog/x.md'), files)
+        for qid in files.values():
+            self.answer(qid, 'billing-api')
+        code, out = self.main('plan')
+        self.assertEqual(code, 0, out)
+        plan = Path(self.root, self.state()['plan']).read_text()
+        self.assertIn('(orphan worktree): its repository no longer tracks it', plan)
+        scratch = 'Scratch of the older workspace: 2 code folder(s) with no git under `.history/`, `scratch/`'
+        self.assertIn(scratch, plan)
+        self.assertIn('Notes Repo`: the backlog of the older workspace', plan)
+        self.assertFalse(any(s.get('source', '').endswith(('/old', '/moved')) for s in self.state()['steps']))
+        self.main('skip', 'billing-api')
+        self.main('plan')
+        plan = Path(self.root, self.state()['plan']).read_text()
+        self.assertIn('worktrees/old`: an orphan worktree of', plan)
+
+    def test_no_root_repository_asks_git_for_nothing_ignored(self):
+        """Without the older workspace's own repository, nothing is scratch but dot folders."""
+        os.rename(os.path.join(self.old, '.git'), os.path.join(self.old, 'not-git'))
+        self.scan()
+        self.assertEqual(self.state()['scratch']['count'], 1)
 
 
 class PlanApplyTest(Fixture):

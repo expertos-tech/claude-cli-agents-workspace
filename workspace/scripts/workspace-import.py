@@ -6,10 +6,15 @@ The older workspace is only read: every git call takes no optional lock and runs
 signature checks; .env files (but .env.example), keys, certificates and credential files are never opened; nothing of
 it runs. The script does every step that is a fact and keeps the state in custom/migrations/import-<yyyy-mm-dd>.json
 (-2, -3... for another scan the same day). It asks only what needs judgement, as questions with their evidence:
-  R-n  a repository outside the projects folder: "project" or "data" (of the older workspace)
+  R-n  a repository outside the projects folder: "project", "data" (of the older workspace) or "backlog" (its
+       markdown files become backlog items; not brought); a clone of it follows the answer
   P-n  the destination in projects/ of a repository whose path is no kebab-case path under the projects folder, or
        is taken: a kebab-case path, or "skip" (not brought)
-  C-n  a code folder with no git that no tool of tools/ covers: "project" or "tool" (of the older workspace)
+  C-n  a code folder with no git that no tool of tools/ covers: "project" or "tool" (of the older workspace). None
+       is asked inside a repository or a worktree (valid or orphan), nor for scratch of the older workspace (inside a
+       dot folder, or a folder its own repository ignores, outside the projects folder): counted only
+An orphan worktree (a .git file whose gitdir <repository>/.git/worktrees/<name> is gone) belongs to that repository:
+its project's pending-work request names it, to compare its files by hand; nothing of it is fetched.
   B-n  a backlog item: the project it is about, or "workspace" (the older workspace's own process: dropped)
 
 Commands:
@@ -249,7 +254,7 @@ def entries(path):
 def walk(folder):
     """Everything the scan needs that names tell, nothing opened: repositories (.git folders), .git files, manifests,
     markdown files under a backlog folder, instruction files and folders. Paths relative to the folder."""
-    found = {'repos': [], 'git_files': [], 'manifests': {}, 'markdown': [], 'instructions': []}
+    found = {'repos': [], 'git_files': [], 'manifests': {}, 'markdown': [], 'all_markdown': [], 'instructions': []}
     for top, dirs, files in os.walk(folder):
         rel = os.path.relpath(top, folder)
         if '.git' in dirs and not os.path.islink(os.path.join(top, '.git')):
@@ -267,8 +272,10 @@ def walk(folder):
         for name in sorted(files):
             if name.lower() in INSTRUCTION_FILES:
                 found['instructions'].append(here + name)
-            elif name.lower().endswith('.md') and backlog_file(rel, name):
-                found['markdown'].append(here + name)
+            elif name.lower().endswith('.md'):
+                found['all_markdown'].append(here + name)
+                if backlog_file(rel, name):
+                    found['markdown'].append(here + name)
     return found
 
 
@@ -503,6 +510,73 @@ def folder_size(path, roots):
     return total
 
 
+def orphan_main(folder, rel, repos):
+    """The repository an orphan worktree belongs to (path in the folder), by its gitdir
+    (<repository>/.git/worktrees/<name>), or None: a .git file whose gitdir exists, or names no repository of the
+    folder, is no orphan worktree."""
+    text = read_text(os.path.join(folder, rel, '.git')) or ''
+    if not text.startswith('gitdir:'):
+        return None
+    gitdir = os.path.normpath(os.path.join(folder, rel, text[len('gitdir:') :].strip()))
+    if os.path.exists(gitdir) or '/.git/worktrees/' not in gitdir:
+        return None
+    main = gitdir.split('/.git/worktrees/')[0]
+    for repo in sorted(repos, key=lambda r: -len(r['path'])):
+        if main == os.path.join(folder, repo['path']) or main.endswith('/' + repo['path']):
+            return repo['path']
+    return None
+
+
+def code_folders(root, folder, found, trees, instruction_dirs, projects):
+    """(code folders, scratch) of the folder: the outermost folders with a manifest that no repository or worktree
+    holds, out of the instruction folders. One inside a dot folder, or one the older workspace's own repository
+    ignores, outside the projects folder, is scratch of the older workspace: counted, never asked."""
+    found_paths, outside = [], []
+    for rel in sorted(found['manifests'], key=depth):
+        if rel in trees or nearest(rel, trees - {'.'}) or nearest(rel, set(found_paths)):
+            continue
+        if not nearest(rel, instruction_dirs):
+            found_paths.append(rel)
+            if not (projects and rel.startswith(projects + '/')):
+                outside.append(rel)
+    ignored = set()
+    if '.' in found['repos'] and outside:
+        ignored = set((git(folder, 'check-ignore', '--', *outside) or '').splitlines())
+    code, scratch, tools = [], [], Tools(root)
+    for rel in found_paths:
+        if rel in outside and (rel in ignored or any(part.startswith('.') for part in rel.split('/'))):
+            scratch.append(rel)
+            continue
+        tool, how = tools.covering(os.path.join(folder, rel))
+        code.append({'path': rel, 'manifests': found['manifests'][rel], 'covered': tool, 'how': how})
+    tops = sorted({rel.split('/')[0] + '/' for rel in scratch})
+    return code, {'count': len(scratch), 'tops': tops}
+
+
+def heading_of(path):
+    """The first heading of a markdown file, '' when it is not read."""
+    text = read_text(path)
+    return first_heading(text) if text is not None else ''
+
+
+def repo_markdown(folder, repo, found, trees):
+    """The markdown files of a repository that may be backlog items, should it be answered "backlog": in it and in
+    no repository or worktree inside it, not in a backlog folder already (those are items anyway), not in done/, qa/,
+    archive/ nor in a dot or instruction folder, no README nor instruction file."""
+    items = []
+    for rel in found['all_markdown']:
+        if not rel.startswith(repo + '/') or rel in found['markdown'] or nearest(rel, trees - {'.'}) != repo:
+            continue
+        parts = rel[len(repo) + 1 :].lower().split('/')
+        folders, name = parts[:-1], parts[-1]
+        if name == 'readme.md' or name in INSTRUCTION_FILES:
+            continue
+        if any(p in BACKLOG_SKIP or p in INSTRUCTION_DIRS or p.startswith('.') for p in folders):
+            continue
+        items.append({'path': rel, 'heading': heading_of(os.path.join(folder, rel))})
+    return items
+
+
 def inventory(root, folder):
     """The state of a new import: every fact of the folder, read only. Questions come from refresh()."""
     found = walk(folder)
@@ -526,24 +600,33 @@ def inventory(root, folder):
     for repo in repos:
         path = os.path.join(folder, repo['path'])
         repo['size'] = {'files': folder_size(path, roots), 'git': folder_size(os.path.join(path, '.git'), set())}
-    others = [rel for rel in found['git_files'] if os.path.realpath(os.path.join(folder, rel)) not in seen]
+    others = []
+    for rel in found['git_files']:
+        if os.path.realpath(os.path.join(folder, rel)) in seen:
+            continue
+        main = orphan_main(folder, rel, repos)
+        if main is None:
+            others.append(rel)
+            continue
+        worktrees.append(
+            {
+                'path': os.path.join(folder, rel), 'main': main, 'name': kebab(os.path.basename(rel)), 'branch': None,
+                'head': '', 'orphan': True,
+            }
+        )  # fmt: skip
     kinds = {r['path']: r['kind'] for r in repos}
-    owned = {rel for rel, kind in kinds.items() if kind in ('project', 'clone')}
-    code, tools = [], Tools(root)
+    # The tree of a worktree, valid or orphan, is a repository's: no code folder, backlog or instruction file in it.
+    trees = set(found['git_files'])
+    owned = {rel for rel, kind in kinds.items() if kind in ('project', 'clone')} | trees
     instruction_dirs = {i.rstrip('/') for i in found['instructions'] if i.endswith('/')}
-    for rel in sorted(found['manifests'], key=depth):
-        if rel in repo_rels or nearest(rel, repo_rels - {'.'}) or nearest(rel, {c['path'] for c in code}):
-            continue
-        if nearest(rel, instruction_dirs):
-            continue
-        tool, how = tools.covering(os.path.join(folder, rel))
-        code.append({'path': rel, 'manifests': found['manifests'][rel], 'covered': tool, 'how': how})
+    code, scratch = code_folders(root, folder, found, repo_rels | trees, instruction_dirs, projects)
     backlog = []
     for rel in found['markdown']:
         if nearest(rel, owned) is None:
-            text = read_text(os.path.join(folder, rel))
-            heading = first_heading(text) if text is not None else ''
-            backlog.append({'path': rel, 'heading': heading})
+            backlog.append({'path': rel, 'heading': heading_of(os.path.join(folder, rel))})
+    for repo in repos:
+        if repo['kind'] == 'candidate':
+            repo['markdown'] = repo_markdown(folder, repo['path'], found, repo_rels | trees)
     instructions = [i for i in found['instructions'] if nearest(i.rstrip('/'), owned) is None]
     instructions = [i for i in instructions if not nearest(i.rstrip('/'), instruction_dirs)]
     return {
@@ -557,6 +640,7 @@ def inventory(root, folder):
         'worktrees': worktrees,
         'other_git_files': others,
         'code_folders': code,
+        'scratch': scratch,
         'backlog': backlog,
         'instructions': instructions,
         'questions': [],
@@ -598,7 +682,7 @@ def resolve(state, root):
         role[repo['path']] = repo['kind']
         if repo['kind'] == 'candidate':
             role[repo['path']] = answer_of(state, 'R', repo['path'])
-            needs.append(('R', repo['path'], r_evidence(state, repo), ['project', 'data']))
+            needs.append(('R', repo['path'], r_evidence(state, repo), ['project', 'data', 'backlog']))
     clone_roles(state, role)
     for repo in sorted(state['repos'], key=lambda r: depth(r['path'])):
         if role[repo['path']] != 'project':
@@ -633,7 +717,11 @@ def resolve(state, root):
             needs.append(('C', folder['path'], evidence, ['project', 'tool']))
     if all(r is not None for r in role.values()) and all(k != 'P' or answer_of(state, k, s) for k, s, _, _ in needs):
         projects = sorted(set(dest.values()) | set(names.values()) | set(workspace_projects(root)))
-        for item in state['backlog']:
+        items = list(state['backlog'])
+        for repo in state['repos']:
+            if role[repo['path']] == 'backlog':
+                items += repo.get('markdown', [])
+        for item in items:
             evidence = {'file': os.path.join(state['source'], item['path']), 'heading': item['heading']}
             evidence['projects'] = projects
             needs.append(('B', item['path'], evidence, projects + ['workspace']))
@@ -714,7 +802,8 @@ def kebab_path(rel):
 
 
 ASK = {
-    'R': 'Is this repository a project, or data of the older workspace (its prompts, its notes)? "project" or "data".',
+    'R': 'Is this repository a project, data of the older workspace (its prompts, its notes), or its backlog (its '
+    'markdown files become backlog items)? "project", "data" or "backlog". None but a project is brought.',
     'P': 'Where in projects/ does it go? A kebab-case path (the proposal, or another), or "skip" (not brought).',
     'C': 'Is this code folder a project (listed with the command to make it a repository) or a tool of the older '
     'workspace? "project" or "tool". Nothing of either is brought.',
@@ -844,6 +933,7 @@ def summary(state):
         f'clone(s), {kinds.count("candidate")} outside it)',
         f'{len(state["worktrees"])} worktree(s)',
         f'{len(state["code_folders"])} code folder(s) with no git',
+        f'{(state.get("scratch") or {"count": 0})["count"]} scratch folder(s)',
         f'{len(state["backlog"])} backlog item(s)',
         f'{len(state["instructions"])} instruction file(s) or folder(s)',
     ]
@@ -996,7 +1086,7 @@ def branch_steps(state, repos, role, path, where, skipped):
     steps = []
     clones = [r for r in state['repos'] if r.get('clone_of') == path and role[r['path']] == 'clone']
     for worktree in [w for w in state['worktrees'] if w['main'] in [path] + [c['path'] for c in clones]]:
-        if worktree.get('missing') or worktree['branch']:
+        if worktree.get('missing') or worktree.get('orphan') or worktree['branch']:
             continue
         name = unique_branch(taken, worktree['name'], '')
         steps.append(step('branch', worktree['path'], where, 'HEAD', name, worktree['head']))
@@ -1032,7 +1122,7 @@ def pending_sources(state, repos, role, path):
     for rel in [path] + clones:
         repo = repos[rel]
         what = 'repository' if rel == path else 'work clone'
-        worktrees = [w for w in state['worktrees'] if w['main'] == rel and not w.get('missing')]
+        worktrees = [w for w in state['worktrees'] if w['main'] == rel and not w.get('missing') and not w.get('orphan')]
         # The branch of a worktree is shown with the worktree.
         branches = [b for b in repo['branches'] if b['pending'] and b['name'] not in {w['branch'] for w in worktrees}]
         detached = repo['detached'] if repo['detached'] and repo['detached']['count'] else None
@@ -1057,11 +1147,18 @@ def pending_sources(state, repos, role, path):
                         'branches': branches, 'stashes': 0, 'detached': detached,
                     }
                 )  # fmt: skip
+        for worktree in [w for w in state['worktrees'] if w['main'] == rel and w.get('orphan')]:
+            sources.append({'path': worktree['path'], 'what': 'orphan worktree', 'orphan': True})
     return sources
 
 
 def source_lines(source, brought):
     """The markdown lines of one source with pending work."""
+    if source.get('orphan'):
+        return [
+            f'- {code(source["path"])} (orphan worktree): its repository no longer tracks it; only its files are '
+            'left, compare them by hand'
+        ]
     head = f'branch {code(source["branch"])}' if source['branch'] else f'detached at {code(source["head"][:12])}'
     lines = [f'- {code(source["path"])} ({source["what"]}), {head}']
     if source['changes']:
@@ -1204,6 +1301,7 @@ def not_imported(state, model):
     for repo in state['repos']:
         why = {
             'data': 'data of the older workspace',
+            'backlog': 'the backlog of the older workspace: its markdown files are the backlog items above',
             'skip': 'a project not imported (skip)',
             'off': f'a work clone of {code(os.path.join(source, repo.get("clone_of", "")))}, which is not imported',
             'unreadable': 'git could not read it',
@@ -1213,7 +1311,12 @@ def not_imported(state, model):
     for worktree in state['worktrees']:
         if role.get(worktree['main']) not in ('project', 'clone'):
             main = os.path.join(source, worktree['main'])
-            lines.append(f'- {code(worktree["path"])}: a worktree of {code(main)}, which is not imported')
+            kind = 'an orphan worktree' if worktree.get('orphan') else 'a worktree'
+            lines.append(f'- {code(worktree["path"])}: {kind} of {code(main)}, which is not imported')
+    scratch = state.get('scratch') or {'count': 0}
+    if scratch['count']:
+        tops = ', '.join(code(top) for top in scratch['tops'])
+        lines.append(f'- Scratch of the older workspace: {scratch["count"]} code folder(s) with no git under {tops}')
     answers = {q['subject']: q['answer'] for q in state['questions'] if q['kind'] == 'C' and q['status'] == 'answered'}
     for folder in state['code_folders']:
         where = os.path.join(source, folder['path'])
