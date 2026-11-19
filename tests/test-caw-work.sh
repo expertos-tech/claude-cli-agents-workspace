@@ -93,7 +93,7 @@ fixture() {
   mkdir -p "$DSTUB/containers" "$DSTUB/res"
   : >"$DOCKER_LOG"
   unset DOCKER_DOWN CAW_TEST_INSTALL INSTALL_RESULT
-  printf 'tmp/\n' >"$R/.gitignore"
+  printf 'tmp/\n.claude/settings.local.json\n' >"$R/.gitignore"
   printf '# sample\n' >"$R/README.md"
   git -C "$R" add -A
   git -C "$R" commit -q -m base
@@ -210,6 +210,105 @@ test_open_needs_an_origin() {
   rc_is 1
   has "no origin remote"
   [ ! -e "$R/tmp/work/$W" ]; check "nothing created" $?
+}
+
+# The value of "language" in a settings file, or "-" when the file has none or cannot be read.
+language_of() {
+  python3 -I -c 'import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError):
+    data = None
+print(data.get("language", "-") if isinstance(data, dict) else "-")' "$1"
+}
+
+# BR-1, BR-3: open gives a new clone the root's preferred language, so a session there neither asks it again nor misses it.
+test_open_copies_the_preferred_language() {
+  fixture
+  mkdir -p "$R/.claude"
+  printf '{\n  "language": "portuguese",\n  "model": "x"\n}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "language: portuguese (from the root .claude/settings.local.json)"
+  eq "clone language" "portuguese" "$(language_of "$C/.claude/settings.local.json")"
+  eq "only the language is copied" '{"language": "portuguese"}' "$(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$C/.claude/settings.local.json")"
+  git -C "$C" check-ignore -q -- .claude/settings.local.json; check "git ignores it in the clone" $?
+  eq "clone clean" "" "$(git -C "$C" status --porcelain)"
+  eq "no temp file left" "settings.local.json" "$(ls -A "$C/.claude")"
+  eq "root file untouched" "portuguese" "$(language_of "$R/.claude/settings.local.json")"
+}
+
+# A clone file keeps its other keys, and a language of its own is never replaced.
+test_open_merges_the_language_into_the_clone_file() {
+  fixture
+  mkdir -p "$R/.claude"
+  printf '{"language": "portuguese"}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  mkdir -p "$C/.claude"
+  printf '{"permissions": {"allow": ["Bash(ls)"]}, "env": {"A": "1"}}\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "(already open)"
+  has "language: portuguese"
+  eq "language added" "portuguese" "$(language_of "$C/.claude/settings.local.json")"
+  eq "other keys kept" '{"permissions": {"allow": ["Bash(ls)"]}, "env": {"A": "1"}, "language": "portuguese"}' \
+    "$(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$C/.claude/settings.local.json")"
+  printf '{"language": "spanish", "model": "y"}\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  hasnt "language: portuguese"
+  eq "own language kept" '{"language": "spanish", "model": "y"}' "$(cat "$C/.claude/settings.local.json")"
+  # A malformed clone file is left as it is, with a warning; open still succeeds.
+  printf '{"language": \n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "attention: "
+  has "left as it is"
+  eq "malformed file untouched" '{"language": ' "$(cat "$C/.claude/settings.local.json")"
+  printf '["portuguese"]\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "left as it is"
+  eq "not an object: untouched" '["portuguese"]' "$(cat "$C/.claude/settings.local.json")"
+}
+
+# No language at the root (no file, no key, an empty one, a malformed file): nothing written, nothing said.
+test_open_without_a_root_language_writes_nothing() {
+  fixture
+  run open "$B"
+  rc_is 0
+  hasnt "language:"
+  hasnt "attention: the language"
+  [ ! -e "$C/.claude/settings.local.json" ]; check "no file without the root file" $?
+  local body
+  for body in '{"model": "x"}' '{"language": "  "}' '{"language": 3}' '{"language": ' '["portuguese"]'; do
+    mkdir -p "$R/.claude"
+    printf '%s\n' "$body" >"$R/.claude/settings.local.json"
+    run open "$B"
+    rc_is 0
+    hasnt "language:"
+    hasnt "attention"
+    [ ! -e "$C/.claude/settings.local.json" ]; check "nothing written for [$body]" $?
+  done
+}
+
+# A clone where git would not ignore .claude/settings.local.json gets no file: it would be committed.
+test_open_copies_the_language_only_where_git_ignores_it() {
+  fixture
+  # The default global excludes file ($XDG_CONFIG_HOME/git/ignore, else ~/.config/git/ignore) may ignore it already.
+  local XDG_CONFIG_HOME="$BASE/xdg"
+  export XDG_CONFIG_HOME
+  printf 'tmp/\n' >"$R/.gitignore"
+  git -C "$R" commit -q -am "no ignore of the local settings"
+  git -C "$R" push -q origin developer
+  mkdir -p "$R/.claude"
+  printf '{"language": "portuguese"}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "attention: "
+  has "git does not ignore"
+  [ ! -e "$C/.claude/settings.local.json" ]; check "nothing written" $?
 }
 
 test_every_commit_is_pushed() {

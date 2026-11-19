@@ -26,6 +26,9 @@ Commands:
         its upstream, through those hooks. Prints "path: tmp/work/<work>/claude-cli-agents-workspace". A clone of the
         same branch, in any work folder, is reused. Refused: a clone of another branch in the folder, and the branch
         already on the remote with no clone here.
+        A new or reused clone gets the "language" of this repository's .claude/settings.local.json in its own (git
+        ignores it there too), keeping its other keys and never replacing a language it has: "language: <it> (from
+        the root .claude/settings.local.json)".
   run <work>[/<clone>] -- <command>...
         Runs the command (no shell) with the clone as the current folder, only when it is on run's list; anything else
         is refused, running nothing, with "not on run's list: run it as a plain command (the permission mode
@@ -208,6 +211,90 @@ write_hooks() {
   chmod +x "$hooks/post-commit" "$hooks/post-merge" "$hooks/post-rewrite" "$hooks/pre-push"
 }
 
+# Gives a clone the owner's preferred language: the "language" of this repository's .claude/settings.local.json (a
+# JSON object, "language" a non-empty string) written into the clone's own, git-ignored there too, keeping every other
+# key and never replacing a language the clone file has. No language at the root: nothing, silently. A clone file that
+# is not a JSON object, or one git would not ignore: left as it is, with one "attention:" line. Never fails open.
+copy_language() {
+  local clone="$1" source="$root/.claude/settings.local.json" ignored=0
+  [ -f "$source" ] || return 0
+  ! git -C "$clone" check-ignore -q -- .claude/settings.local.json 2>/dev/null || ignored=1
+  python3 -I - "$source" "$clone" "$ignored" <<'PY' || echo "attention: the preferred language was not copied into the clone"
+import json
+import os
+import sys
+import tempfile
+
+NAME = "settings.local.json"
+MAX_READ = 1_000_000
+
+
+def read_object(path):
+    """Return the JSON object of a file, or None when it cannot be read, is malformed or is not an object."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.loads(handle.read(MAX_READ))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def has_language(data):
+    """Return True when a settings object holds "language" as a non-empty string."""
+    value = data.get("language") if isinstance(data, dict) else None
+    return isinstance(value, str) and value.strip() != ""
+
+
+def write_atomically(folder, data):
+    """Write the settings object to folder/settings.local.json through a temp file of the same folder and a rename."""
+    fd, temp = tempfile.mkstemp(dir=folder, prefix="." + NAME + ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, os.path.join(folder, NAME))
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+
+
+def main():
+    """Copy the language of the root settings sys.argv[1] into the clone sys.argv[2] (sys.argv[3]: 1 when git ignores
+    the clone's .claude/settings.local.json); print what it did, or why it did not."""
+    root_data = read_object(sys.argv[1])
+    if not has_language(root_data):
+        return
+    language = root_data["language"]
+    shown = "".join(c if c.isprintable() else "?" for c in language)
+    folder = os.path.join(sys.argv[2], ".claude")
+    target = os.path.join(folder, NAME)
+    where = ".claude/" + NAME + " of the clone"
+    if sys.argv[3] != "1":
+        print(f"attention: the preferred language was not copied: git does not ignore the {where}")
+        return
+    if os.path.islink(folder) or (os.path.exists(folder) and not os.path.isdir(folder)):
+        print("attention: the preferred language was not copied: .claude of the clone is not a folder")
+        return
+    data = {}
+    if os.path.lexists(target):
+        data = read_object(target) if os.path.isfile(target) and not os.path.islink(target) else None
+        if data is None:
+            print(f"attention: the {where} is not a JSON object: left as it is, without the preferred language")
+            return
+        if has_language(data):
+            return
+    data["language"] = language
+    os.makedirs(folder, exist_ok=True)
+    write_atomically(folder, data)
+    print(f"language: {shown} (from the root .claude/{NAME})")
+
+
+main()
+PY
+}
+
 # open: the clone, its branch from origin/developer, its hooks and the first push.
 cmd_open() {
   [ $# -eq 1 ] || die 2 "usage: open <type>/<slug>"
@@ -220,6 +307,7 @@ cmd_open() {
   for c in "$work_root"/*/"$clone_dir"; do
     found="$(clone_branch "$c")" || continue
     if [ "$found" = "$branch" ]; then
+      copy_language "$c"
       echo "path: ${c#"$root"/} (already open)"
       return 0
     fi
@@ -256,6 +344,7 @@ cmd_open() {
   done
   git -C "$clone" config caw.branch "$branch"
   write_hooks "$clone"
+  copy_language "$clone"
   if with_timeout 120 git -C "$clone" push -q -u origin "HEAD:refs/heads/$branch"; then
     echo "pushed: $branch"
   else
