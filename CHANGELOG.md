@@ -70,8 +70,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `tests/caw-work.sh`: opens a work clone (`open <type>/<slug>`), runs a closed list of commands in it (`run`),
   publishes what changed (`publish`: a tool as a Docker copy, the installer, a hook, a script or a rule as a test
   installation), pushes and closes it (the work folder first, a read-only test installation in it included, then
-  the remote branch, so a failed delete never leaves a clone without its branch); the clone's hooks push its branch after each commit only after the
-  company-terms scan of what leaves, and refuse `developer`, `main`, tags and force. `.claude/settings.json` allows
+  the remote branch, so a failed delete never leaves a clone without its branch); the clone's hooks push its branch
+  after each commit only after the company-terms scan of what leaves, and refuse `developer`, `main`, tags and
+  force. `.claude/settings.json` allows
   it and edits of `tmp/work/` with no prompt, so the one prompt of a task is the push of `developer`.
 - `/caw-pilot` and `/caw-docker-deploy`, the layers of `/pilot` and `/docker-deploy`.
 - The request `validators-warn-not-block`: validators block only real errors, the rest is a warning.
