@@ -1281,6 +1281,69 @@ test_bring_from_a_url_checks_out_developer() {
   has "could not clone"
 }
 
+test_bring_branch_fetches_a_head_or_a_branch_and_never_runs_the_source() {
+  fixture
+  local src="$BASE/old-$CURRENT" wt="$BASE/old-$CURRENT-spike" sha before
+  rm -rf "$src" "$wt" "$BASE/ran"
+  git clone -q -b developer "$REMOTE" "$src"
+  git -C "$src" worktree add -q --detach "$wt"
+  printf 'spike\n' >"$wt/spike.txt"
+  git -C "$wt" add spike.txt
+  git -C "$wt" commit -q -m spike
+  sha="$(git -C "$wt" rev-parse HEAD)"
+  git -C "$src" branch -q feature/side
+  # A source whose fsmonitor and clean filter would leave a mark if git ran them.
+  printf '#!/bin/sh\ntouch "%s/ran"\ncat\n' "$BASE" >"$BASE/mark.sh"
+  chmod +x "$BASE/mark.sh"
+  printf '*.txt filter=mark\n' >"$src/.gitattributes"
+  git -C "$src" config filter.mark.clean "$BASE/mark.sh"
+  git -C "$src" config core.fsmonitor "$BASE/mark.sh"
+  touch "$src/app.txt"
+  before="$(git -C "$REMOTE" for-each-ref)"
+  gate bring-branch "$wt" app HEAD import/spike
+  rc_is 0
+  has "brought: import/spike into projects/app"
+  eq "branch at the detached head" "$sha" "$(git -C "$R/projects/app" rev-parse refs/heads/import/spike)"
+  eq "checkout untouched" developer "$(git -C "$R/projects/app" symbolic-ref --short HEAD)"
+  gate bring-branch "$src" app feature/side imported/side
+  rc_is 0
+  eq "a branch of the source" "$(git -C "$src" rev-parse feature/side)" "$(git -C "$R/projects/app" rev-parse imported/side)"
+  gate bring-branch "$wt" app "$sha" import/by-sha
+  rc_is 0
+  eq "a full sha through the HEAD that holds it" "$sha" "$(git -C "$R/projects/app" rev-parse import/by-sha)"
+  gate bring-branch "$wt" app HEAD import/spike
+  rc_is 1
+  has "has a branch import/spike already"
+  gate bring-branch "$wt" app HEAD "bad..name"
+  rc_is 2
+  gate bring-branch "$wt" app --upload-pack=x import/x
+  rc_is 2
+  gate bring-branch "$R/projects/app" app HEAD import/x
+  rc_is 1
+  has "inside this workspace"
+  gate bring-branch "$src" app nope import/x
+  rc_is 1
+  has "no commit nope"
+  gate bring-branch "$src" missing HEAD import/x
+  rc_is 1
+  gate bring-branch "$src" app HEAD
+  rc_is 2
+  gate bring "$src" from-old
+  rc_is 0
+  has "uncommitted in the source"
+  [ ! -e "$BASE/ran" ]; check "nothing of the source ran" $?
+  eq "nothing pushed" "$before" "$(git -C "$REMOTE" for-each-ref)"
+  # An empty folder (a parent's checkout of a gitlink) takes the project; a folder with files does not.
+  mkdir -p "$R/projects/slot" "$R/projects/full"
+  printf 'x\n' >"$R/projects/full/x.txt"
+  gate bring "$src" slot
+  rc_is 0
+  has "brought: projects/slot"
+  gate bring "$src" full
+  rc_is 1
+  has "exists already"
+}
+
 # Creates projects/$1 as a repo on developer with a bare remote, one committed file and, when given, a .gitignore $2.
 nested_project() {
   local dir="$R/projects/$1" remote="$BASE/remote.$CURRENT.${1//\//-}.git"

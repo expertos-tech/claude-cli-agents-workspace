@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # The only ways into projects/: the gate (a clone of tmp/work/ into the base), the release (developer into main), the
-# Terraform apply from main, and the steps of /normalize-projects (developer, checkpoint, bring). Called through
-# scripts/aiwp-cmds.sh.
+# Terraform apply from main, the steps of /normalize-projects (developer, checkpoint, bring) and of /import-workspace
+# (bring, bring-branch). Called through scripts/aiwp-cmds.sh.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
 # Prints the command reference.
 usage() {
   cat <<'USAGE'
-Usage: scripts/aiwp-cmds.sh gate | release | hotfix | hotfix-tag | hotfix-down | apply | developer | checkpoint | bring ...
+Usage: scripts/aiwp-cmds.sh gate | release | hotfix | hotfix-tag | hotfix-down | apply | developer | checkpoint | bring |
+       bring-branch ...
        (this file: scripts/aiwp-gate.sh)
 
 gate <work>/<clone> [--test "<command>" | --docs-only | --untested]
@@ -106,7 +107,16 @@ bring <git-url | folder> <path relative to projects/>
       For /normalize-projects --from: clones a project into projects/<path>. A folder (outside the workspace) keeps
       every local branch and tag, its origin becomes the folder's own origin remote (none: no remote, reported), and
       what a clone cannot carry is reported: uncommitted files (names only), stashes, local commits that remote lacks (per branch: not on the remote, or N commit(s) the remote does not have).
-      The checkout ends on developer, else main.
+      The checkout ends on developer, else main. An existing projects/<path> is refused, but an empty folder (the
+      checkout of a parent repo that tracks the nested one as a gitlink).
+      Also a step of /import-workspace (scripts/workspace-import.py). The source is only read: its own filters and
+      fsmonitor never run.
+bring-branch <folder> <repo> <ref> <branch>
+      For /import-workspace: fetches one commit of a local repository outside the workspace (a worktree or a work
+      clone of an older workspace) into projects/<repo> as the new local branch <branch>: <ref> is a branch of the
+      folder, HEAD (a detached worktree) or the full sha a branch or HEAD of the folder points at. Refused when
+      <branch> exists in projects/<repo> or is no valid branch name. Never touches the folder nor the checkout of
+      projects/<repo>, never pushes. The folder's own filters, fsmonitor and hooks never run.
 apply <repo> <module folder>
       Phase 1: in a temporary worktree of main (equal to the remote) under tmp/work/_apply/, terraform init and plan
       -out, prints the plan and the apply command, and records it as the latest plan of that module. Changes nothing
@@ -1065,16 +1075,29 @@ cmd_checkpoint() {
   echo "return point: the commits of these tags; they are never moved or deleted"
 }
 
+# Runs a read-only git command in a local source folder outside the workspace: no optional lock, and nothing of the
+# folder runs (its fsmonitor, its clean and smudge filters, a signature check its config asks for).
+source_git() {
+  local from="$1" name off=()
+  shift
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    off+=(-c "filter.$name.clean=" -c "filter.$name.smudge=" -c "filter.$name.process=")
+  done < <(git -C "$from" config --name-only --get-regexp '^filter\..*\.(clean|smudge|process)$' 2>/dev/null |
+    sed -E 's/^filter\.(.*)\.[a-z]+$/\1/' | sort -u)
+  git --no-optional-locks -c core.fsmonitor=false -c log.showSignature=false ${off[@]+"${off[@]}"} -C "$from" "$@"
+}
+
 # Prints what a clone of a local folder cannot carry: uncommitted files (names only), stashes, local commits the
 # folder's remote lacks, per branch.
 source_leftovers() {
   local from="$1" files stashes b n only=""
-  files="$(git --no-optional-locks -C "$from" status --porcelain 2>/dev/null | cut -c4- || true)"
+  files="$(source_git "$from" status --porcelain --ignore-submodules=all 2>/dev/null | cut -c4- || true)"
   if [ -n "$files" ]; then
     echo "attention: uncommitted in the source, not brought (a clone carries only commits):"
     printf '%s\n' "$files" | sed 's/^/  /'
   fi
-  stashes="$(git -C "$from" stash list 2>/dev/null | wc -l | tr -d ' ')"
+  stashes="$(source_git "$from" stash list 2>/dev/null | wc -l | tr -d ' ')"
   [ "$stashes" = 0 ] || echo "attention: $stashes stash(es) in the source, not brought"
   while IFS= read -r b; do
     [ -n "$b" ] || continue
@@ -1096,7 +1119,10 @@ cmd_bring() {
   [ -n "$from" ] && [ -n "$rel" ] && [ $# -eq 2 ] || die 2 "usage: bring <git-url | folder> <path relative to projects/>"
   [[ "$rel" =~ ^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*$ ]] || die 2 "<path> is kebab-case folders joined by /: $rel"
   dest="$root/projects/$rel"
-  [ ! -e "$dest" ] || die 1 "projects/$rel exists already"
+  # An empty folder is no project: the checkout of a parent repo leaves one where it tracks a nested repo (a gitlink).
+  if [ -L "$dest" ] || { [ -e "$dest" ] && { [ ! -d "$dest" ] || [ -n "$(ls -A "$dest")" ]; }; }; then
+    die 1 "projects/$rel exists already"
+  fi
   if [ -d "$from" ]; then
     local_src="$(physical "$from")"
     case "$local_src/" in "$root/"*) die 1 "the source is inside this workspace: $from" ;; esac
@@ -1138,6 +1164,37 @@ cmd_bring() {
     break
   done
   echo "brought: projects/$rel, on $(git -C "$dest" symbolic-ref -q --short HEAD || echo detached)"
+}
+
+# bring-branch: one commit of a local repository outside the workspace (a worktree, a work clone) into projects/<repo>,
+# as a new local branch. The folder is only read; the checkout of projects/<repo> is not touched; nothing is pushed.
+cmd_bring_branch() {
+  local from="${1:-}" repo="${2:-}" ref="${3:-}" branch="${4:-}" dest src sha
+  [ $# -eq 4 ] && [ -n "$from" ] && [ -n "$ref" ] && [ -n "$branch" ] ||
+    die 2 "usage: bring-branch <folder> <repo> <ref> <branch>"
+  case "$ref" in -* | *:*) die 2 "<ref> is a branch of the folder, HEAD or a sha: $ref" ;; esac
+  case "$branch" in -*) die 2 "not a valid branch name: $branch" ;; esac
+  git check-ref-format --branch "$branch" >/dev/null 2>&1 || die 2 "not a valid branch name: $branch"
+  dest="$(project_repo "$repo")"
+  src="$(physical "$from")" || die 1 "not found: $from"
+  case "$src/" in "$root/"*) die 1 "the source is inside this workspace: $from" ;; esac
+  [ "$(source_git "$src" rev-parse --show-toplevel 2>/dev/null)" = "$src" ] || die 1 "not the root of a git repo: $from"
+  sha="$(source_git "$src" rev-parse -q --verify "$ref^{commit}")" || die 1 "no commit $ref in $from"
+  ! git -C "$dest" rev-parse -q --verify "refs/heads/$branch" >/dev/null ||
+    die 1 "projects/$repo has a branch $branch already: choose another name"
+  # A local folder serves its branches and HEAD by name, not a bare sha: a sha is fetched through the branch or HEAD
+  # that holds it, then checked.
+  if [ "$(source_git "$src" rev-parse -q --verify "$ref")" = "$ref" ]; then
+    local holder
+    holder="$(source_git "$src" for-each-ref --format='%(refname)' --points-at "$sha" refs/heads/ | head -n 1)"
+    [ -n "$holder" ] || { [ "$(source_git "$src" rev-parse HEAD)" = "$sha" ] && holder=HEAD; } ||
+      die 1 "no branch or HEAD of $from points at $ref"
+    ref="$holder"
+  fi
+  git -C "$dest" fetch -q --no-tags "$src" "$ref:refs/heads/$branch" || die 1 "could not fetch $ref of $from"
+  [ "$(git -C "$dest" rev-parse "refs/heads/$branch")" = "$sha" ] ||
+    echo "attention: $ref of $from moved while it was fetched: $branch is at $(git -C "$dest" rev-parse --short "refs/heads/$branch")"
+  echo "brought: $branch into projects/$repo, at $(git -C "$dest" rev-parse --short "refs/heads/$branch")"
 }
 
 # Runs terraform in a module folder: AIWP_TERRAFORM, else the host binary, else the Docker toolbox, where the
@@ -1255,5 +1312,6 @@ case "$command" in
   developer) cmd_developer "$@" ;;
   checkpoint) cmd_checkpoint "$@" ;;
   bring) cmd_bring "$@" ;;
+  bring-branch) cmd_bring_branch "$@" ;;
   *) echo "error: unknown command: $command" >&2; usage >&2; exit 2 ;;
 esac
