@@ -112,8 +112,9 @@ Deviations from the request:
 
 Acceptance criteria:
 
-- AC-1: proven: 9/9 at the expected level (`tests/review-fixtures.sh judge`, reports in the clone's git-ignored
-  `tmp/review-fixtures/20261118-proof/`); the judge itself by `tests/test-review-fixtures.sh`.
+- AC-1: proven: 9/9 at the expected level (`tests/review-fixtures.sh judge`; the reports in the git-ignored
+  `tmp/review-fixtures/20261118-proof/` of the root, copied there when the clone closed); the judge itself by
+  `tests/test-review-fixtures.sh`.
 - AC-2: done, not proven: step 5 of `/caw-merge --main` runs the fixtures and step 7 lists a failing one as a
   WARNING; proven at the first release.
 - AC-3: proven: `test_run_it_alone_shows_the_warnings_of_the_line` and the scenario of
@@ -137,3 +138,21 @@ Warnings:
   defect of the fixture itself — read its report (`/caw-merge --main` step 5); accepted by the owner.
 
 Left: `/caw-test-install` from a work clone after this merge (AC-4's real run, BR-6).
+
+## Execution — 2026-11-18, the merge review's warnings, merged into developer
+
+The owner answered the three warnings of the merge review with `fix` (the board of `warnings-board`):
+
+- W-1, the README of the fixtures linked the request's old path: names the request instead (`bcf3f6b`).
+- W-2, the judge counted `[BLOCKER]` anywhere in a report, prose included: only a finding line `- [BLOCKER] ...`
+  (or `- [WARNING] ...`) counts, with a scenario of `[BLOCKER]` in prose (`7233216`); the saved reports still judge
+  9/9.
+- W-3, this block pointed to the closed clone for the fixture reports: they are in the root's `tmp/` (`bcf3f6b`).
+- The fourth warning of the review (a scratch push counts what any branch of `origin` has as scanned) was already
+  the owner's decision: not reported again.
+- AC-4: the run of `tests/test-install.sh` from a work clone, right after the first merge, passed every check: the
+  snapshot went through the clone's own pre-push (BR-5, BR-6).
+
+Changelog: none (a fix of the same unreleased version, still described by its entry, and two paths).
+
+Checks: `bash tests/check.sh --base origin/developer --i18n-pending` rc 0; `tests/test-review-fixtures.sh` 47.

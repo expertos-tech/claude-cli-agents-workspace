@@ -1,7 +1,7 @@
 # Review fixtures
 
 Changes made up to prove that the merge review still stops each hard rule of `workspace/rules/security.md` "Hard
-rules" as a BLOCKER, and lets the rest through as warnings (`maintainers/requests/validators-follow-ups.md`). They run
+rules" as a BLOCKER, and lets the rest through as warnings (the request `validators-follow-ups`). They run
 only at the release (`/caw-merge --main`): each one calls the model.
 
 - `f<nn>.md`: one fixture: the request the owner gave, the authorizations, what the suite proved, and the diff. The

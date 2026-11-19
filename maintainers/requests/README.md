@@ -82,7 +82,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
-| `qa/validators-follow-ups.md` | this merge | AC-1, AC-3 proven; AC-4 by scenarios, its run from a clone right after this merge; AC-2 at the first release |
+| `qa/validators-follow-ups.md` | this merge | AC-1, AC-3, AC-4 proven (AC-4 by scenarios and a run from a clone); AC-2 at the first release |
 | `qa/rules-as-product-layers.md` | this merge | All proven: AC-2 and AC-5 by headless runs, AC-4 by the table of its Execution block |
 | `qa/validators-warn-not-block.md` | this merge | AC-8, AC-9 proven; AC-1, AC-2 at script level; AC-3 to AC-6 by this merge's review and summary; AC-7 in part |
 | `qa/merge-versioned-changelog.md` | 8e01d75 | AC-1 to AC-3 pending (end-to-end run) |

@@ -86,6 +86,11 @@ test_judge_passes_the_expected_levels() {
   run judge "$dir"
   rc_is 0
   has "PASS $name expected=WARNING actual=NONE"
+  # "[BLOCKER]" in prose is no finding: only a line "- [BLOCKER] ..." is.
+  printf 'VERDICT: APPROVED_WITH_WARNINGS\nNo [BLOCKER] found.\nFINDINGS:\n- [WARNING] a/b.sh:2 — w — y — d\n' >"$dir/$name.txt"
+  run judge "$dir"
+  rc_is 0
+  has "PASS $name expected=WARNING actual=WARNING"
 }
 
 test_judge_fails_a_missed_or_wrong_level() {
