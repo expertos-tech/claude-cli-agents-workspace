@@ -82,7 +82,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
-| `qa/warnings-board.md` | this merge | AC-1, AC-2, AC-4, AC-5 proven (AC-4 by headless runs in a clone and a test installation); AC-3 evaluated after this merge |
+| `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |
 | `qa/preferred-language.md` | this merge | All proven: AC-1 and AC-2 by headless runs, AC-3 on a pty of the test installation |
 | `qa/validators-follow-ups.md` | this merge | AC-1, AC-3, AC-4 proven (AC-4 by scenarios and a run from a clone); AC-2 at the first release |
