@@ -631,6 +631,30 @@ test_config_excluded_skill_and_agent() {
   rc_is 0
 }
 
+# The default pilot mode (.claude/pilot-mode, scripts/pilot-mode.sh) belongs to the person: no sync, check or removal
+# of a skill ever touches it, nor reports it.
+test_pilot_mode_file_survives_every_sync() {
+  fixture
+  skill pilot
+  printf 'auto\n' >"$BASE/root/.claude-pilot-mode.expected"
+  mkdir -p "$BASE/root/.claude"
+  printf 'auto\n' >"$BASE/root/.claude/pilot-mode"
+  run
+  rc_is 0
+  hasnt "pilot-mode"
+  run --check
+  rc_is 0
+  hasnt "pilot-mode"
+  config '{"core": {"skills": {"exclude": ["pilot"]}}}'
+  run --quiet
+  rc_is 0
+  absent "$BASE/root/.claude/skills/pilot" "excluded skill removed"
+  cmp -s "$BASE/root/.claude-pilot-mode.expected" "$BASE/root/.claude/pilot-mode"; check "pilot-mode kept, byte for byte" $?
+  run --check
+  rc_is 0
+  hasnt "pilot-mode"
+}
+
 # AC-6: invalid JSON loads the whole core with a warning, without an error.
 test_config_invalid_json_loads_the_whole_core() {
   fixture

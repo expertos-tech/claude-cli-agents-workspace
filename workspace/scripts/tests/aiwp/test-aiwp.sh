@@ -820,10 +820,20 @@ test_release_check_cached_a_day_and_offline() {
   [ "$(manifest_field version)" = 0.1.0 ]; check "offline keeps the version" $?
 }
 
-# Runs the release-notice hook of this repository for workspace $1, as Claude Code does (hook JSON on stdin).
+# Runs the release-notice hook of this repository for workspace $1, as Claude Code does (hook JSON on stdin), with
+# the source $2 (default startup).
 run_notice() {
-  OUT="$(echo '{"hook_event_name":"SessionStart","source":"startup"}' | CLAUDE_PROJECT_DIR="$1" bash "$NOTICE" 2>&1)"
+  OUT="$(printf '{"hook_event_name":"SessionStart","source":"%s"}' "${2:-startup}" | CLAUDE_PROJECT_DIR="$1" bash "$NOTICE" 2>&1)"
   RC=$?
+}
+
+# The pilot line of a workspace with no .claude/pilot-mode.
+PILOT_ASSISTED="Pilot mode: assisted (the default of this installation). Read rules/assisted.md in full before your first reply and follow it."
+
+# Succeeds when the hook said nothing about a release: no output, or only the pilot line.
+no_release_notice() {
+  [ -z "$OUT" ] && return 0
+  [ "$(notice_context)" = "$PILOT_ASSISTED" ]
 }
 
 # Prints the additionalContext of the hook output, or fails when it is not the SessionStart hook JSON.
@@ -839,7 +849,7 @@ test_release_notice_tells_the_session_and_never_updates() {
   setup_ws || return
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "nothing new: no output" $?
+  no_release_notice; check "nothing new: no release notice" $?
   publish_v2
   age_cache
   local before
@@ -849,6 +859,7 @@ test_release_notice_tells_the_session_and_never_updates() {
   OUT="$(notice_context)"; check "valid SessionStart JSON" $?
   has "A new workspace version 0.2.0 was detected (this workspace: 0.1.0). Tell the person to close this session and run \`aiwp update\` in a terminal."
   has "Never run aiwp update, rollback or repair yourself"
+  [ "$(printf '%s\n' "$OUT" | head -n 1)" = "$PILOT_ASSISTED" ]; check "the pilot line comes first, on its own line" $?
   [ "$(git -C "$DATA" describe --tags --exact-match HEAD)" = v0.1.0 ]; check "the hook never moves the data folder" $?
   [ "$(manifest_field version)" = 0.1.0 ]; check "the hook never updates the workspace" $?
   [ "$(core_files_on_disk | (cd "$WS" && xargs cat) | cksum)" = "$before" ]; check "the core is untouched" $?
@@ -861,7 +872,7 @@ test_release_notice_tells_the_session_and_never_updates() {
   echo v0.1.0 >"$WS/.aiwp/pin"
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "pinned: no output" $?
+  no_release_notice; check "pinned: no release notice" $?
   rm -f "$WS/.aiwp/pin"
   # An update that died halfway is told too.
   : >"$WS/.aiwp/journal"
@@ -879,7 +890,7 @@ test_release_notice_is_silent_offline_and_outside_a_workspace() {
   age_cache
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "offline: no output" $?
+  no_release_notice; check "offline: no release notice" $?
   # A folder without .aiwp/manifest.json (the product repository, any other folder): silent, even with a newer release.
   mv "$T/remote-away.git" "$T/remote.git"
   age_cache
@@ -887,12 +898,12 @@ test_release_notice_is_silent_offline_and_outside_a_workspace() {
   cp "$AIWP" "$T/plain/scripts/aiwp.sh"
   run_notice "$T/plain"
   rc_is 0
-  [ -z "$OUT" ]; check "not an installed workspace: no output" $?
+  no_release_notice; check "not an installed workspace: no release notice" $?
   # No installation in the data folder: silent.
   mv "$DATA" "$DATA.away"
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "not installed: no output" $?
+  no_release_notice; check "not installed: no release notice" $?
   mv "$DATA.away" "$DATA"
 }
 
@@ -911,7 +922,7 @@ STUB
   start="$(date +%s)"
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "a hanging remote: no output" $?
+  no_release_notice; check "a hanging remote: no release notice" $?
   [ $(($(date +%s) - start)) -lt 15 ]; check "a hanging remote: done within 15 s" $?
   rm -f "$T/stub/git"
   # An aiwp.sh that hangs (and leaves children holding its output): the hook stops waiting at its limit.
@@ -923,7 +934,7 @@ STUB
   OUT="$(echo '{}' | RELEASE_NOTICE_LIMIT_SECONDS=2 CLAUDE_PROJECT_DIR="$fake" bash "$NOTICE" 2>&1)"
   RC=$?
   rc_is 0
-  [ -z "$OUT" ]; check "a hanging aiwp.sh: no output" $?
+  [ "$(notice_context)" = "$PILOT_ASSISTED" ]; check "a hanging aiwp.sh: no release notice, the pilot line still told" $?
   [ $(($(date +%s) - start)) -lt 6 ]; check "a hanging aiwp.sh: the hook ends at its limit" $?
 }
 
@@ -934,11 +945,59 @@ hooks = json.load(open(sys.argv[1]))["hooks"]["SessionStart"]
 block = next(b for b in hooks if any("setup-claude.sh" in h["command"] for h in b["hooks"]))
 notice = [h for h in block["hooks"] if "scripts/release-notice.sh" in h["command"]]
 assert notice and notice[0].get("timeout", 600) <= 30, notice
-assert "startup" in block["matcher"]
+assert set(block["matcher"].split("|")) == {"startup", "resume", "clear", "compact"}, block["matcher"]
+assert sum("release-notice.sh" in h["command"] for b in hooks for h in b["hooks"]) == 1
 PY
-  check "SessionStart runs release-notice.sh next to setup-claude.sh, with a short timeout" $?
+  check "SessionStart runs release-notice.sh next to setup-claude.sh, with a short timeout, at every start source" $?
   OUT="$(bash "$NOTICE" --help)"
   has "never runs aiwp update"
+  has "Pilot mode: auto (/pilot is turned off in custom/rules-config.json)."
+}
+
+# The pilot line, by source: startup, clear and compact say it; resume does not (the transcript keeps it); clear and
+# compact never run the release check.
+test_release_notice_tells_the_pilot_mode_by_source() {
+  fixture
+  setup_ws || return
+  local src
+  for src in startup clear compact; do
+    run_notice "$WS" "$src"
+    rc_is 0
+    OUT="$(notice_context)"; check "$src: valid SessionStart JSON" $?
+    [ "$OUT" = "$PILOT_ASSISTED" ]; check "$src: the assisted line, exactly" $?
+  done
+  run_notice "$WS" resume
+  rc_is 0
+  [ -z "$OUT" ]; check "resume: no pilot line and nothing new: no output" $?
+  # No source on stdin (a run by hand): both parts.
+  OUT="$(CLAUDE_PROJECT_DIR="$WS" bash "$NOTICE" </dev/null 2>&1)"
+  OUT="$(notice_context)"; check "no source: valid JSON" $?
+  [ "$OUT" = "$PILOT_ASSISTED" ]; check "no source: the pilot line" $?
+  # The default of the installation.
+  printf 'auto\n' >"$WS/.claude/pilot-mode"
+  run_notice "$WS" clear
+  OUT="$(notice_context)"
+  [ "$OUT" = "Pilot mode: auto (the default of this installation)." ]; check "auto: the auto line" $?
+  # clear and compact never ask about a release, even with one published.
+  publish_v2
+  age_cache
+  for src in clear compact; do
+    run_notice "$WS" "$src"
+    OUT="$(notice_context)"
+    hasnt "new workspace version"
+  done
+  run_notice "$WS" resume
+  OUT="$(notice_context)"; check "resume: valid JSON" $?
+  has "A new workspace version 0.2.0 was detected"
+  hasnt "Pilot mode:"
+  # A copy of the hook with no scripts/pilot-mode.sh next to it: no pilot line, the hook still ends well.
+  local copy="$T/notice-alone"
+  mkdir -p "$copy"
+  cp "$NOTICE" "$copy/release-notice.sh"
+  OUT="$(printf '{"source":"clear"}' | CLAUDE_PROJECT_DIR="$WS" bash "$copy/release-notice.sh" 2>&1)"
+  RC=$?
+  rc_is 0
+  [ -z "$OUT" ]; check "no pilot-mode.sh: nothing to say" $?
 }
 
 test_open_never_updates() {
@@ -1006,7 +1065,7 @@ test_update_swaps_only_what_changed() {
   has "update: 0.1.0 -> 0.2.0"
   has "Second release of the fixture"
   hasnt "First release of the fixture"
-  has "updated: 0.1.0 -> 0.2.0 (4 changed, 2 added, 2 removed)"
+  has "updated: 0.1.0 -> 0.2.0 (4 changed, 3 added, 2 removed)"
   [ "$(inode_mtime "$WS/docs/keep.md")" = "$keep_before" ]; check "unchanged file keeps inode and mtime" $?
   [ "$(inode_mtime "$WS/AGENTS.md")" = "$agents_before" ]; check "unchanged AGENTS.md untouched" $?
   [ "$(inode_mtime "$WS/custom/mine.txt")" = "$custom_before" ]; check "custom untouched" $?
@@ -1054,6 +1113,106 @@ test_update_keeps_the_last_three_backups() {
   [ "$(find "$WS/.aiwp/backup" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 3 ]; check "three backups kept" $?
   present "$WS/.aiwp/backup/0.1.0"
   absent "$WS/.aiwp/backup/0.0.1"
+}
+
+# --- update: the default pilot mode of a workspace from before /pilot assisted (v0.1.0 has no rules/assisted.md)
+
+# Writes a week file of the prompt log of workspace $1 with one record ($2 = empty: a data block with no record).
+prompt_log_week() {
+  local records='[{"session": "s-1", "timestamp": "2026-11-16T10:00:00Z", "project": "workspace", "text": "hi"}]'
+  [ "${2:-}" != empty ] || records='[]'
+  mkdir -p "$1/logs/prompts/workspace"
+  printf '# workspace · week 2026-W47\n\n<!-- prompt-log-data\n{"format": 1, "records": %s}\n-->\n' "$records" \
+    >"$1/logs/prompts/workspace/2026-W47.md"
+}
+
+# Publishes v0.3.0 on the test's remote, after v0.2.0: a later release that still has rules/assisted.md.
+publish_v3() {
+  local src="$T/src3"
+  rm -rf "$src"
+  git clone -q "$T/remote.git" "$src" && git -C "$src" checkout -q main || return 1
+  printf '0.3.0\n' >"$src/workspace/VERSION"
+  printf '# Changelog\n\n## [0.3.0] - 2026-11-25\n\n- Third release of the fixture.\n' >"$src/workspace/CHANGELOG.md"
+  fx_commit "$src" "release 0.3.0"
+  git -C "$src" tag v0.3.0
+  git -C "$src" push -q origin main v0.3.0
+}
+
+test_update_from_before_assisted_keeps_auto_when_there_is_history() {
+  fixture
+  setup_ws || return
+  second_ws
+  local ws3="$T/ws3" ws4="$T/ws4" ws5="$T/ws5"
+  run_aiwp_in "$T" new "$ws3"
+  run_aiwp_in "$T" new "$ws4"
+  run_aiwp_in "$T" new "$ws5"
+  # WS: a prompt log with a record. WS2: a project. ws3: no history (a README.md in projects/, a week file with no
+  # record, other files in logs/). ws4: history and a default already chosen. ws5: a project and a link at the file.
+  prompt_log_week "$WS"
+  mkdir -p "$WS2/projects/billing-api"
+  echo "mine" >"$ws3/projects/README.md"
+  prompt_log_week "$ws3" empty
+  echo "mine" >"$ws3/logs/mine.txt"
+  mkdir -p "$ws4/projects/billing-api"
+  printf 'assisted\n' >"$ws4/.claude/pilot-mode"
+  local ws4_before
+  ws4_before="$(inode_mtime "$ws4/.claude/pilot-mode")"
+  mkdir -p "$ws5/projects/billing-api"
+  ln -s "$T/elsewhere" "$ws5/.claude/pilot-mode"
+  absent "$WS/.claude/pilot-mode"
+  sleep 1
+  publish_v2
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  [ "$(version_of "$WS")" = 0.2.0 ] && [ "$(version_of "$ws3")" = 0.2.0 ]; check "updated to 0.2.0" $?
+  content_is "$WS/.claude/pilot-mode" auto
+  content_is "$WS2/.claude/pilot-mode" auto
+  has "pilot mode: auto kept as the default of this workspace (it has history)"
+  absent "$ws3/.claude/pilot-mode"
+  content_is "$ws4/.claude/pilot-mode" assisted
+  [ "$(inode_mtime "$ws4/.claude/pilot-mode")" = "$ws4_before" ]; check "an existing default is never rewritten" $?
+  [ -L "$ws5/.claude/pilot-mode" ]; check "a link at the file is left alone" $?
+  absent "$T/elsewhere"
+  # It survives repair, the opening (setup-claude.sh), rollback and a second update, and is never added later.
+  run_aiwp_in "$WS" repair
+  rc_is 0
+  run_aiwp_in "$WS"
+  rc_is 0
+  content_is "$WS/.claude/pilot-mode" auto
+  run_aiwp_in "$ws3" rollback
+  rc_is 0
+  mkdir -p "$ws3/projects/billing-api"
+  run_aiwp_in "$ws3" update "$ws3"
+  rc_is 0
+  [ "$(version_of "$ws3")" = 0.2.0 ]; check "ws3 updated again" $?
+  content_is "$ws3/.claude/pilot-mode" auto
+  run_aiwp_in "$WS" update "$WS"
+  rc_is 0
+  has "up to date: 0.2.0"
+  content_is "$WS/.claude/pilot-mode" auto
+}
+
+test_new_workspace_never_gets_the_pilot_default() {
+  fixture
+  publish_v2
+  setup_ws || return
+  [ "$(version_of "$WS")" = 0.2.0 ]; check "created at 0.2.0" $?
+  absent "$WS/.claude/pilot-mode"
+  # History on a workspace that already has the feature: an update at the same version, then to a later one, never
+  # writes the default.
+  prompt_log_week "$WS"
+  mkdir -p "$WS/projects/billing-api"
+  run_aiwp_in "$WS" update "$WS"
+  rc_is 0
+  has "up to date: 0.2.0"
+  absent "$WS/.claude/pilot-mode"
+  publish_v3 || { check "publish v0.3.0" 1; return; }
+  age_cache
+  run_aiwp_in "$WS" update "$WS"
+  rc_is 0
+  [ "$(version_of "$WS")" = 0.3.0 ]; check "updated to 0.3.0" $?
+  hasnt "pilot mode:"
+  absent "$WS/.claude/pilot-mode"
 }
 
 # --- update: the link of the removed single-agent mode

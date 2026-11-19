@@ -33,7 +33,8 @@ with an own one (replace); the mandatory core of rules/manifest.json always load
 configuration never fails the setup: it warns and the rest loads (python3 -I -B scripts/rules-config.py --help).
 custom/ is the custom layer: a git repo of its own, ignored by the workspace repo, with what belongs to
 one company and its projects. Name no rule of rules/ custom-*.md: that prefix is the custom layer's.
-Personal overrides belong in .claude/settings.local.json (never touched).
+Personal overrides belong in .claude/settings.local.json (never touched); .claude/pilot-mode, the default pilot
+mode of the installation (scripts/pilot-mode.sh), is never touched either.
 Where deletion is not allowed (Cowork folders), stale files move to .claude/.removed/.
 
 Options:

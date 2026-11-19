@@ -29,7 +29,7 @@ STUB_LOG="$BASE_DIR/stub.log"
 FAKE_BIN="$BASE_DIR/fakebin"
 export STUB_LOG
 # The suites the gate must run, in order. The tree stubs exactly these.
-EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh tests/workspace-import/test-workspace-import.sh"
+EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/pilot-mode/test-pilot-mode.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh tests/workspace-import/test-workspace-import.sh"
 # How many suites the gate has: a new suite changes one line of this file, not every count below.
 SUITE_COUNT="$(echo "$EXPECTED_SUITES" | wc -w | tr -d ' ')"
 PASS=0

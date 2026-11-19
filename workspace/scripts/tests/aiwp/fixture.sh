@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fixture of the aiwp tests: a product repository with root files that must never reach a workspace, released as
 # v0.1.0 and v0.2.0, in two bare repositories (one with v0.1.0 only, one with both). Sourced by test-aiwp.sh.
-# Each tree carries the real scripts/aiwp.sh; v0.2.0's has a marker line and padding, to prove the new code runs.
+# Each tree carries the real scripts/aiwp.sh; v0.2.0's has a marker line and padding, to prove the new code runs, and
+# rules/assisted.md, the rule of /pilot assisted that v0.1.0 does not have.
 
 # Writes file $2 under root $1 with content $3.
 fx_write() {
@@ -74,6 +75,8 @@ echo "setup-claude stub ran"'
 - First release of the fixture."
   fx_write "$src" workspace/docs/change.md "change v2"
   fx_write "$src" workspace/docs/new.md "new in v0.2.0"
+  # The rule of /pilot assisted arrives in v0.2.0: an update from v0.1.0 is an update from before the feature.
+  fx_write "$src" workspace/rules/assisted.md "assisted v2"
   rm -rf "$src/workspace/docs/old.md" "$src/workspace/docs/gone"
   fx_write "$src" workspace/scripts/new-tool.sh '#!/usr/bin/env bash
 echo new tool'

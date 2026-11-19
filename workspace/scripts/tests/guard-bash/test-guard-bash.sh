@@ -711,6 +711,9 @@ find tmp/work -exec chmod u+w {} +
 git -C tmp/work/y init
 git init custom/sub
 chmod 777 /nonexistent-dir-for-guard-bash/x
+bash scripts/pilot-mode.sh set auto
+bash scripts/pilot-mode.sh set assisted
+bash scripts/pilot-mode.sh show
 CASES
   hook_in "ls | xargs chmod u+w" "$ws/tmp/work/y" "$ws"
   silent "xargs in a writable folder is silent"
