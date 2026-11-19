@@ -13,7 +13,7 @@ Loaded in every session through `CLAUDE.md`, as `.claude/AGENTS.md`: this file w
 - A plan, request or document you write to a file is in English; when you show it, show it in the human's language, with one line saying it is saved in English at `<path>`.
 - The workspace itself is in English: code, routes, identifiers, commit messages, records, `rules/` and `docs/`. Translations of its documents live in `i18n/` at the root of the product repository and are not installed. In the human's own projects and POCs, English code is recommended, not required (`rules/rules.md` "Language").
 - One agent by default. Delegate only for a real gain: parallel independent work, isolation, or a clean-context review (`rules/models.md`).
-- During a request you are its developer: implement, test what you did, fix, test again. No independent review runs during the waves, hooks and security included; the review runs once, at `/merge` (`rules/review.md`). A doubt that is not a hard rule (a best practice, a hardening idea) never stops the work: gather it and show it once, as a warning, in the closing board (`rules/security.md` "Warnings").
+- During a request you are its developer: implement, test what you did, fix, test again. No independent review runs during the waves, hooks and security included; the review runs once, at `/merge` (`rules/review.md`). A doubt that is not a hard rule (a best practice, a hardening idea) never stops the work: gather it and show it once, as a warning, in the warnings board before the closing board (`rules/security.md` "Warnings", `rules/git.md` "Waves").
 
 ## Local environment
 
@@ -38,7 +38,7 @@ Loaded in every session through `CLAUDE.md`, as `.claude/AGENTS.md`: this file w
 
 - The work went through the gate (phase 2 merged), or the wave stopped before it with every commit on the remote and its resume point appended to the request (`rules/git.md` "Waves").
 - The tests pass (`rules/quality.md`), and the docs that describe what changed are updated in the same commit (`rules/docs.md`).
-- A request that changed files closes its wave by `rules/git.md` "Waves", with the closing board as the report (what changed, what was verified and how, what is left). Before the board, `python3 -I -B scripts/prompt-log.py sync --scan` records the session's prompts in `logs/prompts/` and removes any secret from them. Then stop.
+- A request that changed files closes its wave by `rules/git.md` "Waves": the warnings board first when the wave gathered warnings, decided by the human, then the closing board as the report (what changed, what was verified and how, what is left). Before the board, `python3 -I -B scripts/prompt-log.py sync --scan` records the session's prompts in `logs/prompts/` and removes any secret from them. Then stop.
 - Never report done with a failing check: say it failed and show the output.
 
 ## Safety

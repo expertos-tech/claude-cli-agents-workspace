@@ -24,11 +24,20 @@ A hard refusal (a `deny`, a refusal of a hook or of the gate, a BLOCKER that sto
 
 ## Warnings
 
-Everything else a validator finds is a warning, with a suggestion: a best practice, a hardening idea, a public IP in an `.env`, a company term in a public repository, an attack that needs someone writing code to escape the checks on purpose. The human decides; the work goes on. What would interrupt the work over and over (a question per command, a refusal per spelling, a review round per fix) is gathered and shown once: in the closing board of a wave, in the summary of `/merge`, or when a request is written (`/draft-request`). One format everywhere:
+Everything else a validator finds is a warning, with a suggestion: a best practice, a hardening idea, a public IP in an `.env`, a company term in a public repository, an attack that needs someone writing code to escape the checks on purpose. The human decides; the work goes on. What would interrupt the work over and over (a question per command, a refusal per spelling, a review round per fix) is gathered and shown once: in the warnings board that closes a wave or a merge, before its closing board or summary (`rules/git.md` "Waves"), or when a request is written (`/draft-request`). One format everywhere, numbered `W-1`, `W-2`... in its board:
 
 ```text
-WARNING: <what was seen> — <why it may be a problem> — <what the human can do>
+W-<n>  <what was seen>
+     Why:      <why it may be a problem>
+     Risk:     <HIGH | MEDIUM | LOW> — <impact>
+     Suggest:  <what the human can do> (recommended: fix | request | accept)
 ```
+
+- `HIGH`: it can reach the public or production, or lose data.
+- `MEDIUM`: rework or a broken flow later.
+- `LOW`: hygiene or quality.
+
+A hook, a script or the gate prints a warning on one line, `WARNING: <what was seen> — <why it may be a problem> — <what the human can do>`; the session writes it in the format above, with its risk, when it gathers it.
 
 ## Secrets
 

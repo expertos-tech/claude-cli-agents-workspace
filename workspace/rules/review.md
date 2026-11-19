@@ -20,7 +20,7 @@ Once per merge, between the two phases of the gate (`rules/git.md` "Gate", `/mer
 ## How
 
 - The reviewer has a clean context and did not write the code: the `reviewer` subagent (`rules/models.md`), read-only. For a project diff, `/code-review` is an equivalent.
-- Its brief gives: the clone path, the range (its part of it), the audit file phase 1 printed, the request (or requests: at a release every one of `custom/requests/qa/<project>/` with its Execution blocks; at a hotfix the error as the human described it), what phase 1 already verified, and the authorizations: each decision of the human in the request, its plan or the conversation that allows something a validator would flag (an allow rule, an accepted risk, a public push after the warning), quoted with where it came from. It asks only these three questions:
+- Its brief gives: the clone path, the range (its part of it), the audit file phase 1 printed, the request (or requests: at a release every one of `custom/requests/qa/<project>/` with its Execution blocks; at a hotfix the error as the human described it), what phase 1 already verified, and the authorizations: each decision of the human in the request, its plan or the conversation that allows something a validator would flag (an allow rule, an accepted risk, a public push after the warning; each warning answered `accept` or `request` in a warnings board), quoted with where it came from. It asks only these three questions:
 
   ```text
   1. What was asked against what was done: for each business rule and acceptance criterion of the request, done and
@@ -57,7 +57,7 @@ After the fixes of a review's BLOCKERs, the same at a merge into `developer` and
   - a change outside the scope of the request, or a loss with no request behind it (question 2 UNEXPLAINED, question 3);
   - a real security risk that a mistake reaches (a person or an agent doing its normal work), not only someone writing code to escape the checks on purpose;
   - an acceptance criterion not proven, only when the request requires that proof in this delivery.
-- WARNING: everything else. A best practice, a hardening idea, a deliberate-escape scenario, a proof the request leaves for later, a check that only makes the validation slower (a mandatory review or check that must run is never a defect of the delivery). It never returns the branch and never opens a round: it goes to the summary of the merge, once, and the human decides (`/merge`).
+- WARNING: everything else. A best practice, a hardening idea, a deliberate-escape scenario, a proof the request leaves for later, a check that only makes the validation slower (a mandatory review or check that must run is never a defect of the delivery). It never returns the branch and never opens a round: it goes to the warnings board of the merge, once, and the human decides (`/merge`).
 - Not a finding: what the human authorized (the brief's authorizations), and a finding the human already decided in an earlier round (an accepted risk, a warning answered). Never repeat one.
 - A finding is not accepted only because it came. Check why the code is that way. Still disagree: give the human both positions and let the human decide.
 - Never report style the formatter fixes. Never praise.
@@ -68,7 +68,7 @@ After the fixes of a review's BLOCKERs, the same at a merge into `developer` and
 VERDICT: APPROVED | APPROVED_WITH_WARNINGS | REJECTED
 FINDINGS:
 - [BLOCKER] <path>:<line> — <problem> — <failure scenario> — <fix>
-- [WARNING] <path>:<line> — <what was seen> — <why it may be a problem> — <what the human can do>
+- [WARNING] <path>:<line> — <what was seen> — <why it may be a problem> — <HIGH | MEDIUM | LOW>: <impact> — <what the human can do>
 ```
 
-REJECTED when a BLOCKER exists. APPROVED_WITH_WARNINGS when only warnings exist: the branch still merges. A warning has the format of `rules/security.md` "Warnings", with its place.
+REJECTED when a BLOCKER exists. APPROVED_WITH_WARNINGS when only warnings exist: the branch still merges. A warning has the content of `rules/security.md` "Warnings" (its risk level included), with its place; the merge shows it in the warnings board.
