@@ -43,6 +43,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 | 0 | `warnings-board.md` | After `rules-as-product-layers`; the numbered warnings board, with risk levels, before the closing board and in the merge summary; product and maintenance |
 | 0 | `preferred-language.md` | After `rules-as-product-layers`; the reply language as the `language` setting, asked at install and by a root hook; design: `plans/preferred-language.md` |
 | 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
+| 0 | `request-in-progress.md` | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
 | 2 | `normalize-rules.md` | Needs `rules`; design: `plans/normalize-rules.md`; the owner needs it to migrate the final project |
 | 2 | `import-from-fork.md` | After `normalize-rules`: the first release after the publication, the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
