@@ -49,7 +49,8 @@ How the project is maintained. Every change goes through these steps; a typo fix
 
 - Every change: `bash tests/check.sh --base origin/developer --i18n-pending` (`/caw-check`): only what changed, with
   the translations left pending. The release runs it strict: `--all --base <last tag>`. A failing check is fixed,
-  never skipped.
+  never skipped. The release also runs the review fixtures once (`tests/review-fixtures/`): they call the model, so
+  never at each commit; a failing one is a warning of the release.
 - A change to the installer, a hook or `workspace/scripts/setup-claude.sh`: `/caw-test-install` too.
 - A claim in a plan, request or doc is checked against the code or a run before it is written.
 

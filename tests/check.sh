@@ -26,6 +26,9 @@ Runs the gate of the repository, from any cwd:
      tests/caw-session-index.py on this tree (read only) and on throwaway copies.
   4. caw-work: tests/test-caw-work.sh, the scenarios of tests/caw-work.sh (work clones under tmp/work/ and their
      git hooks), in a throwaway repository with a local remote; it never touches this repository.
+  5. review-fixtures: tests/test-review-fixtures.sh, the judge of tests/review-fixtures.sh and the fixture set (one
+     BLOCKER fixture per hard rule of workspace/rules/security.md), with made-up reports. The fixtures themselves run
+     against the reviewer only at the release (/caw-merge --main): they call the model.
 
 Terms list (company terms that must never reach the public repository), the first that exists:
   1. $AIWP_TERMS_FILE (set but missing: the gate fails);
@@ -109,6 +112,13 @@ if caw_out="$(bash "$repo/tests/test-caw-work.sh" 2>&1)"; then
 else
   printf '%s\n' "$caw_out"
   echo "FAIL caw-work: the scenarios of tests/caw-work.sh above failed (bash tests/test-caw-work.sh)"
+  failed=1
+fi
+if fixtures_out="$(bash "$repo/tests/test-review-fixtures.sh" 2>&1)"; then
+  echo "PASS review-fixtures"
+else
+  printf '%s\n' "$fixtures_out"
+  echo "FAIL review-fixtures: the review fixtures or their judge above (bash tests/test-review-fixtures.sh)"
   failed=1
 fi
 if [ -z "$list" ]; then

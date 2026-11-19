@@ -51,7 +51,8 @@ mode (auto mode judges destruction); this hook holds only what the workspace nev
         without its tests), run, by a shell or by source: no hard rule, so no question. It prints
         {"systemMessage":"WARNING: <what was seen> — <why it may be a problem> — <what the human can do>"} with no
         permission decision: Claude Code's own permission mode decides, and no "Run it alone" applies. A deny or an
-        ask of the same line keeps its decision; a warned line is never allowed by the clone rule below.
+        ask of the same line keeps its decision; an ask or a "Run it alone" shows the line's warnings with it, in the
+        same systemMessage; a warned line is never allowed by the clone rule below.
   ask   git configuration on the line that can run a command (-c core.fsmonitor, core.sshCommand, a pager, an alias,
         a hooks folder, diff.external, remote.*.fetch, --config-env, --upload-pack, GIT_CONFIG_*, GIT_SSH_COMMAND...).
 In an installed workspace (the nearest folder above a path with .aiwp/manifest.json, any workspace, not only this
@@ -80,7 +81,8 @@ A command given to scripts/aiwp-cmds.sh run <work>/<clone> -- ... is judged in t
         what is nested in the asked command (bash -c, $(...)) count as one; a cd, pushd, popd or an assignment alone,
         with no redirection, travels with the asked command). Run the other commands first, then the
         asked one alone in its own call, so the question shows only it. A line that runs a file it wrote itself
-        (cat > f.sh ... && bash f.sh) keeps the question: alone, later, that file is not seen.
+        (cat > f.sh ... && bash f.sh) keeps the question: alone, later, that file is not seen. The warnings of the
+        line's other commands are shown with the refusal (systemMessage), as with a question.
   allow a line it can tell stays in one clone, tmp/work/<yyyy-mm-dd>-<slug>/<clone>/ (the work trail), when no deny or
         ask above applies:
         - every command runs in that clone (a cd into it from the root counts; scripts/aiwp-cmds.sh run

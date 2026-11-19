@@ -118,12 +118,24 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    (`chore(release): X.Y.Z`); no push.
 5. **Full suite, strict:** `bash <clone>/tests/check.sh --all --base <last tag>` (translations included) and
    `bash <clone>/tests/test-install.sh`. Passed: record `git -C <clone> rev-parse HEAD` and push the release branch
-   with upstream.
+   with upstream. Then, once per release (not again when step 7 reruns this step), **the review fixtures**
+   (`tests/review-fixtures/README.md`): for each path `bash <clone>/tests/review-fixtures.sh list` prints, one
+   `reviewer` (claude-opus-5-5, effort `medium`, at most 4 at once) with the brief "Review the change described in
+   `<clone>/<path>` as the merge review into `developer` (`.claude/rules/review.md`): its Request is what the owner
+   asked, its Diff is the range (made up: judge it as written, the real files are context only). Read no other file
+   of `tests/review-fixtures/`. Return only the report in the format of `.claude/rules/review.md`."; save each report
+   as `<clone>/tmp/review-fixtures/<timestamp>/<fixture>.txt` (`f01.txt`...), then
+   `bash <clone>/tests/review-fixtures.sh judge <that folder>` and show its lines. Each `FAIL` line is a WARNING of
+   the release in step 7 (the review rules may need the fix, not the release), never a refusal by itself. Read the
+   report of each `FAIL` before step 7 and say which it is: a real defect of the fixture's own code or text (the
+   finding is right: fix the fixture, `tests/review-fixtures/README.md`), or a review that missed a hard rule or
+   blocked what is only a warning (fix the review rules, `.claude/rules/review.md`, `workspace/rules/review.md`).
 6. **Final review** (the product's step 4, `.claude/rules/review.md`) on `<last tag>..HEAD` of the
    clone, against every request of `maintainers/requests/qa/`.
-7. **The findings, once** (the product's step 5): per BLOCKER, (1) fix now in the release clone or (2) a request in
-   `maintainers/requests/`, which stops the release; the warnings in the warnings board (`fix`, `request`, `accept`),
-   and the release goes on only after every decision. Fixes or requests written in the clone: rerun step 5 (which
+7. **The findings, once** (the product's step 5), the review's and each failing review fixture of step 5 (a
+   WARNING: `<fixture>` expected `<level>`, got `<level>`): per BLOCKER, (1) fix now in the release clone or (2) a
+   request in `maintainers/requests/`, which stops the release; the warnings in the warnings board (`fix`, `request`,
+   `accept`), and the release goes on only after every decision. Fixes or requests written in the clone: rerun step 5 (which
    records and pushes again) and the return review of the fixes (`.claude/rules/review.md`). The sha is the one step 5 recorded last, equal to the pushed
    `fix/release-vX-Y-Z` and to HEAD.
 8. **Into `developer`:** phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone
