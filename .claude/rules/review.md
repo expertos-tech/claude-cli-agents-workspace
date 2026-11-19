@@ -1,65 +1,40 @@
-# review.md
+@workspace/rules/review.md
 
-## When
+The sections below win where they differ; its `paths:` do not limit it here.
 
-- **Merge into `developer`** (`/caw-merge`): only the difference that enters, `origin/developer..<sha>`; what is already
-  on `developer` was reviewed by the merge that brought it.
-- **Merge into `main`** (`/caw-merge --main`, the release, and `--hotfix`): everything since the last tag, widened to
-  what the reviewer judges necessary (callers, dependents, the docs of what changed).
-- The independent review of a stage (hooks, the installer, security, `process.md` step 4), and when the owner asks.
+---
 
-## Effort, by content
+## Ignore from the product rule
 
-- Code and configuration: scripts, hooks, tests, settings, `.claude/` (rules, skills, agents), `CLAUDE.md`,
-  `AGENTS.md`, `workspace/rules/`, `workspace/templates/`, `install.sh`: effort `xhigh`, the only use of it.
-- Documents: every other `*.md` (`docs/`, `workspace/docs/`, `i18n/`, `maintainers/`, READMEs, changelogs): effort
-  `high`.
-- A merge with both: two `reviewer` subagents (claude-opus-5-5) in parallel, each with its part of the range.
+- How, "For a project diff, `/code-review` is an equivalent": the review here is the `reviewer` subagent.
+- How, the audit file phase 1 printed: this repository's gate prints none.
 
-## How
+## Mapping
 
-- The `reviewer` subagent with a clean context: it did not write the change. Give it the code and its part of the
-  range, the requests the range delivers (`maintainers/requests/qa/`, with their Execution blocks, and at a release
-  every one of them) or the owner's words, the changelog sections of the range, and what the suite already proved.
-  Never give it your conclusion.
-- It asks only three questions, the same at every merge (`workspace/rules/review.md` "How"):
-  1. what was asked against what was done: each business rule and acceptance criterion, pending ones included, done
-     and proven, done and not proven, or not done; an Execution block the code contradicts; a changelog entry with no
-     change behind it, or a change a user would notice with no entry;
-  2. what went beyond the request: each change with no request behind it, CONSEQUENCE (of what) or UNEXPLAINED;
-  3. what existed and was lost: behavior, a test, a protection (a hook, a deny rule, the gate, a file mode) or a
-     documented promise removed or weakened with no request behind it.
-- It reports only defects, each with `path:line`, the failure scenario and the fix. UNEXPLAINED changes and losses
-  are BLOCKERs; at a hotfix, so is every change beyond the error.
-- A security finding counts only when a second clean-context review confirms it from the code.
+| Product | Here |
+| --- | --- |
+| the human | the owner |
+| waves | stages |
+| the gate (`rules/git.md` "Gate", `/merge`), its two phases | `/caw-merge`: `bash tests/check.sh --base origin/developer --i18n-pending`, then the review, then the push of `developer` |
+| the range phase 1 printed | `origin/developer..<sha>` |
+| what phase 1 already verified; a failing test | what the suite already proved; a failing check |
+| the requests of `custom/requests/qa/<project>/` | the requests of `maintainers/requests/qa/`, with their Execution blocks; at a release every one of them |
+| `rules/security.md` "Hard rules", `rules/models.md` | `.claude/rules/security.md` (the product's list with this repository's rows), `.claude/rules/models.md` |
+| a protection (a hook, a gate, a permission) | a hook, a deny rule, the gate, a file mode |
+| a warning the human answers `request` in the warnings board of `/merge` | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, adjustment size, source: the review |
 
-## The return review
+## CAW rules
 
-After the fixes of a review's findings, at a merge into `developer` or `main` and at the review of a stage
-(`process.md` step 4), the same as the product (`workspace/rules/review.md` "The return review"): two `reviewer`
-subagents (claude-opus-5-5) in parallel, never the one that found them.
-
-- **Focused**, effort `high`: each finding of the round before and its fix: fixed or not, the same class of defect in
-  another spelling or case, a test that proves it, what the fix broke. Brief: the findings as reported, the commits of
-  the fixes, what the suite proved.
-- **Light**, effort `medium`: the whole range again, only for a BLOCKER the fixes caused; anything else becomes a
-  `ready` request. Brief: the range and the commits of the fixes, with no finding.
-- A class that comes back after a fix: the next fix changes approach (an allowlist instead of a blocklist, a narrower
-  scope, a refusal instead of an approval), never one more spelling.
-- A third return review with a BLOCKER still open: stop and give the owner the open findings and the options: narrow
-  the change, merge without that part with a `ready` request, or keep fixing.
-
-## Findings
-
-- BLOCKER: fix it, rerun the suite, then the return review below.
-- RECOMMENDED: never blocks a merge. At a merge into `developer` each becomes a `ready` request
-  (`maintainers/requests/<kebab-title>.md`, adjustment size, source: the review), listed in the summary and fixed
-  when the owner asks. At the release the owner chooses per finding: fix now, or a request.
-- A finding is not accepted only because it came: check why the code is that way. Still disagree: give the owner both
-  positions.
-
-```text
-VERDICT: APPROVED | APPROVED_WITH_CHANGES | REJECTED
-FINDINGS:
-- [BLOCKER|RECOMMENDED] <path>:<line> — <problem> — <failure scenario> — <fix>
-```
+- The agent's own tests and the suite close each stage.
+- The brief never gives the reviewer your conclusion.
+- Into `developer`: what is already on `developer` was reviewed by the merge that brought it; never again.
+- A review the owner asks for runs with the effort the owner gives.
+- The brief also gives the changelog sections of the range: the root `CHANGELOG.md`, and `workspace/CHANGELOG.md` for
+  a product change.
+- Question 1, at every merge, not only at the release: also an Execution block the code contradicts, and a changelog
+  entry with no change behind it, or a change a user would notice with no entry.
+- A BLOCKER: fix it, rerun the suite, then the return review.
+- A security BLOCKER counts only when a second clean-context review confirms it from the code.
+- The warnings: at a merge into `developer` and at the release, the warnings board of `workspace/rules/git.md` "Waves"
+  lists each one once, with its risk, and the merge goes on only after the owner decided every one: fix, a `ready`
+  request, or accept.

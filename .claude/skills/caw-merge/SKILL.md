@@ -25,8 +25,8 @@ pushed by the clone's hooks (`tests/caw-work.sh`). `main`, the tag and the GitHu
 - The release per project with one clone per repo, the project root version and `aiwp-cmds.sh release`: here one
   repository, and only the product is released ("Release", below).
 - Step 6 of "Merge into developer" for a base that publishes to production: `developer` publishes nothing here.
-- The review of the product's skill: here `.claude/rules/review.md` (the same three questions and effort by content,
-  with this repository's split of code and documents).
+- The review of the product's skill: here `.claude/rules/review.md` (the same three questions, the same effort by
+  base: `medium` into `developer`, `high` into `main`, and this repository's hard rules).
 - The product's "Hotfix" steps 1, 3, 9, 10, 12 and 13 (`aiwp-cmds.sh open --from-main`, `hotfix`, `hotfix-tag`,
   `hotfix-down`, the project's repos, the request in `qa/` marked pending): here "Hotfix", below, with plain git.
 
@@ -40,7 +40,7 @@ pushed by the clone's hooks (`tests/caw-work.sh`). `main`, the tag and the GitHu
 | gate phase 2 | at the root, on `developer` with no change: `git fetch -q origin`, `git merge --ff-only origin/developer`; the clone's sha still its HEAD and the remote branch (`git ls-remote origin <branch>`), else back to step 1; `git fetch -q <clone> <branch>`, `git merge --ff-only <sha>`, then, alone in its call, `git push origin developer` |
 | `aiwp-cmds.sh close <work>` | `bash tests/caw-work.sh close <work>`, once `developer` holds the sha: it deletes the remote work branch and the work folder; a clone with no hooks (release, hotfix, hotfix down): `rm -rf tmp/work/<work>/<clone>`, and the work folder when empty, once `developer` holds the sha |
 | `custom/requests/` (and `qa/<project>/`, `done/<project>/`) | `maintainers/requests/` (and `qa/`, `done/`), committed in the clone, or on `developer` when the session has no clone; no `custom/` |
-| a `ready` request made of a RECOMMENDED | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, with its row in the README |
+| a `ready` request made of a warning the owner chose to fix later | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, with its row in the README |
 | `rules/review.md`, `rules/docs.md` | `.claude/rules/review.md`, `.claude/rules/docs.md` (`workspace/rules/docs.md` "CHANGELOG.md" for the changelog rules) |
 
 ## CAW rules
@@ -52,6 +52,13 @@ only right after a passing `tests/check.sh` run on that same commit; a work bran
 after the company-terms scan: record `git rev-parse HEAD` after the run, and
 push only when HEAD still equals it. Anything written after that run (an Execution block, a request made of a
 finding, a fix, a translation) means running the suite again before the push.
+
+### The warnings board
+
+The product's warnings board (its step 6, `workspace/rules/git.md` "Waves") holds here, before phase 2, and the merge
+goes on only after the owner decided every warning; a stage closed with warnings still open: they come first. The
+decisions go into the Execution block, and a `request` answer is a `ready` request in `maintainers/requests/` with its
+row in the README, both written in the clone after the board; then the suite runs again (the push gate).
 
 ### Where the session is
 
@@ -111,11 +118,24 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    (`chore(release): X.Y.Z`); no push.
 5. **Full suite, strict:** `bash <clone>/tests/check.sh --all --base <last tag>` (translations included) and
    `bash <clone>/tests/test-install.sh`. Passed: record `git -C <clone> rev-parse HEAD` and push the release branch
-   with upstream.
+   with upstream. Then, once per release (not again when step 7 reruns this step), **the review fixtures**
+   (`tests/review-fixtures/README.md`): for each path `bash <clone>/tests/review-fixtures.sh list` prints, one
+   `reviewer` (claude-opus-5-5, effort `medium`, at most 4 at once) with the brief "Review the change described in
+   `<clone>/<path>` as the merge review into `developer` (`.claude/rules/review.md`): its Request is what the owner
+   asked, its Diff is the range (made up: judge it as written, the real files are context only). Read no other file
+   of `tests/review-fixtures/`. Return only the report in the format of `.claude/rules/review.md`."; save each report
+   as `<clone>/tmp/review-fixtures/<timestamp>/<fixture>.txt` (`f01.txt`...), then
+   `bash <clone>/tests/review-fixtures.sh judge <that folder>` and show its lines. Each `FAIL` line is a WARNING of
+   the release in step 7 (the review rules may need the fix, not the release), never a refusal by itself. Read the
+   report of each `FAIL` before step 7 and say which it is: a real defect of the fixture's own code or text (the
+   finding is right: fix the fixture, `tests/review-fixtures/README.md`), or a review that missed a hard rule or
+   blocked what is only a warning (fix the review rules, `.claude/rules/review.md`, `workspace/rules/review.md`).
 6. **Final review** (the product's step 4, `.claude/rules/review.md`) on `<last tag>..HEAD` of the
    clone, against every request of `maintainers/requests/qa/`.
-7. **The findings, once** (the product's step 5): per finding, (1) fix now in the release clone or (2) a request in
-   `maintainers/requests/`; a BLOCKER sent to a request stops the release. Fixes or requests written in the clone: rerun step 5 (which
+7. **The findings, once** (the product's step 5), the review's and each failing review fixture of step 5 (a
+   WARNING: `<fixture>` expected `<level>`, got `<level>`): per BLOCKER, (1) fix now in the release clone or (2) a
+   request in `maintainers/requests/`, which stops the release; the warnings in the warnings board (`fix`, `request`,
+   `accept`), and the release goes on only after every decision. Fixes or requests written in the clone: rerun step 5 (which
    records and pushes again) and the return review of the fixes (`.claude/rules/review.md`). The sha is the one step 5 recorded last, equal to the pushed
    `fix/release-vX-Y-Z` and to HEAD.
 8. **Into `developer`:** phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone
@@ -161,8 +181,9 @@ names in `maintainers/requests/`, else the description.
    `git -C <clone> rev-list origin/main..origin/developer` is empty). Passed: record `git -C <clone> rev-parse HEAD`
    and push `fix/<slug>` with upstream.
 6. **Review against `main`** (the product's step 7, `.claude/rules/review.md`) on `<last tag>..<sha>`, widened as
-   needed, with the error described. A BLOCKER: fix in the clone, back to step 5, then the return review (`.claude/rules/review.md`). A RECOMMENDED: a
-   `ready` request in `maintainers/requests/`, written in the down step (step 9), never on `main`.
+   needed, with the error described. A BLOCKER: fix in the clone, back to step 5, then the return review (`.claude/rules/review.md`). A WARNING: in the
+   warnings board, in the reply of the owner's OK of step 7, answered `request` or `accept`; one the owner sends to a request becomes a `ready` request in `maintainers/requests/`,
+   written in the down step (step 9), never on `main`.
 7. **Into `main`:** `main` here does not publish by itself (the installers take only tags), so: the owner's OK, with no
    BLOCKER open and HEAD still the recorded sha; then `git -C <clone> push origin <sha>:refs/heads/main` (a
    fast-forward; refused: a pull request `fix/<slug>` → `main`, and the tag waits for its merge,
@@ -177,8 +198,8 @@ names in `maintainers/requests/`, else the description.
    origin/developer`, `git merge --no-ff origin/main -m "Merge branch 'main' into developer"`.
    - Clean: a standard merge commit, no new branch on the remote. Then the request's `## Execution` block (the
      product's step 11) with `Released in vX.Y.(Z+1)` (or `Not published: vX.Y.(Z+1) on main without a tag`), the
-     file moved to `maintainers/requests/done/` and its row in the README, and the requests made of RECOMMENDED
-     findings; commit (`docs(requests): ...`). The suite `--base origin/developer --i18n-pending` (the push gate: the
+     file moved to `maintainers/requests/done/` and its row in the README, and the requests made of warnings
+     the owner chose; commit (`docs(requests): ...`). The suite `--base origin/developer --i18n-pending` (the push gate: the
      request and the merge are scanned; the fix's own tests already passed on `main`), then
      `git -C <clone> push origin HEAD:refs/heads/developer` (a fast-forward of `origin/developer`; refused because it
      moved: back to the start of this step).

@@ -9,7 +9,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BASE="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'real_cleanup; rm -rf "$BASE"' EXIT
+trap 'real_cleanup; chmod -R u+rwX "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE AIWP_TERMS_FILE
@@ -93,7 +93,7 @@ fixture() {
   mkdir -p "$DSTUB/containers" "$DSTUB/res"
   : >"$DOCKER_LOG"
   unset DOCKER_DOWN CAW_TEST_INSTALL INSTALL_RESULT
-  printf 'tmp/\n' >"$R/.gitignore"
+  printf 'tmp/\n.claude/settings.local.json\n' >"$R/.gitignore"
   printf '# sample\n' >"$R/README.md"
   git -C "$R" add -A
   git -C "$R" commit -q -m base
@@ -102,6 +102,7 @@ fixture() {
   git -C "$R" remote add origin "$REMOTE"
   git -C "$R" push -q origin main developer
   printf '\xEF\xBB\xBF# company terms of the tests\n\n  acmecorp  \n' >"$BASE/terms.$CURRENT.txt"
+  rm -f "$BASE/terms.$CURRENT.txt.accepted"
   export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
   C="$R/tmp/work/$W/claude-cli-agents-workspace"
 }
@@ -211,6 +212,105 @@ test_open_needs_an_origin() {
   [ ! -e "$R/tmp/work/$W" ]; check "nothing created" $?
 }
 
+# The value of "language" in a settings file, or "-" when the file has none or cannot be read.
+language_of() {
+  python3 -I -c 'import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError):
+    data = None
+print(data.get("language", "-") if isinstance(data, dict) else "-")' "$1"
+}
+
+# BR-1, BR-3: open gives a new clone the root's preferred language, so a session there neither asks it again nor misses it.
+test_open_copies_the_preferred_language() {
+  fixture
+  mkdir -p "$R/.claude"
+  printf '{\n  "language": "portuguese",\n  "model": "x"\n}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "language: portuguese (from the root .claude/settings.local.json)"
+  eq "clone language" "portuguese" "$(language_of "$C/.claude/settings.local.json")"
+  eq "only the language is copied" '{"language": "portuguese"}' "$(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$C/.claude/settings.local.json")"
+  git -C "$C" check-ignore -q -- .claude/settings.local.json; check "git ignores it in the clone" $?
+  eq "clone clean" "" "$(git -C "$C" status --porcelain)"
+  eq "no temp file left" "settings.local.json" "$(ls -A "$C/.claude")"
+  eq "root file untouched" "portuguese" "$(language_of "$R/.claude/settings.local.json")"
+}
+
+# A clone file keeps its other keys, and a language of its own is never replaced.
+test_open_merges_the_language_into_the_clone_file() {
+  fixture
+  mkdir -p "$R/.claude"
+  printf '{"language": "portuguese"}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  mkdir -p "$C/.claude"
+  printf '{"permissions": {"allow": ["Bash(ls)"]}, "env": {"A": "1"}}\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "(already open)"
+  has "language: portuguese"
+  eq "language added" "portuguese" "$(language_of "$C/.claude/settings.local.json")"
+  eq "other keys kept" '{"permissions": {"allow": ["Bash(ls)"]}, "env": {"A": "1"}, "language": "portuguese"}' \
+    "$(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$C/.claude/settings.local.json")"
+  printf '{"language": "spanish", "model": "y"}\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  hasnt "language: portuguese"
+  eq "own language kept" '{"language": "spanish", "model": "y"}' "$(cat "$C/.claude/settings.local.json")"
+  # A malformed clone file is left as it is, with a warning; open still succeeds.
+  printf '{"language": \n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "attention: "
+  has "left as it is"
+  eq "malformed file untouched" '{"language": ' "$(cat "$C/.claude/settings.local.json")"
+  printf '["portuguese"]\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "left as it is"
+  eq "not an object: untouched" '["portuguese"]' "$(cat "$C/.claude/settings.local.json")"
+}
+
+# No language at the root (no file, no key, an empty one, a malformed file): nothing written, nothing said.
+test_open_without_a_root_language_writes_nothing() {
+  fixture
+  run open "$B"
+  rc_is 0
+  hasnt "language:"
+  hasnt "attention: the language"
+  [ ! -e "$C/.claude/settings.local.json" ]; check "no file without the root file" $?
+  local body
+  for body in '{"model": "x"}' '{"language": "  "}' '{"language": 3}' '{"language": ' '["portuguese"]'; do
+    mkdir -p "$R/.claude"
+    printf '%s\n' "$body" >"$R/.claude/settings.local.json"
+    run open "$B"
+    rc_is 0
+    hasnt "language:"
+    hasnt "attention"
+    [ ! -e "$C/.claude/settings.local.json" ]; check "nothing written for [$body]" $?
+  done
+}
+
+# A clone where git would not ignore .claude/settings.local.json gets no file: it would be committed.
+test_open_copies_the_language_only_where_git_ignores_it() {
+  fixture
+  # The default global excludes file ($XDG_CONFIG_HOME/git/ignore, else ~/.config/git/ignore) may ignore it already.
+  local XDG_CONFIG_HOME="$BASE/xdg"
+  export XDG_CONFIG_HOME
+  printf 'tmp/\n' >"$R/.gitignore"
+  git -C "$R" commit -q -am "no ignore of the local settings"
+  git -C "$R" push -q origin developer
+  mkdir -p "$R/.claude"
+  printf '{"language": "portuguese"}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "attention: "
+  has "git does not ignore"
+  [ ! -e "$C/.claude/settings.local.json" ]; check "nothing written" $?
+}
+
 test_every_commit_is_pushed() {
   fixture
   run open "$B"
@@ -229,14 +329,16 @@ test_a_term_in_a_file_is_not_pushed() {
   commit_in notes.txt "made for ACMECORP inc"
   rc_is 0
   has "notes.txt:1:made for ACMECORP inc"
-  has "refused: the lines above hold a company term"
-  has "NOT pushed"
-  has "bash tests/caw-work.sh push $W/claude-cli-agents-workspace"
+  has "WARNING: a company term"
+  has "this repository is public"
+  has "NOT pushed, waiting for the owner (a warning, not an error)"
+  has "bash tests/caw-work.sh push $W/claude-cli-agents-workspace --accept-terms"
+  hasnt "refused"
   eq "remote unchanged" "$pushed" "$(remote_sha "heads/$B")"
   eq "commit stays" "change notes.txt" "$(git -C "$C" log -1 --format=%s)"
   # Removing it in a later commit is not enough: the first one would still leave.
   commit_in notes.txt "made for a customer"
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   eq "still not pushed" "$pushed" "$(remote_sha "heads/$B")"
   # Rewriting the commits not on the remote is: the push is a fast-forward.
   git -C "$C" reset -q --soft "$pushed"
@@ -346,6 +448,112 @@ test_protected_refs_are_refused() {
   in_clone push -q origin --delete developer
   rc_not 0
   eq "developer not deleted" "$dev" "$(remote_sha developer)"
+}
+
+# BR-5, AC-4: the throwaway repository of tests/test-install.sh, in the clone's own tmp/, takes main as that script
+# pushes it (a snapshot commit over HEAD, made by commit-tree); main to origin, a tag and a force push stay refused.
+test_scratch_destination_in_tmp_takes_the_test_installation() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  local dir="$C/tmp/test-install/20261118-120000" snap main pushed
+  mkdir -p "$dir"
+  git init -q --bare "$dir/remote.git"
+  snap="$(git -C "$C" commit-tree "$(git -C "$C" write-tree)" -p HEAD -m "test installation snapshot")"
+  in_clone push -q "$dir/remote.git" "$snap:refs/heads/main"
+  rc_is 0
+  eq "the snapshot reached the throwaway repository" "$snap" "$(git --git-dir="$dir/remote.git" rev-parse -q --verify main)"
+  # Any branch, developer included, and the scan still ran on it.
+  in_clone push "$dir/remote.git" HEAD:refs/heads/developer
+  rc_is 0
+  hasnt "refused"
+  # The same clone still never pushes main to origin.
+  main="$(remote_sha main)"
+  in_clone push -q origin HEAD:main
+  rc_not 0
+  has "never pushes main"
+  eq "main unchanged on origin" "$main" "$(remote_sha main)"
+  # A tag and a force push stay refused there too.
+  git -C "$C" tag v9.9.9
+  in_clone push -q "$dir/remote.git" v9.9.9
+  rc_not 0
+  has "never pushes a tag"
+  pushed="$(git --git-dir="$dir/remote.git" rev-parse main)"
+  in_clone push -q --force "$dir/remote.git" HEAD:refs/heads/main
+  rc_not 0
+  has "force push"
+  eq "main kept in the throwaway repository" "$pushed" "$(git --git-dir="$dir/remote.git" rev-parse main)"
+  # A company term is still stopped by the scan.
+  commit_in b.txt "made for acmecorp"
+  in_clone push -q "$dir/remote.git" HEAD:refs/heads/side
+  rc_not 0
+  has "WARNING: a company term"
+  eq "nothing with the term" none "$(git --git-dir="$dir/remote.git" rev-parse -q --verify side || echo none)"
+}
+
+# A term already on origin was scanned when it left: the test installation, whose throwaway repository starts empty,
+# does not scan the whole history again; a term only in the clone is still stopped.
+test_scratch_destination_skips_what_origin_has() {
+  fixture
+  printf 'made for acmecorp\n' >"$R/old.txt"
+  git -C "$R" add -- old.txt
+  git -C "$R" commit -q -m "an old commit, already public"
+  git -C "$R" push -q origin developer
+  run open "$B"
+  local dir="$C/tmp/test-install/20261118-120000" snap
+  mkdir -p "$dir"
+  git init -q --bare "$dir/remote.git"
+  snap="$(git -C "$C" commit-tree "$(git -C "$C" write-tree)" -p HEAD -m "test installation snapshot")"
+  in_clone push -q "$dir/remote.git" "$snap:refs/heads/main"
+  rc_is 0
+  hasnt "WARNING: a company term"
+  eq "the snapshot reached the throwaway repository" "$snap" "$(git --git-dir="$dir/remote.git" rev-parse -q --verify main)"
+  # A term the clone adds, not on origin, is still stopped there.
+  commit_in new.txt "for acmecorp again"
+  snap="$(git -C "$C" commit-tree "$(git -C "$C" write-tree)" -p HEAD -m "test installation snapshot")"
+  in_clone push -q "$dir/remote.git" "$snap:refs/heads/side"
+  rc_not 0
+  has "new.txt:1:for acmecorp again"
+  hasnt "old.txt"
+  # origin unreadable: the scan only widens, it still runs (a fresh throwaway repository: it knows nothing yet).
+  git -C "$C" remote set-url origin "$BASE/missing.$CURRENT.git"
+  git init -q --bare "$dir/fresh.git"
+  in_clone push -q "$dir/fresh.git" "$snap:refs/heads/main"
+  rc_not 0
+  has "origin cannot be read: the terms scan covers every commit"
+  has "old.txt:1:made for acmecorp"
+}
+
+# BR-5: only an absolute path strictly inside the clone's tmp/, links resolved: never outside it, never by a named
+# remote, never a relative path or a URL.
+test_scratch_destination_is_only_the_clones_tmp() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  local snap target
+  snap="$(git -C "$C" rev-parse HEAD)"
+  mkdir -p "$C/tmp" "$BASE/outside.$CURRENT"
+  for target in "$BASE/outside.$CURRENT/r.git" "$C/r.git" "$C/tmp/../r.git" "$C/tmp/link.git" "$C/tmp/named.git"; do
+    rm -rf "$target"
+    git init -q --bare "$target"
+  done
+  rm -rf "$C/tmp/link.git"
+  ln -s "$BASE/outside.$CURRENT/r.git" "$C/tmp/link.git"
+  for target in "$BASE/outside.$CURRENT/r.git" "$C/r.git" "$C/tmp/../r.git" "$C/tmp/link.git" "file://$C/tmp/named.git"; do
+    in_clone push -q "$target" "$snap:refs/heads/main"
+    rc_not 0
+    has "never pushes main"
+  done
+  git -C "$C" remote add scratch "$C/tmp/named.git"
+  in_clone push -q scratch "$snap:refs/heads/main"
+  rc_not 0
+  has "never pushes main"
+  OUT="$(cd "$C" && git push -q tmp/named.git "$snap:refs/heads/main" 2>&1)"
+  RC=$?
+  rc_not 0
+  has "never pushes main"
+  eq "nothing reached outside tmp/" none "$(git --git-dir="$BASE/outside.$CURRENT/r.git" rev-parse -q --verify main || echo none)"
+  eq "nothing by a name or a relative path" none "$(git --git-dir="$C/tmp/named.git" rev-parse -q --verify main || echo none)"
 }
 
 test_no_terms_list_skips_the_scan() {
@@ -780,7 +988,7 @@ test_a_missing_pre_push_still_blocks_a_term() {
   # Removed by hand (an editor, a script): push_branch scans on its own.
   rm "$C/.git/hooks/pre-push"
   commit_in notes.txt "acmecorp"
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   has "NOT pushed"
   eq "not pushed without pre-push" "$pushed" "$(remote_sha "heads/$B")"
   run push "$W"
@@ -792,7 +1000,7 @@ test_a_missing_pre_push_still_blocks_a_term() {
   commit_in notes.txt "acmecorp again"
   run push "$W"
   rc_is 1
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   eq "still not pushed" "$pushed" "$(remote_sha "heads/$B")"
   # A clean commit still goes.
   git -C "$C" reset -q --hard "$pushed"
@@ -825,7 +1033,7 @@ test_push_command() {
   pushed="$(remote_sha "heads/$B")"
   run push "$W"
   rc_is 1
-  has "refused: the lines above hold a company term"
+  has "WARNING: a company term"
   eq "a term is not pushed" "$pushed" "$(remote_sha "heads/$B")"
   git -C "$C" switch -q -c other
   run push "$W"
@@ -837,6 +1045,215 @@ test_push_command() {
   rc_is 2
   run push 2026-01-01-missing
   rc_is 1
+}
+
+# The lines of the accepted file that are terms (no comment), sorted.
+accepted_terms() {
+  grep -v '^#' "$AIWP_TERMS_FILE.accepted" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//'
+}
+
+test_accept_terms_keeps_a_term_and_pushes() {
+  fixture
+  printf 'globex\n' >>"$AIWP_TERMS_FILE"
+  run open "$B"
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  commit_in notes.txt "made for acmecorp"
+  rc_is 0
+  has "WARNING: a company term"
+  has "NOT pushed, waiting for the owner"
+  eq "a warned term is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  [ ! -e "$AIWP_TERMS_FILE.accepted" ]
+  check "nothing accepted by the warning" $?
+  # A direct git push stops at the pre-push hook with the same warning.
+  in_clone push -q origin "HEAD:refs/heads/$B"
+  rc_not 0
+  has "WARNING: a company term"
+  eq "pre-push keeps it" "$pushed" "$(remote_sha "heads/$B")"
+  # The owner keeps it: recorded, private, outside the repository, then pushed.
+  run push "$W" --accept-terms
+  rc_is 0
+  has "accepted by the owner: 1 company term(s)"
+  has "caw-work: pushed $B"
+  hasnt "WARNING"
+  eq "pushed after the confirmation" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  eq "only the matching line of the list is accepted" "acmecorp" "$(accepted_terms)"
+  [ -n "$(find "$AIWP_TERMS_FILE.accepted" -prune -perm 600)" ]
+  check "the accepted file is 600" $?
+  eq "nothing new in the root" "" "$(git -C "$R" status --porcelain)"
+  eq "nothing new in the clone" "" "$(git -C "$C" status --porcelain)"
+  # The same term again: pushed with no warning.
+  commit_in more.txt "acmecorp again"
+  has "caw-work: pushed $B"
+  hasnt "WARNING"
+  eq "an accepted term is pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  # A new term warns again, and only it is reported.
+  pushed="$(remote_sha "heads/$B")"
+  commit_in other.txt "globex deal"
+  has "WARNING: a company term"
+  has "other.txt:1:globex deal"
+  hasnt "more.txt"
+  eq "a new term is not pushed" "$pushed" "$(remote_sha "heads/$B")"
+  run push "$W/claude-cli-agents-workspace" --accept-terms
+  rc_is 0
+  eq "both kept" "acmecorp globex" "$(accepted_terms)"
+  eq "pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  # Nothing to accept: it just pushes, and the file keeps each term once.
+  commit_in clean.txt clean
+  run push "$W" --accept-terms
+  rc_is 0
+  eq "no term twice" "acmecorp globex" "$(accepted_terms)"
+  # A term the owner removes from the accepted file warns again.
+  printf 'globex\n' >"$AIWP_TERMS_FILE.accepted"
+  pushed="$(remote_sha "heads/$B")"
+  commit_in last.txt "acmecorp"
+  has "WARNING: a company term"
+  eq "warned again" "$pushed" "$(remote_sha "heads/$B")"
+}
+
+test_accept_terms_keeps_the_hard_refusals() {
+  fixture
+  run open "$B"
+  local pushed
+  commit_in a.txt one
+  pushed="$(remote_sha "heads/$B")"
+  # A force push stays refused, with or without the confirmation.
+  printf 'acmecorp\n' >>"$C/a.txt"
+  OUT="$(git -C "$C" commit -q -am amended --amend 2>&1)"
+  has "force push"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "that is a force push"
+  eq "remote unchanged by the amend" "$pushed" "$(remote_sha "heads/$B")"
+  [ ! -e "$AIWP_TERMS_FILE.accepted" ]
+  check "nothing accepted on a force push" $?
+  git -C "$C" reset -q --hard "$pushed"
+  commit_in b.txt acmecorp
+  # AIWP_TERMS_FILE naming no file is a misconfiguration, not a term.
+  export AIWP_TERMS_FILE="$BASE/missing.txt"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "AIWP_TERMS_FILE names no file"
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  # The remote that cannot be read.
+  git -C "$C" remote set-url origin "$BASE/nowhere.git"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "the remote cannot be read"
+  git -C "$C" remote set-url origin "$REMOTE"
+  # A terms list inside the repository, where git does not ignore the accepted file.
+  cp "$AIWP_TERMS_FILE" "$R/terms.txt"
+  export AIWP_TERMS_FILE="$R/terms.txt"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "inside this repository"
+  [ ! -e "$R/terms.txt.accepted" ]
+  check "no accepted file in the repository" $?
+  # An accepted file that is a symbolic link.
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  ln -s "$BASE/elsewhere" "$AIWP_TERMS_FILE.accepted"
+  run push "$W" --accept-terms
+  rc_is 1
+  has "is not a regular file"
+  [ ! -e "$BASE/elsewhere" ]
+  check "nothing written through the link" $?
+  rm -f "$AIWP_TERMS_FILE.accepted"
+  eq "nothing pushed by a refusal" "$pushed" "$(remote_sha "heads/$B")"
+  # Inside the repository where git ignores it (tmp/): accepted and pushed.
+  mkdir -p "$R/tmp"
+  cp "$AIWP_TERMS_FILE" "$R/tmp/terms.txt"
+  export AIWP_TERMS_FILE="$R/tmp/terms.txt"
+  run push "$W" --accept-terms
+  rc_is 0
+  has "caw-work: pushed $B"
+  [ -f "$R/tmp/terms.txt.accepted" ]
+  check "accepted next to an ignored list" $?
+  export AIWP_TERMS_FILE="$BASE/terms.$CURRENT.txt"
+  # The usage, and run never confirms for the owner.
+  run push "$W" --accept
+  rc_is 2
+  run push "$W" --accept-terms extra
+  rc_is 2
+  run push --accept-terms "$W"
+  rc_is 2
+  run run "$W" -- bash tests/caw-work.sh push "$W" --accept-terms
+  rc_is 1
+  has "--accept-terms: the owner confirms it"
+  # developer, main and a tag stay refused after a term is accepted.
+  in_clone push -q origin HEAD:developer
+  rc_not 0
+  has "never pushes developer"
+  in_clone push -q origin HEAD:main
+  rc_not 0
+  has "never pushes main"
+  git -C "$C" tag v9.9.8
+  in_clone push -q origin v9.9.8
+  rc_not 0
+  has "never pushes a tag"
+}
+
+# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work, caw-layers,
+# caw-session-index and caw-language suites are stubs (the gate copies the terms list it gets to GATE_TERMS_OUT).
+test_check_repo_terms_skips_accepted_terms() {
+  local k="$BASE/check.$CURRENT" list="$BASE/terms.$CURRENT.txt"
+  rm -rf "$k"
+  mkdir -p "$k/tests/lib" "$k/workspace/scripts"
+  cp "$HERE/check.sh" "$k/tests/check.sh"
+  cp "$HERE/lib/terms.sh" "$k/tests/lib/terms.sh"
+  cp "$HERE/lib/layers.sh" "$k/tests/lib/layers.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-work.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-review-fixtures.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-layers.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-session-index.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-language.sh"
+  # The session index and its hook, as caw-layers requires them (tests/lib/layers.sh).
+  mkdir -p "$k/.claude"
+  printf '@workspace/AGENTS.md\n\n## Ignore from the product index\n\n## Mapping\n\n## CAW index\n' \
+    >"$k/.claude/session-index.md"
+  cat >"$k/.claude/settings.json" <<'JSON'
+{"hooks": {"SessionStart": [{"matcher": "startup|resume|clear|compact", "hooks": [
+  {"type": "command", "command": "python3 -I -B \"$CLAUDE_PROJECT_DIR/tests/caw-session-index.py\"", "timeout": 10}]}]}}
+JSON
+  cat >"$k/workspace/scripts/check-workspace.sh" <<'STUB'
+#!/usr/bin/env bash
+cp "$AIWP_TERMS_FILE" "$GATE_TERMS_OUT"
+STUB
+  export GATE_TERMS_OUT="$BASE/gate-terms.$CURRENT"
+  git init -q "$k"
+  printf 'made for acmecorp\n' >"$k/notes.md"
+  git -C "$k" add -A
+  git -C "$k" commit -q -m base
+  printf 'acmecorp\nglobex\n' >"$list"
+  rm -f "$list.accepted"
+  export AIWP_TERMS_FILE="$list"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 1
+  has "FAIL repo-terms"
+  eq "the gate gets the whole list" "acmecorp globex" "$(tr '\n' ' ' <"$GATE_TERMS_OUT" | sed 's/ $//')"
+  # The owner kept acmecorp: skipped, counted, never printed.
+  printf '# kept\nacmecorp\n' >"$list.accepted"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 0
+  has "PASS repo-terms (skipped 1 matching line(s) of company terms the owner accepted)"
+  hasnt "acmecorp"
+  eq "the gate gets the list without the accepted term" "globex" "$(cat "$GATE_TERMS_OUT")"
+  # A new term fails.
+  printf 'globex deal\n' >"$k/more.md"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 1
+  has "more.md:1:globex deal"
+  has "FAIL repo-terms"
+  hasnt "notes.md"
+  # Every term accepted: passes.
+  printf 'acmecorp\nglobex\n' >"$list.accepted"
+  OUT="$(bash "$k/tests/check.sh" 2>&1)"
+  RC=$?
+  rc_is 0
+  has "PASS repo-terms (skipped 2 matching line(s)"
+  unset GATE_TERMS_OUT
 }
 
 test_status() {
@@ -914,6 +1331,96 @@ test_close_discard() {
   has "discarded: tmp/work/$W"
   [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
   eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+}
+
+# Builds a test installation inside the clone as tests/test-install.sh leaves it (git-ignored tmp/test-install/
+# <timestamp>/: core folders 555, files 444, executables 555, a bare remote.git), with two symlinks out of the work
+# folder: to a read-only file and to a read-only folder of $BASE, which close must leave as they are.
+read_only_install_in_clone() {
+  local d="$C/tmp/test-install/20261118-101500"
+  mkdir -p "$d/workspace/rules/skills/merge" "$d/workspace/scripts" "$d/home" "$BASE/outside.$CURRENT/dir"
+  git init -q --bare "$d/remote.git"
+  printf '# agents\n' >"$d/workspace/AGENTS.md"
+  printf '# merge\n' >"$d/workspace/rules/skills/merge/SKILL.md"
+  printf '#!/usr/bin/env bash\n' >"$d/workspace/scripts/aiwp.sh"
+  printf 'keep\n' >"$BASE/outside.$CURRENT/file"
+  printf 'keep\n' >"$BASE/outside.$CURRENT/dir/inner"
+  ln -s "$BASE/outside.$CURRENT/file" "$d/workspace/link-to-file"
+  ln -s "$BASE/outside.$CURRENT/dir" "$d/workspace/link-to-dir"
+  chmod 444 "$d/workspace/AGENTS.md" "$d/workspace/rules/skills/merge/SKILL.md" "$BASE/outside.$CURRENT/file" \
+    "$BASE/outside.$CURRENT/dir/inner"
+  chmod 555 "$d/workspace/scripts/aiwp.sh" "$BASE/outside.$CURRENT/dir"
+  find "$d/remote.git" -type f -exec chmod 444 {} +
+  find "$d/remote.git" "$d/workspace" -type d -exec chmod 555 {} +
+}
+# Checks that what the symlinks of read_only_install_in_clone point at kept its modes and content.
+outside_untouched() {
+  [ ! -w "$BASE/outside.$CURRENT/file" ] && [ ! -w "$BASE/outside.$CURRENT/dir" ] &&
+    [ ! -w "$BASE/outside.$CURRENT/dir/inner" ] && [ "$(cat "$BASE/outside.$CURRENT/dir/inner")" = keep ]
+  check "the targets of the symlinks kept their modes" $?
+}
+
+test_close_after_a_test_installation_in_the_clone() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  read_only_install_in_clone
+  merge_into_developer
+  run close "$W"
+  rc_is 0
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed completely" $?
+  eq "remote branch deleted" none "$(remote_sha "heads/$B")"
+  case "$OUT" in *"closed: tmp/work/$W"*"deleted on origin: $B"*) check "folder first, then the remote" 0 ;;
+    *) check "folder first, then the remote" 1 ;; esac
+  outside_untouched
+}
+
+test_close_discard_with_a_read_only_tree() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  read_only_install_in_clone
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  run close "$W" --discard
+  rc_is 0
+  has "discarded: tmp/work/$W"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed completely" $?
+  eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+  outside_untouched
+}
+
+# An rm first on PATH that fails as a delete the owner cannot complete does: close stops before the remote, says what
+# is left, and a later close (rm working again) finishes, the remote branch deleted then.
+test_close_failed_delete_keeps_the_remote_branch() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  merge_into_developer
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  mkdir -p "$BASE/rmstub.$CURRENT"
+  printf '#!/usr/bin/env bash\necho "rm: cannot remove: Permission denied" >&2\nexit 1\n' >"$BASE/rmstub.$CURRENT/rm"
+  chmod +x "$BASE/rmstub.$CURRENT/rm"
+  OUT="$(cd "$R" && PATH="$BASE/rmstub.$CURRENT:$PATH" bash "$R/tests/caw-work.sh" close "$W" 2>&1)"
+  RC=$?
+  rc_is 1
+  has "could not delete tmp/work/$W"
+  has "left: tmp/work/$W/claude-cli-agents-workspace"
+  has "the remote branch stays: $B"
+  hasnt "deleted on origin"
+  eq "remote branch kept" "$pushed" "$(remote_sha "heads/$B")"
+  [ -d "$C/.git" ]; check "clone kept" $?
+  OUT="$(cd "$R" && PATH="$BASE/rmstub.$CURRENT:$PATH" bash "$R/tests/caw-work.sh" close "$W" --discard 2>&1)"
+  RC=$?
+  rc_is 1
+  has "could not delete tmp/work/$W"
+  hasnt "discarded:"
+  run close "$W"
+  rc_is 0
+  has "deleted on origin: $B"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
+  eq "remote branch deleted" none "$(remote_sha "heads/$B")"
 }
 
 # Writes a tool of the clone: workspace/tools/<id>/compose.yaml (with $2 as its text) and an app file.
@@ -1090,6 +1597,7 @@ test_usage() {
   has "Usage: bash tests/caw-work.sh"
   has "open <type>/<slug>"
   has "run <work>[/<clone>] -- <command>..."
+  has "push <work>[/<clone>] [--accept-terms]"
   run
   rc_is 2
   run nope

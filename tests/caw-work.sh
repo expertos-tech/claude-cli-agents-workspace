@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Work clones of the maintenance of this repository: each change is made in a local clone under tmp/work/, on its own
 # branch from origin/developer, and pushed at every commit by the clone's git hooks once the company-terms scan of
-# what leaves passes. Writes only under tmp/work/. Modeled on workspace/scripts/aiwp-cmds.sh.
+# what leaves passes; a company term is a warning the owner confirms (push --accept-terms), never a refusal. Writes
+# only under tmp/work/, and the owner's accepted terms next to the terms list. Modeled on
+# workspace/scripts/aiwp-cmds.sh.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -24,6 +26,9 @@ Commands:
         its upstream, through those hooks. Prints "path: tmp/work/<work>/claude-cli-agents-workspace". A clone of the
         same branch, in any work folder, is reused. Refused: a clone of another branch in the folder, and the branch
         already on the remote with no clone here.
+        A new or reused clone gets the "language" of this repository's .claude/settings.local.json in its own (git
+        ignores it there too), keeping its other keys and never replacing a language it has: "language: <it> (from
+        the root .claude/settings.local.json)".
   run <work>[/<clone>] -- <command>...
         Runs the command (no shell) with the clone as the current folder, only when it is on run's list; anything else
         is refused, running nothing, with "not on run's list: run it as a plain command (the permission mode
@@ -46,10 +51,18 @@ Commands:
         Accepted limit: a script file run through bash, sh or python3 (or a config file a listed tool executes, such
         as .markdownlint-cli2.cjs) does whatever it holds, a file that run's own commands wrote included; run checks
         the command line, never what a script does. The terms scan of push and of the hooks still judges what leaves.
-  push <work>[/<clone>]
-        Pushes the branch now, exactly as the hooks do (what a failed automatic push left behind): the terms scan of
-        what leaves runs first, in this script, then git push (never forced) through the clone's pre-push hook, which
-        scans again; a removed hook or another hooks path never lets a term out. Exit 1 when it is not pushed.
+        A command with --accept-terms is refused: the owner confirms it as a plain command (below).
+  push <work>[/<clone>] [--accept-terms]
+        Pushes the branch now, exactly as the hooks do (what an automatic push left behind): the terms scan of what
+        leaves runs first, in this script, then git push (never forced) through the clone's pre-push hook, which
+        scans again; a removed hook or another hooks path never lets a term out. A company term in what leaves is a
+        WARNING, not an error: nothing is pushed, the commit stays in the clone, and the warning says where each
+        match is and how to keep it. Exit 1 when it is not pushed.
+        --accept-terms: the owner keeps the company terms that match now (the settings ask the owner before this
+        runs): their lines of the terms list are recorded in <terms list>.accepted, next to the list (created 600;
+        refused inside this repository unless git ignores it), never printed, then the branch is pushed. Later scans,
+        and tests/check.sh repo-terms, skip an accepted term, so it is not asked again; a new term warns again.
+        Delete a line of that file to be warned about the term again.
   status [<work>]
         Fetches origin (--prune), then one line per clone: branch, commits ahead of origin/developer, commits not on
         the remote, files not committed, and whether the branch is in origin/developer; then one "copy:" line per
@@ -72,8 +85,11 @@ Commands:
   close <work> [--discard]
         Fetches origin and refuses, listing what would be lost, when the work folder holds something that is not a
         clone made by open, or a clone with files not committed, a stash, commits not on the remote, or its branch
-        not in origin/developer. Otherwise deletes the remote work branch (git push origin --delete, through the
-        pre-push hook) and tmp/work/<work>/. --discard deletes the folder anyway and leaves the remote branch. Before
+        not in origin/developer. Otherwise deletes tmp/work/<work>/ and then the remote work branch (git push
+        <clone's origin URL> --delete, from this repository). --discard deletes the folder anyway and leaves the
+        remote branch. The folder goes first, read-only files included (a test installation's: chmod -R u+rwX, no
+        symlink followed); the remote branch only once it is all gone, so a delete that fails exits 1, lists what is
+        left and leaves the remote branch and the clone to close again. Before
         the folder goes, the work's Docker copy groups are destroyed: the groups of its agent-*.compose.yaml files
         and the agent_ projects whose compose folder lies in a clone, by the label com.docker.compose.project and only
         when the name matches ^agent_[0-9]{4}-[a-z0-9][a-z0-9-]*$; a refused close destroys nothing.
@@ -84,16 +100,24 @@ part of any repository). They call this script by the absolute path it had when 
                              <branch>, never forced. Nothing on a detached HEAD, during a rebase, or with another
                              branch checked out.
   post-rewrite               the same at the end of a rebase; an amend is pushed by post-commit.
-                             A failed push says what to do and never fails the commit: the commit stays in the clone.
+                             A push not made (a company term's WARNING, or a refusal) says what to do and never fails
+                             the commit: the commit stays in the clone.
   pre-push                   reads every ref line first, then refuses the whole push of developer, main, a tag or any
                              ref outside refs/heads/, and a push that is not a fast-forward (a force push: an amend or
-                             a rebase of pushed commits). A deletion of another branch passes. Then it scans what
+                             a rebase of pushed commits). A deletion of another branch passes. To a scratch
+                             destination, an absolute path (no named remote, no URL) to a folder inside the clone's
+                             own tmp/, links resolved (the throwaway repository of tests/test-install.sh), any
+                             branch passes, developer and main included; a tag, a ref outside refs/heads/ and a force
+                             push stay refused there too, and the scan below still runs, with the commits origin
+                             already has counted as sent (scanned when they left). Then it scans what
                              leaves, the commits the remote does not have (git ls-remote): every version of a file
                              they add or change, the paths of those files, their messages, and their author and
                              committer names and e-mails, against the terms list (tests/lib/terms.sh, the
-                             lookup of tests/check.sh --help). A match refuses the push and prints
-                             <commit>:<path>:<line>:<text>; never paste those lines into an issue, a commit or a pull
-                             request. AIWP_TERMS_FILE naming no file refuses; no terms list prints
+                             lookup of tests/check.sh --help) less the accepted terms. A match stops the push with a
+                             WARNING (the repository is public; keep the term with push --accept-terms, or rewrite the
+                             commits not on the remote) after the lines <commit>:<path>:<line>:<text>; never paste
+                             those lines into an issue, a commit or a pull request. AIWP_TERMS_FILE naming no file
+                             and a remote that cannot be read refuse; no terms list prints
                              "SKIP terms scan: no terms list" and the push goes.
 
 Internal: _autopush <clone> [<post-rewrite kind>], _prepush <clone> <remote> (the ref lines on stdin).
@@ -108,6 +132,7 @@ Examples:
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- git status --short
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- bash tests/check.sh --base origin/developer --i18n-pending
   bash tests/caw-work.sh push 2026-11-18-autonomous-work
+  bash tests/caw-work.sh push 2026-11-18-autonomous-work --accept-terms   # the owner keeps the term warned about
   bash tests/caw-work.sh status
   bash tests/caw-work.sh publish 2026-11-18-autonomous-work
   bash tests/caw-work.sh close 2026-11-18-autonomous-work
@@ -189,6 +214,90 @@ write_hooks() {
   chmod +x "$hooks/post-commit" "$hooks/post-merge" "$hooks/post-rewrite" "$hooks/pre-push"
 }
 
+# Gives a clone the owner's preferred language: the "language" of this repository's .claude/settings.local.json (a
+# JSON object, "language" a non-empty string) written into the clone's own, git-ignored there too, keeping every other
+# key and never replacing a language the clone file has. No language at the root: nothing, silently. A clone file that
+# is not a JSON object, or one git would not ignore: left as it is, with one "attention:" line. Never fails open.
+copy_language() {
+  local clone="$1" source="$root/.claude/settings.local.json" ignored=0
+  [ -f "$source" ] || return 0
+  ! git -C "$clone" check-ignore -q -- .claude/settings.local.json 2>/dev/null || ignored=1
+  python3 -I - "$source" "$clone" "$ignored" <<'PY' || echo "attention: the preferred language was not copied into the clone"
+import json
+import os
+import sys
+import tempfile
+
+NAME = "settings.local.json"
+MAX_READ = 1_000_000
+
+
+def read_object(path):
+    """Return the JSON object of a file, or None when it cannot be read, is malformed or is not an object."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.loads(handle.read(MAX_READ))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def has_language(data):
+    """Return True when a settings object holds "language" as a non-empty string."""
+    value = data.get("language") if isinstance(data, dict) else None
+    return isinstance(value, str) and value.strip() != ""
+
+
+def write_atomically(folder, data):
+    """Write the settings object to folder/settings.local.json through a temp file of the same folder and a rename."""
+    fd, temp = tempfile.mkstemp(dir=folder, prefix="." + NAME + ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, os.path.join(folder, NAME))
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+
+
+def main():
+    """Copy the language of the root settings sys.argv[1] into the clone sys.argv[2] (sys.argv[3]: 1 when git ignores
+    the clone's .claude/settings.local.json); print what it did, or why it did not."""
+    root_data = read_object(sys.argv[1])
+    if not has_language(root_data):
+        return
+    language = root_data["language"]
+    shown = "".join(c if c.isprintable() else "?" for c in language)
+    folder = os.path.join(sys.argv[2], ".claude")
+    target = os.path.join(folder, NAME)
+    where = ".claude/" + NAME + " of the clone"
+    if sys.argv[3] != "1":
+        print(f"attention: the preferred language was not copied: git does not ignore the {where}")
+        return
+    if os.path.islink(folder) or (os.path.exists(folder) and not os.path.isdir(folder)):
+        print("attention: the preferred language was not copied: .claude of the clone is not a folder")
+        return
+    data = {}
+    if os.path.lexists(target):
+        data = read_object(target) if os.path.isfile(target) and not os.path.islink(target) else None
+        if data is None:
+            print(f"attention: the {where} is not a JSON object: left as it is, without the preferred language")
+            return
+        if has_language(data):
+            return
+    data["language"] = language
+    os.makedirs(folder, exist_ok=True)
+    write_atomically(folder, data)
+    print(f"language: {shown} (from the root .claude/{NAME})")
+
+
+main()
+PY
+}
+
 # open: the clone, its branch from origin/developer, its hooks and the first push.
 cmd_open() {
   [ $# -eq 1 ] || die 2 "usage: open <type>/<slug>"
@@ -201,6 +310,7 @@ cmd_open() {
   for c in "$work_root"/*/"$clone_dir"; do
     found="$(clone_branch "$c")" || continue
     if [ "$found" = "$branch" ]; then
+      copy_language "$c"
       echo "path: ${c#"$root"/} (already open)"
       return 0
     fi
@@ -237,6 +347,7 @@ cmd_open() {
   done
   git -C "$clone" config caw.branch "$branch"
   write_hooks "$clone"
+  copy_language "$clone"
   if with_timeout 120 git -C "$clone" push -q -u origin "HEAD:refs/heads/$branch"; then
     echo "pushed: $branch"
   else
@@ -420,6 +531,8 @@ def main():
     gitdirs = {os.path.realpath(sys.argv[2]), os.path.join(clone, ".git")}
     remotes = set(sys.argv[3].split())
     argv = sys.argv[4:]
+    if "--accept-terms" in argv:
+        print("  --accept-terms: the owner confirms it: run it as a plain command (the settings ask the owner)")
     for arg in argv[1:]:
         for value in candidates(arg):
             why = path_reason(clone, gitdirs, value)
@@ -612,7 +725,7 @@ cmd_status() {
 # close: deletes a work folder when nothing in it would be lost, and the remote branch of each clone once it is in
 # developer; --discard deletes the folder anyway and leaves the remote branches.
 cmd_close() {
-  local work="${1:-}" discard=0 entry name branch problems="" gone=()
+  local work="${1:-}" discard=0 entry name branch url i problems="" gone=() branches=() urls=()
   case "$work" in --help | -h) usage; return 0 ;; esac
   case "${2:-}" in "") ;; --discard) discard=1 ;; *) die 2 "usage: close <work> [--discard]" ;; esac
   [ $# -le 2 ] || die 2 "usage: close <work> [--discard]"
@@ -642,18 +755,53 @@ cmd_close() {
       echo "commit, push or merge it first, or close with --discard to delete it anyway (the remote branch stays)" >&2
       exit 1
     fi
+    # What the remote deletes need, read before the clones go: the branch and the clone's origin URL.
     for entry in ${gone[@]+"${gone[@]}"}; do
       branch="$(clone_branch "$entry")"
-      if with_timeout 120 git -C "$entry" push -q origin --delete "$branch"; then
-        echo "deleted on origin: $branch (it is in developer)"
-      else
-        echo "attention: could not delete $branch on origin; it is in developer, delete it by hand"
-      fi
+      url="$(git -C "$entry" remote get-url origin 2>/dev/null)" || url=""
+      branches+=("$branch")
+      urls+=("$url")
     done
   fi
   destroy_copies "$work_root/$work" || echo "attention: a Docker copy group of tmp/work/$work was not destroyed (above); the folder goes anyway"
-  rm -rf "${work_root:?}/$work"
+  if ! remove_folder "$work_root/$work"; then
+    echo "error: could not delete tmp/work/$work completely (above)" >&2
+    find "$work_root/$work" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 5 | while IFS= read -r entry; do
+      echo "left: ${entry#"$root"/}" >&2
+    done
+    for branch in ${branches[@]+"${branches[@]}"}; do
+      echo "the remote branch stays: $branch (deleted only once the folder is gone)" >&2
+    done
+    echo "make what is left deletable and close again (--discard once it is no longer a clone)" >&2
+    exit 1
+  fi
   if [ "$discard" -eq 1 ]; then echo "discarded: tmp/work/$work (the remote branch stays)"; else echo "closed: tmp/work/$work"; fi
+  for i in ${branches[@]+"${!branches[@]}"}; do
+    delete_remote_branch "${urls[$i]}" "${branches[$i]}"
+  done
+}
+
+# Deletes a work folder: makes what it holds writable for the owner first (a test installation leaves its core 555 and
+# 444), never following a symlink out of it (chmod -R, -P being the default on Linux and macOS, does not follow the
+# symlinks it meets; a work folder that is itself a symlink is only unlinked). Returns non-zero unless it is all gone.
+remove_folder() {
+  local dir="$1"
+  [ -L "$dir" ] || chmod -R u+rwX "$dir" 2>/dev/null || true
+  rm -rf "${dir:?}" || true
+  [ ! -e "$dir" ] && [ ! -L "$dir" ]
+}
+
+# Deletes a work branch on the remote <url> of its clone, once the clone is gone, from this repository (a plain push
+# --delete, never forced; only a name of a work branch, never developer, main or a tag).
+delete_remote_branch() {
+  local url="$1" branch="$2"
+  if [[ ! "$branch" =~ $branch_re ]] || [ -z "$url" ]; then
+    echo "attention: $branch was not deleted on origin: not a work branch or no origin URL; delete it by hand"
+  elif with_timeout 120 git -C "$root" push -q "$url" --delete "refs/heads/$branch"; then
+    echo "deleted on origin: $branch (it is in developer)"
+  else
+    echo "attention: could not delete $branch on origin; it is in developer, delete it by hand"
+  fi
 }
 
 # Prints why a push that is not a fast-forward of <remote ref> at <remote sha> is refused, and how to keep the change.
@@ -663,9 +811,10 @@ force_refused() {
 }
 
 # Pushes the recorded branch of a clone, never forced, after its own terms scan of what leaves and through the
-# clone's pre-push hook. Returns 0 when it is pushed, 1 when not, with the reason and what to do on stderr.
+# clone's pre-push hook; with <accept> 1 the company terms that match are accepted first (scan_leaving). Returns 0
+# when it is pushed, 1 when not, with the reason or the warning and what to do on stderr.
 push_branch() {
-  local clone="$1" branch current pushed
+  local clone="$1" accept="${2:-0}" branch current pushed rc=0
   branch="$(clone_branch "$clone")" || { echo "caw-work: not a clone made by open: $clone" >&2; return 1; }
   [[ "$branch" =~ $branch_re ]] || { echo "caw-work: refused: the recorded branch $branch is not a work branch" >&2; return 1; }
   current="$(git -C "$clone" symbolic-ref -q --short HEAD)" || current=""
@@ -682,10 +831,18 @@ push_branch() {
   fi
   # The scan runs here, before git push, so a pre-push hook removed or bypassed in the clone never lets a term out;
   # the hook scans again as a second check.
-  if ! scan_leaving "$clone" origin "$(git -C "$clone" rev-parse HEAD)"; then
-    echo "caw-work: NOT pushed: the commit stays only in this clone; fix what the lines above say, then commit again or push: bash tests/caw-work.sh push ${clone#"$work_root"/}" >&2
-    return 1
-  fi
+  scan_leaving "$clone" origin "$(git -C "$clone" rev-parse HEAD)" "$accept" || rc=$?
+  case "$rc" in
+    0) ;;
+    3)
+      echo "caw-work: NOT pushed, waiting for the owner (a warning, not an error): the commit stays only in this clone" >&2
+      return 1
+      ;;
+    *)
+      echo "caw-work: NOT pushed: the commit stays only in this clone; fix what the lines above say, then commit again or push: bash tests/caw-work.sh push ${clone#"$work_root"/}" >&2
+      return 1
+      ;;
+  esac
   if with_timeout 120 git -C "$clone" -c "core.hooksPath=$(git -C "$clone" rev-parse --absolute-git-dir)/hooks" \
     push -q origin "HEAD:refs/heads/$branch"; then
     echo "caw-work: pushed $branch $(git -C "$clone" rev-parse --short HEAD)"
@@ -747,10 +904,56 @@ scan_commits() {
   return "$found"
 }
 
+# Records the patterns <new> (one per line) as accepted for the terms list <list>, in its private file
+# <list>.accepted (terms_accepted_file), created 600: only the ones not there yet, never printed. Refuses a file inside
+# this repository that git does not ignore, and a path that is not a regular file. Returns 1 when it could not record.
+accept_terms() {
+  local list="$1" new="$2" file dir existing p count=0 why=""
+  file="$(terms_accepted_file "$list")"
+  if ! dir="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)"; then
+    echo "caw-work: refused: the folder of the terms list cannot be read" >&2
+    return 1
+  fi
+  file="$dir/$(basename "$file")"
+  case "$file" in
+    "$root"/*)
+      git -C "$root" check-ignore -q -- "$file" 2>/dev/null ||
+        why="the accepted terms would be written inside this repository, in a file git does not ignore (${file#"$root"/}); keep the terms list outside it (AIWP_TERMS_FILE)"
+      ;;
+  esac
+  if [ -z "$why" ] && { [ -L "$file" ] || { [ -e "$file" ] && [ ! -f "$file" ]; }; }; then
+    why="$file is not a regular file"
+  fi
+  if [ -z "$why" ] && [ ! -e "$file" ]; then
+    (umask 077 && printf '# Company terms the owner kept after the warning of tests/caw-work.sh push --accept-terms: lines of\n# the terms list next to this file, skipped by the terms scans. Delete a line to be warned about it again.\n' >"$file") ||
+      why="could not write $file"
+  fi
+  [ -n "$why" ] || chmod 600 "$file" || why="could not make $file private (600)"
+  existing="$(terms_patterns "$file" 2>/dev/null)"
+  while [ -z "$why" ] && IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if [ -n "$existing" ] && printf '%s\n' "$existing" | grep -qxF -e "$p"; then continue; fi
+    printf '%s\n' "$p" >>"$file" || why="could not write $file"
+    existing+=$'\n'"$p"
+    count=$((count + 1))
+  done <<<"$new"
+  if [ -n "$why" ]; then
+    echo "caw-work: refused: $why" >&2
+    return 1
+  fi
+  echo "caw-work: accepted by the owner: $count company term(s) of the lines above, recorded in $file (not printed); no scan reports them again" >&2
+}
+
 # Scans what pushing <sha> to <remote> sends: the commits of <sha> the remote does not have (git ls-remote, never the
-# tracking refs). Returns 0 when it may leave (no match, or no terms list: SKIP), 1 when refused, with the reason.
+# tracking refs), against the terms list less the accepted terms (terms_active). With <also> (a remote name, for a
+# scratch destination: origin), the commits that remote has count as already sent too, read the same way: they were
+# scanned when they left; that remote unreadable only widens the scan. With <accept> 1, the terms that match
+# are recorded as accepted (accept_terms) and it may leave. Returns 0 when it may leave (no match, only accepted terms,
+# no terms list: SKIP), 1 when refused (AIWP_TERMS_FILE naming no file, the remote unreadable, the scan failed, the
+# accepted terms not recorded), 3 when a company term would leave: the WARNING is printed, after the matching lines.
 scan_leaving() {
-  local clone="$1" remote="$2" local_sha="$3" list patterns remote_list known=() sha rc=0
+  local clone="$1" remote="$2" local_sha="$3" accept="${4:-0}" also="${5:-}" list patterns remote_list known=() sha rc=0
+  local p matched=""
   list="$(terms_list "$root")" || {
     echo "caw-work: refused: AIWP_TERMS_FILE names no file: $AIWP_TERMS_FILE" >&2
     return 1
@@ -759,43 +962,84 @@ scan_leaving() {
     echo "SKIP terms scan: no terms list" >&2
     return 0
   fi
-  patterns="$(terms_patterns "$list")"
-  if [ -z "$patterns" ]; then
+  if [ -z "$(terms_patterns "$list")" ]; then
     echo "SKIP terms scan: the terms list holds no term" >&2
     return 0
   fi
+  patterns="$(terms_active "$list")"
+  [ -n "$patterns" ] || return 0
   remote_list="$(with_timeout 60 git -C "$clone" ls-remote "$remote" 'refs/heads/*' 2>/dev/null)" || {
     echo "caw-work: refused: the remote cannot be read to know what is already there" >&2
     return 1
   }
+  if [ -n "$also" ]; then
+    if sha="$(with_timeout 60 git -C "$clone" ls-remote "$also" 'refs/heads/*' 2>/dev/null)"; then
+      remote_list+=$'\n'"$sha"
+    else
+      echo "caw-work: $also cannot be read: the terms scan covers every commit this push sends" >&2
+    fi
+  fi
   while read -r sha _; do
     [ -n "$sha" ] && git -C "$clone" cat-file -e "$sha^{commit}" 2>/dev/null && known+=("$sha")
   done <<<"$remote_list"
   scan_commits "$clone" "$patterns" "$local_sha" --not ${known[@]+"${known[@]}"} >&2 || rc=$?
   case "$rc" in
     0) return 0 ;;
-    1)
-      echo "caw-work: refused: the lines above hold a company term (<commit>:<path>, <commit>:message, path or identity, then :<line>:<text>); never paste them into an issue, a commit or a pull request. Rewrite the commits not on the remote without it (git commit --amend, or git reset --soft to the pushed commit and commit again), then push." >&2
-      return 1
-      ;;
+    1) ;;
     *)
       echo "caw-work: refused: the terms scan failed" >&2
       return 1
       ;;
   esac
+  if [ "$accept" -ne 1 ]; then
+    echo "WARNING: a company term in what this push would send (the lines above: <commit>:<path>, <commit>:message, path or identity, then :<line>:<text>; never paste them into an issue, a commit or a pull request) — this repository is public: once pushed, anyone can read it — keep it: bash tests/caw-work.sh push ${clone#"$work_root"/} --accept-terms (the owner confirms; that term is not asked again), or rewrite the commits not on the remote without it (git commit --amend, or git reset --soft to the pushed commit and commit again)" >&2
+    return 3
+  fi
+  # The lines of the list that matched: each pattern scanned on its own, so only a term seen above is accepted.
+  while IFS= read -r p; do
+    rc=0
+    scan_commits "$clone" "$p" "$local_sha" --not ${known[@]+"${known[@]}"} >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      0) ;;
+      1) matched+="$p"$'\n' ;;
+      *)
+        echo "caw-work: refused: the terms scan failed" >&2
+        return 1
+        ;;
+    esac
+  done <<<"$patterns"
+  accept_terms "$list" "$matched"
+}
+
+# Returns 0 when <remote>, as git gives it to the pre-push hook, is a scratch destination of <clone>: an absolute path
+# (never a named remote, never a URL) to a folder strictly inside the clone's own tmp/, symbolic links resolved. The
+# throwaway repository of tests/test-install.sh lives there; nothing pushed there leaves the machine.
+scratch_destination() {
+  local clone="$1" remote="$2" top real
+  case "$remote" in /*) ;; *) return 1 ;; esac
+  ! git -C "$clone" remote | grep -qxF -e "$remote" || return 1
+  top="$(cd -P -- "$clone" 2>/dev/null && pwd -P)" || return 1
+  real="$(cd -P -- "$remote" 2>/dev/null && pwd -P)" || return 1
+  case "$real" in "$top"/tmp/?*) return 0 ;; esac
+  return 1
 }
 
 # _prepush: the pre-push hook. Reads every "<local ref> <local sha> <remote ref> <remote sha>" line first, then refuses
-# the whole push for a protected or non-branch target or a force push, and scans what leaves for company terms.
+# the whole push for a protected or non-branch target or a force push, and scans what leaves for company terms. To a
+# scratch destination (scratch_destination: the throwaway repository of tests/test-install.sh) any branch passes,
+# developer and main included; a tag, a ref outside refs/heads/ and a force push stay refused, and the scan still runs.
 cmd_prepush() {
-  local clone="$1" remote="${2:-origin}" line lines=() i local_sha remote_ref remote_sha sends=0
+  local clone="$1" remote="${2:-origin}" line lines=() i local_sha remote_ref remote_sha sends=0 scratch=0
   while IFS= read -r line; do [ -z "$line" ] || lines+=("$line"); done
+  ! scratch_destination "$clone" "$remote" || scratch=1
   for i in ${lines[@]+"${!lines[@]}"}; do
     read -r _ local_sha remote_ref remote_sha <<<"${lines[$i]}"
     case "$remote_ref" in
       refs/heads/developer | refs/heads/main)
-        echo "caw-work: refused: a work clone never pushes ${remote_ref#refs/heads/}; /caw-merge moves it" >&2
-        return 1
+        if [ "$scratch" -eq 0 ]; then
+          echo "caw-work: refused: a work clone never pushes ${remote_ref#refs/heads/}; /caw-merge moves it" >&2
+          return 1
+        fi
         ;;
       refs/tags/*)
         echo "caw-work: refused: a work clone never pushes a tag ($remote_ref); tags come only from /caw-merge --main" >&2
@@ -820,7 +1064,11 @@ cmd_prepush() {
   for i in ${lines[@]+"${!lines[@]}"}; do
     read -r _ local_sha _ <<<"${lines[$i]}"
     [[ "$local_sha" =~ $zero_re ]] && continue
-    scan_leaving "$clone" "$remote" "$local_sha" || return 1
+    if [ "$scratch" -eq 1 ]; then
+      scan_leaving "$clone" "$remote" "$local_sha" 0 origin || return 1
+    else
+      scan_leaving "$clone" "$remote" "$local_sha" || return 1
+    fi
   done
   return 0
 }
@@ -836,9 +1084,14 @@ case "$command" in
   publish) cmd_publish "$@" ;;
   close) cmd_close "$@" ;;
   push)
-    [ $# -eq 1 ] || die 2 "usage: push <work>[/<clone>]"
+    accept=0
+    case "$#:${2:-}" in
+      1:) ;;
+      2:--accept-terms) accept=1 ;;
+      *) die 2 "usage: push <work>[/<clone>] [--accept-terms]" ;;
+    esac
     clone="$(clone_path "$1")"
-    push_branch "$clone"
+    push_branch "$clone" "$accept"
     ;;
   _autopush)
     [ $# -ge 1 ] || die 2 "usage: _autopush <clone> [<post-rewrite kind>]"

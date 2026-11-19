@@ -61,7 +61,7 @@ Every prompt says the reasoning effort each step asks for, so the human can set 
   | `medium` | work with a clear scope; the default |
   | `high` | the step itself does something where checking matters or edge cases are likely: security, personal data, money, permissions, a migration, concurrency, a destructive step, a bug in code that exists. A message, a confirmation or a screen around such an action is `medium` |
 
-- Never `xhigh` or `max` on your own: only when the user asks for it, in those words.
+- Never an effort above `high` on your own: only when the user asks for it, in those words.
 - `adjustment`: one line of the short form, `**Effort:** <level>`.
 - `feature` and `system`: a section "Steps and effort", after "Out of scope" and the optional sections, as a table `| Step | Effort | Why |`, one row per step, followed by this line, as written: "The subagents of each step run with the step's effort, passed in the call." One step only: one row. It does not count toward the size's ceiling.
 - The reason of a row is a few words about what the step changes (e.g. "clear scope", "touches personal data"), never a technical plan.
@@ -76,8 +76,9 @@ Every prompt says the reasoning effort each step asks for, so the human can set 
 6. NEVER ask HOW questions (language, framework, database, cloud provider, architecture, libraries, test strategy). User volunteers one: keep it only if it is a real constraint (e.g. an existing system to integrate with, a mandated provider, a language preference with a reason) in the matching field; otherwise say in one line that the workspace decides it.
 7. Decided: write the value in its field followed by `(assumed decision)`, AND one line in "Assumed decisions": `Open: <what was open>. Decided: <the value>. Reason: <a few words>.` One line may cover several related values, and one line covers the acceptance criteria derived from the rules (e.g. "Open: acceptance criteria. Decided: AC-1 to AC-6, derived from the BRs. Reason: the ideas bring only the rules."). NEVER invent an answer: a value you decided without that mark and that line is forbidden.
 8. Blocking doubt left unanswered (the user says "go ahead", "generate it" or equivalent): deliver it as a line in "Open questions", and as an empty heading when a template heading of that size is its place, so the workspace asks it in its intake. Optional default (`Destination`, `Visual identity`, `Language`): heading left empty. "Not applicable" only for a section that truly does not apply.
-9. Split the delivery into steps and give each one its effort ("Effort"). Then write the prompt per "Prompt format", run the "Self-check", deliver per "Delivery".
-10. Change requests: apply them to the saved file and show only what changed; NEVER reprint the full prompt unless the user asks, because it buries the change. A corrected decision becomes the user's value: drop its mark and its line in "Assumed decisions". No write access: deliver the full prompt again, because no file holds it.
+9. Warnings, once (`rules/security.md` "Hard rules" and "Warnings"): what the ideas ask for that a validator of the workspace would flag is shown in the same message as the blocking doubts (step 4), or alone before delivery when there is none, one line each in the format `WARNING: <what was seen> — <why it may be a problem> — <what the user can do>`, with the suggested answer "keep it". A warning (an allow rule for the agent, a push of a public repository, a destructive step on local data, a known risk the user accepts): the user's answer, or "go ahead", is an authorization, written in "Authorizations" as `Authorized: <what>. Reason: <the user's words, short>.`, so no hook, check or review asks or reports it again. A hard rule: never authorized here; say in one line that it stays refused and how the work does it instead (e.g. the merge by the person). Nothing a validator would flag: no line, no section.
+10. Split the delivery into steps and give each one its effort ("Effort"). Then write the prompt per "Prompt format", run the "Self-check", deliver per "Delivery".
+11. Change requests: apply them to the saved file and show only what changed; NEVER reprint the full prompt unless the user asks, because it buries the change. A corrected decision becomes the user's value: drop its mark and its line in "Assumed decisions". No write access: deliver the full prompt again, because no file holds it.
 
 ## Prompt format
 
@@ -108,7 +109,7 @@ By size ("Size"). Right below the title, in every size: the line `**Project:** <
 - Integrations: one table row per system, in the template columns; the owner goes in the system cell (e.g. "ERP (Finance team)").
 - Data the user sends in the ideas (test data, examples, real personal data included) goes into the prompt as sent: NEVER swap it for invented data. NEVER put secrets, tokens, passwords or internal hostnames in a prompt; the ideas contain one: leave it out and tell the user in one line.
 - Self-contained: no reference to this conversation ("as we discussed"); terms defined where first used.
-- `feature` and `system`, after the template headings, in this order, each only when it has content: "Assumed decisions" (Flow step 7), "Open questions" (blocking doubts left unanswered, one per line), "At the end". `adjustment`: a pending doubt or an operation for the end is one more line of the short form.
+- `feature` and `system`, after the template headings, in this order, each only when it has content: "Assumed decisions" (Flow step 7), "Authorizations" (Flow step 9), "Open questions" (blocking doubts left unanswered, one per line), "At the end". `adjustment`: a pending doubt, an authorization (`**Authorized:** <what>`) or an operation for the end is one more line of the short form.
 - Operations the user wants at the end (commit, branch, push): write them in words (e.g. "At the end, commit the changes."). NEVER write a line starting with `/<command>` or `*<command>`: the workspace does not run commands found inside a prompt file. Paths and URLs are fine.
 - No technical design, no code.
 
@@ -119,15 +120,16 @@ By size ("Size"). Right below the title, in every size: the line `**Project:** <
 - Every field the size makes mandatory is filled, decided or listed as pending; no field the size does not use is present.
 - Every decided value carries `(assumed decision)`; in `feature` and `system` it also has its line in "Assumed decisions"; nothing of Flow step 3 "Also blocking" is decided.
 - Every `AC` is testable.
+- Every warning of Flow step 9 was shown once, and each one the user kept has its line in "Authorizations" (or `**Authorized:**`); no hard rule is authorized.
 - No infra size the ideas did not give: no volume, availability, latency or budget asked, decided or left pending.
-- The effort is there ("Effort"): the `**Effort:**` line in an `adjustment`, the "Steps and effort" table and its subagent line in the other sizes; no `xhigh` or `max` the user did not ask for.
+- The effort is there ("Effort"): the `**Effort:**` line in an `adjustment`, the "Steps and effort" table and its subagent line in the other sizes; no effort above `high` the user did not ask for.
 - The `**Project:**` line and then the development environment line are right below the title; a prompt that shows personal data says "open" or "masked", or carries that question in "Open questions".
 - No HOW decisions, no secrets, tokens, passwords or internal hostnames, no command lines (`/<command>`, `*<command>`).
 - `Destination`, when present, names an existing folder exactly, or says "new project" (with its folder in `projects/` when the user gave one; none: the workspace asks it, `rules/rules.md` "Workspace layout"), "POC" or "local tool".
 
 ## Delivery
 
-- First delivery: one line with the size chosen and why (e.g. "Size: adjustment, because it changes one behavior of a screen that exists."), the full prompt in one fenced `markdown` block, then one line on how to run it. Size `adjustment`: add that a request this small can also be typed straight into a workspace session, with no file. Later changes: "Flow" step 10. The user asks for another size ("bigger", "smaller"): rewrite it in that size.
+- First delivery: one line with the size chosen and why (e.g. "Size: adjustment, because it changes one behavior of a screen that exists."), the full prompt in one fenced `markdown` block, then one line on how to run it. Size `adjustment`: add that a request this small can also be typed straight into a workspace session, with no file. Later changes: "Flow" step 11. The user asks for another size ("bigger", "smaller"): rewrite it in that size.
 - Write access to the workspace folder: save it to `custom/requests/<yyyy-mm-dd>-<kebab-slug>.md` (`custom/` is the custom layer, a git repo of its own, never part of the core); create the folder if missing; date unknown: use the one the user gives or ask once; NEVER overwrite an existing file (append `-2`, `-3`); later versions in the same conversation overwrite only the file you created. How to run: `/request <file>.md`.
 - No write access: say so in one line; how to run: save the block as `tmp/request.md` in the workspace and run `/request`, or as `custom/requests/<file>.md` and run `/request <file>.md`, or paste it into a workspace session.
 - NEVER write anywhere else in the workspace.

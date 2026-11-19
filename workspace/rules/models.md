@@ -5,7 +5,7 @@
 - Allowed: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`. The main session and `CLAUDE_CODE_SUBAGENT_MODEL` follow the `opus` alias. Agent files use the full ids; a call that accepts only aliases uses `opus`, `sonnet`, `haiku`.
 - Fable: only the human activates it, in the main session, through `/model`. Never select or start it on your own, never as a fallback, never in a skill or agent file. A subagent runs on it only when the human expressly asks for one with Fable and an effort; the hook then asks the human to confirm.
 - `rules/agents/settings.json` starts every session on `opus` with effort `medium`. The `PreToolUse` hook `scripts/guard-subagent-model.sh` denies a fork and a model outside the list, asks on Fable, and sets `opus` on a call that would inherit.
-- The goal is the correct result at the lowest cost that keeps it. A model or an effort above the default of the table needs the human's approval; `xhigh` exists only for the merge review.
+- The goal is the correct result at the lowest cost that keeps it. A model or an effort above the default of the table needs the human's approval; no rule or skill uses an effort above `high`.
 - Model unavailable: fall back only inside the allowed list, and say so in the delivery summary.
 
 ## Skills
@@ -20,7 +20,7 @@
 | A hard-to-reverse architecture decision | `architect` | claude-opus-5-5 | high |
 | Implementation and refactoring | `implementer` | claude-opus-5-5 | high |
 | Tests for acceptance criteria with none | `test-engineer` | claude-opus-5-5 | medium |
-| Merge review (`rules/review.md`) | `reviewer` | claude-opus-5-5 | `xhigh` for code and configuration, `high` for documents |
+| Merge review (`rules/review.md`) | `reviewer` | claude-opus-5-5 | by the base: `medium` into `developer`, `high` into `main` (release, hotfix) |
 | Return review after fixes (`rules/review.md`) | `reviewer`, two in parallel | claude-opus-5-5 | `high` focused on the findings, `medium` light on the whole range |
 | Code search, locating reuse | `code-explorer` | claude-sonnet-5-5 | medium |
 | Web research: docs, versions, prices | `web-researcher` | claude-sonnet-5-5 | high |
@@ -34,7 +34,7 @@
 ## Effort of a step
 
 - A request that gives an effort per step ("Steps and effort", or an `**Effort:**` line): at the start of each step, say in one line the effort it asks for. The human sets the session's level with `/effort`; do not wait for it.
-- Pass the effort of the step in every subagent call of that step. It replaces the default of the table above for that call. Two roles keep their own: `verifier` at `low`, with the exact command in its brief, and `reviewer` by `rules/review.md` ("Effort, by content" and "The return review"). `xhigh` is allowed only for that review.
+- Pass the effort of the step in every subagent call of that step. It replaces the default of the table above for that call. Two roles keep their own: `verifier` at `low`, with the exact command in its brief, and `reviewer` by `rules/review.md` ("When" and "The return review").
 - No effort given: the defaults of the table.
 
 ## When to delegate

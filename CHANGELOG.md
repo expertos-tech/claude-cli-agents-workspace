@@ -37,6 +37,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   "Run it alone"), a Docker copy per task in its own `agent_` group on internal networks, `/docker-deploy` for the
   final stack, the merge only on the person's order, and the merge review by three questions with a return review
   after fixes (decision record 0004).
+- Validators refuse only a closed list of hard rules; the rest is a warning shown once (a numbered warnings board
+  with a risk level per warning, before the closing board of a wave and before the merge, waiting for a decision on
+  each; `/draft-request` with "Authorizations"); one review per merge, effort `medium` into `developer` and
+  `high` into `main`; the gate's non-secret checks, four asks of `guard-bash` and the copy's unsafe services become
+  warnings (decision record 0005).
+- `guard-bash`: a line refused with "Run it alone" shows the warnings of its other commands, as a question does.
+- The preferred language of communication: asked by `aiwp new` and kept as the Claude Code setting `language`, which
+  wins over the language of a request file; the single-agent mode is removed.
 
 ### Added
 
@@ -62,24 +70,62 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `pt-BR` and `es` translations of `docs/` and of every README outside the product, each with a language links line.
 - `tests/caw-work.sh`: opens a work clone (`open <type>/<slug>`), runs a closed list of commands in it (`run`),
   publishes what changed (`publish`: a tool as a Docker copy, the installer, a hook, a script or a rule as a test
-  installation), pushes and closes it; the clone's hooks push its branch after each commit only after the
-  company-terms scan of what leaves, and refuse `developer`, `main`, tags and force. `.claude/settings.json` allows
+  installation), pushes and closes it (the work folder first, a read-only test installation in it included, then
+  the remote branch, so a failed delete never leaves a clone without its branch); the clone's hooks push its branch
+  after each commit only after the company-terms scan of what leaves, and refuse `developer`, `main`, tags and
+  force. `.claude/settings.json` allows
   it and edits of `tmp/work/` with no prompt, so the one prompt of a task is the push of `developer`.
 - `/caw-pilot` and `/caw-docker-deploy`, the layers of `/pilot` and `/docker-deploy`.
 - The request `validators-warn-not-block`: validators block only real errors, the rest is a warning.
+- `.claude/rules/security.md` "Hard rules", the product's closed list with this repository's rows over it, and
+  "Warnings": a company term in what a work clone pushes is a warning, the push waits, and
+  `bash tests/caw-work.sh push <work> --accept-terms` (an ask prompt: the owner's confirmation) records it in a
+  private file next to the terms list and pushes; `check.sh` repo-terms honours it, and a new term warns again.
+- The session index, a hook of the root: at the start of a session and after each compaction,
+  `tests/caw-session-index.py` tells the session which rule to read before which task, built from the product's own
+  index (`workspace/AGENTS.md` "Reference") with `.claude/session-index.md` over it (rules left out, such as
+  `quality.md`; words mapped, such as the gate to `/caw-merge`; rows only this repository has). It also defines the
+  pointer: a line holding only `@<path>` in the root `CLAUDE.md` or a rule or skill of `.claude/` names a file to read
+  in full from the root; any other `@`, in a file of `workspace/` too, is not one.
+- `tests/check.sh` checks the rule layers and the index layer in `caw-layers` (a rule with a product counterpart that
+  is not a layer, a layer whose product rule is gone, a missing section, the hook missing from the settings), with
+  scenario tests (`caw-layers-tests`), and runs the hook's scenario tests (`caw-session-index`).
+- The requests `warnings-board` (the numbered warnings board with risk levels before the closing board),
+  `preferred-language` with its plan (the reply language as Claude Code's `language` setting) and
+  `validators-follow-ups`.
+- Review fixtures (`tests/review-fixtures/`): one made-up change per hard rule, expected BLOCKER, and three expected
+  WARNING only; `/caw-merge --main` reviews each once per release (`reviewer`, effort `medium`) and judges the reports
+  with `tests/review-fixtures.sh`; a failing fixture is a warning of the release, read to tell a fixture's own defect
+  from a review rule that drifted. `tests/check.sh` checks the judge and the set (`review-fixtures`), never the model.
+- `tests/caw-language.py`, a second SessionStart hook at the root (start, resume, clear, compact): with no `language`
+  setting in the root `.claude/settings.local.json` or the user settings, it has the session ask the preferred language
+  of communication first and save it there; with one, it prints nothing; it never fails a session start. Its
+  scenarios run in `tests/check.sh` (`caw-language`). `bash tests/caw-work.sh open` copies that `language` into the
+  clone's own `.claude/settings.local.json`, so a session inside a clone replies in it too.
 
 ### Changed
 
+- `CLAUDE.md` "Language": the session replies in the `language` setting, even when a request file is in English; with
+  none set, in the language the person writes in. `.claude/rules/product.md`: the invariant "no language setting"
+  becomes the preferred language as the `language` setting, asked at install.
+- The `pt-BR` and `es` translations of the product's README, `docs/README.md`, `docs/usage.md` and
+  `scripts/README.md` are up to date with their sources.
 - `developer` is the default branch; `main` moves only by a product release.
+- The maintenance rules with a product counterpart (`security`, `review`, `models`, `git`, `docs`, `scripts` of
+  `.claude/rules/`) are layers over the product rule of the same name, which stays the one source: each holds only
+  what differs here ("Ignore from the product rule", "Mapping", "CAW rules"), so the hard rules no longer live in two
+  lists that can drift, and a line the product rule gains reaches the maintenance with no copy to update.
 - `/caw-request` works in a clone on a work branch under `tmp/work/`, and finds a bare file name in
   `maintainers/requests/`, then `tmp/requests/`, then `tmp/`.
 - The maintenance skills carry the prefix `caw-`, apart from the product's; `/caw-merge`, `/caw-request` (was
   `/caw-prompt`), `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same purpose.
 - An approved plan is recorded as a pending request, no longer in `done/`.
 - Plans and requests are shown to the owner in their language and saved in English.
-- A merge into `developer` checks and reviews only the difference that enters, by the three questions, with the
-  effort by content (code and configuration `xhigh`, documents `high`) and a return review after fixes; a
-  RECOMMENDED finding becomes a `ready` request.
+- A merge into `developer` checks and reviews only the difference that enters, by the three questions, with effort
+  `medium` (`high` into `main`), the owner's authorizations in the brief, and a return review after the fixes of its
+  BLOCKERs; a WARNING never blocks and goes to the warnings board, where the owner decides each one before the merge goes on.
+  No independent review runs during the stages of a request, hooks and security included; a stage with warnings ends
+  with the warnings board, and the closing board lists the owner's decisions.
 - Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
 - `/caw-merge --main` ends with the same final review as the product's: since the last tag, by the three questions.
 - `/caw-request` and `/caw-merge` no longer push the work branch by hand: the clone's hooks do; `/caw-commit` stages
@@ -89,6 +135,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The `rules-config` plan records that it is built, with what the build decided beyond it.
 - Maintenance work ends with a closing board (`.claude/rules/process.md` step 6), like the product's: what was done,
   verified, left and pending, the request, and the next command.
+- The test installation runs from a work clone: the clone's pre-push lets its snapshot reach the throwaway repository
+  inside the clone's own `tmp/` (an absolute path, no named remote or URL, links resolved), any branch; a tag, a
+  non-branch ref and a force push stay refused there, `main` and `developer` to `origin` too, and the company-terms
+  scan still runs, counting what `origin` already has as scanned. `/caw-test-install` runs there, never from a copy
+  of the branch without hooks.
 
 ### Removed
 

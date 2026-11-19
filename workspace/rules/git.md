@@ -52,9 +52,29 @@ A wave is one step of a plan in steps ("Steps and effort" of a request); a reque
 Closing a wave, in this order:
 
 1. Checkpoint of the work: commit in each clone what the session changed ("Commits"). The clone pushes it; `bash scripts/aiwp-cmds.sh status` shows `not-pushed=0`. A push that fails goes to the board; never force it.
-2. Resume point. Work left in the plan: append to the request, after a `---`, `## Stopped — <yyyy-mm-dd>`: where the work stopped (the work folder, the clone, its branch and the sha of step 1), the decisions taken, the pending items, and the next steps with their effort ("Steps and effort"). The request stays pending in `custom/requests/`; one typed in the conversation is first written there as `<yyyy-mm-dd>-<kebab-slug>.md` (never overwriting: `-2`, `-3`), with a "Requested" section. Nothing left: nothing appended; `/merge` records the delivery ("Requests").
-3. Checkpoint of `custom/`: commit by path only this session's files there (both paths of a move), then push. Other sessions' files stay out.
-4. Closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the values are in the language of the conversation. Then stop: the next wave starts in a new session, from the request.
+2. Warnings board, only when the wave gathered warnings (`rules/security.md` "Warnings"): the board below, numbered, the last thing of the reply. Then stop, with no closing board, until the human has decided every warning; the board stays until then, with or without a person watching (the human runs `/merge` afterwards in any case). An answer that misses a warning or is unclear: the board again with only those. The answers:
+   - `fix`: done now, in the clone; the tests of what changed run again; committed and pushed as in step 1.
+   - `request`: a `ready` request in `custom/requests/`, adjustment size of `templates/request.md`, with the warning as its source; committed in step 4.
+   - `accept`: the risk is kept. It is an authorization: `/merge` gives it to the review and never reports it again.
+3. Resume point. Work left in the plan: append to the request, after a `---`, `## Stopped — <yyyy-mm-dd>`: where the work stopped (the work folder, the clone, its branch and the sha of step 1), the decisions taken (those of the warnings board included), the pending items, and the next steps with their effort ("Steps and effort"). The request stays pending in `custom/requests/`; one typed in the conversation is first written there as `<yyyy-mm-dd>-<kebab-slug>.md` (never overwriting: `-2`, `-3`), with a "Requested" section. Nothing left: nothing appended; `/merge` records the delivery ("Requests").
+4. Checkpoint of `custom/`: commit by path only this session's files there (both paths of a move), then push. Other sessions' files stay out.
+5. Closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the values are in the language of the conversation. Its `Warnings:` line lists the decision of each warning of step 2. Then stop: the next wave starts in a new session, from the request.
+
+The warnings board looks like the closing board, so it stands out. Its labels stay as below; the values are in the language of the conversation, each warning in the format of `rules/security.md` "Warnings":
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠ WARNINGS: <n> — decide each one before the closing
+W-1  <what was seen>
+     Why:      <why it may be a problem>
+     Risk:     <HIGH | MEDIUM | LOW> — <impact>
+     Suggest:  <what the human can do> (recommended: fix | request | accept)
+W-2  ...
+➜ Answer: W-1 fix|request|accept, W-2 fix|request|accept
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+The closing board:
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -65,6 +85,7 @@ Copy:       <group agent_<MMDD>-<slug>: each address with its port | none: no co
 Test:       <one item per acceptance criterion: what to do on the copy and what to see>
 Left:       <next steps, with effort | nothing: the plan is over>
 Pending:    <refused push | none>
+Warnings:   <the decision of each warning of the board: W-1 accept, W-2 fix in <sha>, W-3 request <file> | none>
 Request:    custom/requests/<file>.md | none
 ➜ Approved: /merge <work>/<clone>   Not approved: bash scripts/aiwp-cmds.sh close <work> --discard
 ➜ You can clear the context and start a new session[: /request <file>.md]
@@ -82,9 +103,9 @@ A request goes through three folders of `custom/requests/`, one per state of its
 | `custom/requests/done/<project>/` | Released | `/merge --main <project>`; `/merge --hotfix`, once `developer` holds `main` |
 
 - A request never moves while its waves run. `<project>` is the project the release names (`rules/rules.md` "Workspace projects"); a request that touched several projects gets one copy per project.
-- At each merge into `developer`, `/merge` appends to the request, after a `---`, `## Execution — <yyyy-mm-dd>, merged into developer at <sha>`: what was done by step with the commits, the decisions taken while running, the deviations from the request, the status of each acceptance criterion (proven: how; pending: what is missing; failed: why), the checks, and what is left. A request with no file gets one in `qa/<project>/` with a "Requested" section that sums up what the human asked.
+- At each merge into `developer`, `/merge` appends to the request, after a `---`, `## Execution — <yyyy-mm-dd>, merged into developer at <sha>`: what was done by step with the commits, the decisions taken while running, the deviations from the request, the status of each acceptance criterion (proven: how; pending: what is missing; failed: why), the checks, the decision of each warning (of the waves' boards and of the merge's: `W-1 accept`, `W-2 fix in <sha>`, `W-3 request <file>`), and what is left. A request with no file gets one in `qa/<project>/` with a "Requested" section that sums up what the human asked.
 - `/merge --main` validates everything in `qa/<project>/` against what was done, and adds `Released in <project> vX.Y.Z` to each file it moves to `done/<project>/`.
-- There is no backlog: an idea is a pending request in state `idea`, in the adjustment size of `templates/request.md`. A RECOMMENDED finding of a review becomes a `ready` request.
+- There is no backlog: an idea is a pending request in state `idea`, in the adjustment size of `templates/request.md`. A warning becomes a `ready` request when the human answers `request` in a warnings board ("Waves"), of a wave or of `/merge`.
 - Commit and push of `custom/` by path, as in "Authorization".
 
 ## Commits

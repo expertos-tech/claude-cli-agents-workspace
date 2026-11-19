@@ -13,9 +13,11 @@ Runs validation tools in Docker (no host install needed) and reports PASS/FAIL p
 Exit 0 when every executed check passes, 1 otherwise, 2 on usage error.
 
 Checks (default: all except cost):
-  secrets     gitleaks: secrets in files; also fails on a .env or local.settings.json tracked by git (any depth):
-              the scan skips both names (docker/config/gitleaks.toml), so a tracked one would go unseen
-  vuln        trivy: HIGH/CRITICAL dependency vulnerabilities and secrets
+  secrets     gitleaks: secrets in files, then trivy's secret scanner (HIGH/CRITICAL); also fails on a .env or
+              local.settings.json tracked by git (any depth): both scans skip those names
+              (docker/config/gitleaks.toml), so a tracked one would go unseen. Every secret finding is here, so a
+              caller can hold this check alone as a hard rule (aiwp-gate.sh)
+  vuln        trivy: HIGH/CRITICAL dependency vulnerabilities (its secret scanner runs in secrets)
   iac         trivy: HIGH/CRITICAL misconfigurations in Terraform, Dockerfile, Kubernetes
   shell       shellcheck: every *.sh
   dockerfile  hadolint: every Dockerfile*, except *.dockerignore; fails from warning up
@@ -47,8 +49,9 @@ Options:
                   File listing the files to judge, one per line, relative to the workspace root. Every
                   entry must be an existing file. shell, dockerfile, markdown, mermaid, python and
                   typescript then judge only the listed files inside the target, with the same exclusions
-                  as the full scan; secrets scans a copy of the listed files inside the target (a target
-                  "." leaves out the top-level tmp/), made under .history/ and removed after the scan; a path
+                  as the full scan; secrets scans (gitleaks and trivy) a copy of the listed files inside the
+                  target (a target "." leaves out the top-level tmp/), made under .history/ and removed after
+                  the scan; a path
                   in its output names the real file. Nothing to judge prints SKIP. The other checks stay on
                   the whole target. Without this flag every check scans the whole target.
   --no-cache      Run every check even when the check ledger holds a PASS for the same inputs
@@ -366,6 +369,21 @@ tracked_local_files() {
     done
 }
 
+# Sets skip_dirs and skip_files, what the Trivy scans of the whole target leave out (vuln and the secret scanner of
+# secrets): the same folders and the local .env files (custom/env/*.env with --path custom).
+trivy_skips() {
+  skip_dirs="refs,.history,**/.data,**/node_modules,$(generated_skip_dir)"
+  if [ "$root_scan" -eq 1 ]; then skip_dirs="$skip_dirs,tmp,projects,custom,logs"; fi
+  skip_files='**/.env'
+  if [ "$target" = custom ]; then skip_files="$skip_files,env/*.env"; fi
+}
+
+# Runs trivy's secret scanner on container folder $1, failing on a HIGH or CRITICAL finding (what vuln failed on before
+# the scanner moved here). $2 and $3: the folders and files it skips.
+trivy_secrets() {
+  tool trivy fs --quiet --scanners secret --severity HIGH,CRITICAL --exit-code 1 --skip-dirs "$2" --skip-files "$3" "$1"
+}
+
 # Scans for secrets only the --files entries the check judges, with gitleaks config $1: copies them, keeping their
 # workspace-relative paths, into a fresh folder under .history/ (git-ignored, inside the Docker mount, skipped by the
 # other checks), scans that folder and prints the findings with /work/ in place of the copy's prefix.
@@ -388,6 +406,9 @@ secrets_on_listed_files() {
     rel="${stage#"$root"/}"
     tool gitleaks dir "/work/$rel" --no-banner --redact -v --config "/work/docker/config/$cfg" </dev/null 2>&1 |
       sed "s#/work/$rel/#/work/#g" || rc=$?
+    # The copy holds only the listed files: no folder of the whole-target scan to skip but the generated ones.
+    trivy_secrets "/work/$rel" "**/node_modules,**/.data,**/$CONSOLE_DIST" '**/.env' </dev/null 2>&1 |
+      sed "s#/work/$rel/#/work/#g" || rc=1
   fi
   rm -rf "$stage"
   stage=""
@@ -408,6 +429,8 @@ run_check() {
         secrets_on_listed_files "$cfg" || rc=1
       else
         tool gitleaks dir "$work" --no-banner --redact --config "/work/docker/config/$cfg" || rc=1
+        trivy_skips
+        trivy_secrets "$work" "$skip_dirs" "$skip_files" || rc=1
       fi
       if [ -s "$logdir/secrets.tracked" ]; then
         sed 's/^/tracked by git: /' "$logdir/secrets.tracked"
@@ -416,11 +439,8 @@ run_check() {
       fi
       return "$rc" ;;
     vuln)
-      skip_dirs="refs,.history,**/.data,**/node_modules,$(generated_skip_dir)"
-      [ "$root_scan" -eq 1 ] && skip_dirs="$skip_dirs,tmp,projects,custom,logs"
-      skip_files='**/.env'
-      [ "$target" != custom ] || skip_files="$skip_files,env/*.env"
-      tool trivy fs --quiet --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 --skip-dirs "$skip_dirs" --skip-files "$skip_files" "$work" ;;
+      trivy_skips
+      tool trivy fs --quiet --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --skip-dirs "$skip_dirs" --skip-files "$skip_files" "$work" ;;
     iac)
       skip_dirs=".history,**/.data,**/node_modules,$(generated_skip_dir)"
       [ "$root_scan" -eq 1 ] && skip_dirs="$skip_dirs,tmp,projects,custom,logs"

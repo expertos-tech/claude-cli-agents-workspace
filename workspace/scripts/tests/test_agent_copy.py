@@ -609,14 +609,13 @@ class EscapeTests(CopyTestCase):
         inline = self.valid()
         inline['services']['web']['build'] = {'context': self.clone, 'dockerfile_inline': 'FROM scratch'}
         self.assertEqual(ac.isolation_refusals(inline, [self.clone]), [])
+        self.assertEqual(ac.copy_warnings(data), {})
         for key, value in (('ipc', 'host'), ('cgroup', 'host'), ('pid', 'private'), ('uts', 'private')):
             data = self.valid()
             data['services']['db'].pop('ipc')
             data['services']['web'][key] = value
-            self.assertEqual(
-                ac.isolation_refusals(data, [self.clone]),
-                [f'service web sets {key} {value}: only service:<x> of the same files'],
-            )
+            self.assertEqual(ac.isolation_refusals(data, [self.clone]), [])
+            self.assertIn(f'WARNING: service web sets {key} {value}, off the safe list', ac.copy_warnings(data)['web'])
 
     def test_every_other_form_is_refused_and_named(self):
         sock = '/var/run/docker.sock'
@@ -626,12 +625,12 @@ class EscapeTests(CopyTestCase):
             (lambda d: d['secrets'].update(e={'external': True}), 'secret e sets external'),
             (
                 lambda d: d['services']['web'].update(volumes_from=['container:billing-db']),
-                'service web sets volumes_from',
+                'service web takes the volumes of container:billing-db, outside the compose files',
             ),
-            (lambda d: d['services']['web'].update(pid='container:x'), 'service web sets pid container:x'),
-            (lambda d: d['services']['web'].update(ipc='host'), 'service web sets ipc host'),
-            (lambda d: d['services']['web'].update(uts='service:nobody'), 'service web sets uts service:nobody'),
-            (lambda d: d['services']['web'].update(cgroup='host'), 'service web sets cgroup host'),
+            (
+                lambda d: d['services']['web'].update(volumes_from=['billing-db:ro']),
+                'service web takes the volumes of billing-db:ro, outside the compose files',
+            ),
             (lambda d: d['services']['web']['build'].update(network='host'), 'service web build sets network'),
             (lambda d: d['services']['web']['build'].update(ssh=['default']), 'service web build sets ssh'),
             (lambda d: d['services']['web']['build'].update(secrets=['pw']), 'service web build sets secrets'),
@@ -648,12 +647,6 @@ class EscapeTests(CopyTestCase):
                 'service web reads the env file /etc/environment, outside the clone',
             ),
             (lambda d: d['services']['web'].update(env_file=['/etc/x.env']), 'reads the env file /etc/x.env'),
-            (lambda d: d['services']['web'].update(privileged=True), 'service web sets privileged'),
-            (lambda d: d['services']['web'].update(cap_add=['NET_ADMIN']), 'service web sets cap_add'),
-            (lambda d: d['services']['web'].update(devices=['/dev/kvm']), 'service web sets devices'),
-            (lambda d: d['services']['web'].update(userns_mode='host'), 'service web sets userns_mode'),
-            (lambda d: d['services']['web'].update(sysctls={'a': 1}), 'service web sets sysctls'),
-            (lambda d: d['services']['web'].update(security_opt=['seccomp:unconfined']), 'security_opt seccomp'),
             (lambda d: d['services']['web'].update(network_mode='host'), 'network_mode host'),
             (lambda d: d['services']['web'].update(network_mode='bridge'), 'network_mode bridge'),
             (lambda d: d['services']['web'].update(network_mode='none'), 'network_mode none'),
@@ -665,13 +658,6 @@ class EscapeTests(CopyTestCase):
             (lambda d: d['volumes'].update(n={'driver': 'nfs'}), 'volume n uses the driver nfs'),
             (lambda d: d['networks'].update(o={'driver': 'overlay'}), 'network o uses the driver overlay'),
             (lambda d: d['networks'].update(p={'driver_opts': {'a': 'b'}}), 'network p sets driver_opts'),
-            (lambda d: d['services']['web'].update(extra_hosts=['h:host-gateway']), 'maps a name to host-gateway'),
-            (lambda d: d['services']['web'].update(extra_hosts={'h': 'host-gateway'}), 'maps a name to host-gateway'),
-            (lambda d: d['services']['web'].update(deploy={'placement': {}}), 'service web deploy sets placement'),
-            (
-                lambda d: d['services']['web'].update(deploy={'resources': {'reservations': {'devices': [{}]}}}),
-                'service web reserves devices',
-            ),
             (lambda d: d['services']['web'].update(logging={'driver': 'syslog'}), 'service web logs through syslog'),
             (
                 lambda d: d['services']['web']['volumes'].append({'type': 'bind', 'source': '/etc', 'target': '/e'}),
@@ -704,6 +690,78 @@ class EscapeTests(CopyTestCase):
         data = self.valid()
         data['services']['web']['volumes'] = [{'type': 'bind', 'source': f'{self.clone}/escape', 'target': '/e'}]
         self.assertIn('outside the clone', ac.isolation_refusals(data, [self.clone])[0])
+
+    def test_settings_that_only_police_the_compose_are_warnings(self):
+        cases = [
+            (lambda d: d['services']['web'].update(privileged=True), 'privileged', True),
+            (lambda d: d['services']['web'].update(cap_add=['NET_ADMIN']), 'cap_add', True),
+            (lambda d: d['services']['web'].update(devices=['/dev/kvm']), 'devices', True),
+            (lambda d: d['services']['web'].update(userns_mode='host'), 'userns_mode', True),
+            (lambda d: d['services']['web'].update(sysctls={'a': 1}), 'sysctls', True),
+            (lambda d: d['services']['web'].update(volumes_from=['db:ro']), 'volumes_from', True),
+            (lambda d: d['services']['web'].update(security_opt=['seccomp:unconfined']), 'security_opt seccomp', True),
+            (lambda d: d['services']['web'].update(pid='container:x'), 'pid container:x', True),
+            (lambda d: d['services']['web'].update(ipc='host'), 'ipc host', True),
+            (lambda d: d['services']['web'].update(uts='service:nobody'), 'uts service:nobody', True),
+            (lambda d: d['services']['web'].update(cgroup='host'), 'cgroup host', True),
+            (
+                lambda d: d['services']['web'].update(deploy={'resources': {'reservations': {'devices': [{}]}}}),
+                'deploy reserved devices',
+                True,
+            ),
+            (lambda d: d['services']['web'].update(extra_hosts=['h:host-gateway']), 'host-gateway', False),
+            (lambda d: d['services']['web'].update(extra_hosts={'h': 'host-gateway'}), 'host-gateway', False),
+            (lambda d: d['services']['web'].update(deploy={'placement': {}}), 'deploy placement', False),
+        ]
+        for mutate, expected, reaches in cases:
+            data = self.valid()
+            mutate(data)
+            self.assertEqual(ac.isolation_refusals(data, [self.clone]), [], expected)
+            warnings = list(ac.copy_warnings(data).values())
+            self.assertEqual(len(warnings), 1, (expected, warnings))
+            self.assertTrue(warnings[0].startswith('WARNING: service web sets '), warnings)
+            self.assertIn(expected, warnings[0])
+            self.assertEqual(warnings[0].count(' — '), 2, warnings[0])
+            self.assertEqual('may reach the host' in warnings[0], reaches, warnings[0])
+            self.assertIn('so exec in web falls back to the permission mode', warnings[0])
+        # One line per service, every setting of it named; a service with none has no line.
+        data = self.valid()
+        data['services']['web'].update(privileged=True, cap_add=['SYS_ADMIN'], extra_hosts=['h:host-gateway'])
+        data['services']['db']['sysctls'] = {'net.core.somaxconn': 1024}
+        self.assertEqual(
+            [line.split(', off the safe list')[0] for line in ac.copy_warnings(data).values()],
+            [
+                'WARNING: service db sets sysctls',
+                'WARNING: service web sets cap_add, privileged, an extra host on host-gateway',
+            ],
+        )
+
+    def test_up_starts_a_service_off_the_safe_list_and_prints_its_warning(self):
+        self.fake.config['services']['web'].update(privileged=True, cap_add=['NET_ADMIN'])
+        code, out, err = self.up()
+        self.assertEqual((code, err), (0, ''))
+        self.assertIn('WARNING: service web sets cap_add, privileged, off the safe list of a copy', out)
+        self.assertIn('so exec in web falls back to the permission mode', out)
+        self.assertEqual(out.count('WARNING:'), 1)
+        self.assertTrue(self.fake.called('up -d --build'))
+        self.assertLess(out.index('WARNING:'), out.index('published:'))
+        # The isolation of the override stays: every network internal, with no gateway to the host.
+        text = Path(self.override).read_text(encoding='utf-8')
+        self.assertIn('internal: true', text)
+        self.assertIn(ISOLATED, text)
+        # guard-bash auto-allows exec only where up wrote safe=true: web, which it warned about, gets false.
+        labels = re.findall(
+            r'\n  "([a-z]+)":\n(?:    .*\n|      .*\n)*?    labels:\n      "com.aiwp.copy.safe": "(\w+)"', text
+        )
+        self.assertEqual(sorted(labels), [('db', 'true'), ('web', 'false'), ('worker', 'true')])
+        # A refusal still wins: nothing starts.
+        self.fake.calls.clear()
+        self.fake.config['services']['web']['network_mode'] = 'host'
+        code, out, err = self.up()
+        self.assertEqual(code, 1)
+        self.assertIn('service web sets network_mode host', err)
+        self.assertNotIn('WARNING:', out)
+        self.assertFalse(self.fake.called('up -d'))
 
     def test_allowed_roots_and_the_configuration_folder(self):
         installed = os.path.join(self.root, 'installed')

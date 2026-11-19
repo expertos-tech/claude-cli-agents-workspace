@@ -28,8 +28,8 @@ flowchart TD
 
 | Principle | How it shows |
 | --- | --- |
-| Freedom in the work, rigor at the merge | Work happens in a clone under `tmp/work/`, with no questions, and ends with a Docker copy and a closing board; the gate (`/merge`, typed only by you) is the only way into `projects/`, with the heavy checks and the questions to the human |
-| One session per request | The review is a clean-context subagent inside the gate (effort `xhigh` for code, `high` for documents); no session waits for another |
+| Freedom in the work, rigor at the merge | Work happens in a clone under `tmp/work/`, with no questions, and ends with a Docker copy and a closing board; the gate (`/merge`, typed only by you) is the only way into `projects/`, with the heavy checks; only a hard rule refuses, the rest is a warning for you to decide |
+| One session per request | The review is a clean-context subagent inside the gate (effort `medium` into `developer`, `high` into `main`); no session waits for another |
 | Guarantees in mechanisms | What must not happen lives in a hook, a permission or `aiwp-cmds.sh`, not in text; the rest follows Claude Code's permission mode |
 | One record per fact | The commit records the request; a decision record only for what is hard to reverse |
 | Short rules | `AGENTS.md` fits one page; a topic rule loads only when a file of its kind is touched |

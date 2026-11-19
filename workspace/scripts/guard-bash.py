@@ -8,17 +8,18 @@ In an installed workspace it refuses chmod, chown, chgrp, git init and git clone
 denies aiwp update, rollback, repair, forget and the opening (aiwp, aiwp -- ...) inside a session. It denies a way
 around the person's merge order: changing CLAUDECODE or CLAUDE_CODE_SESSION_ID, writing .history/merge-orders/,
 running scripts/session-title.py. It asks before deleting, moving or emptying Grafana's data (tools/observability/
-.data) and before aiwp-cmds.sh deploy. What it cannot read, it asks about. A line it would ask about that holds other
+.data). Before aiwp-cmds.sh deploy, checkpoint, developer --create and gate --untested it prints a WARNING and makes no
+permission decision. What it cannot read, it asks about. A line it would ask about that holds other
 top-level commands too is denied instead ("Run it alone:"), so the question shows only the command it asks about; a
 leading cd or assignment travels with it.
 It allows, with no question, a line it can tell stays in one clone of tmp/work/<yyyy-mm-dd>-<slug>/<clone>/: every
 command runs there, every path it names (arguments and redirections, links resolved) stays there out of its .git and
 is no local secret file, nothing deletes that .git, and none reaches a remote system (a push, a publish, a deploy, ssh,
 curl, a cloud or cluster CLI, a global install). Docker only in the task's own group (agent_<MMDD>-<slug>[--<clone>]:
-an allowlist of docker compose subcommands, no up or build, exec only into a container on isolated networks, resources
-told by their compose label), where deleting a volume or a database asks nothing. SQL clients on the
-host and the workspace scripts are never allowed by it. Every deny and ask comes first; what it cannot tell stays
-silent.
+an allowlist of docker compose subcommands, no up or build, exec only into a container on isolated networks that up
+marked safe (label com.aiwp.copy.safe=true), resources told by their compose label), where deleting a volume or a
+database asks nothing. SQL clients on the host and the workspace scripts are never allowed by it. Every deny and ask
+comes first; what it cannot tell stays silent.
 A speed bump with the human's confirmation behind it, not a sandbox: text a shell builds at run time is not seen.
 Usage: python3 -I -B guard-bash.py <workspace-root>
 """
@@ -957,9 +958,16 @@ def docker_db_reason(args):
     return None
 
 
+def warning(seen, why, action):
+    """Returns a warning in the one format of rules/security.md "Warnings": WARNING: <what was seen> — <why it may be a
+    problem> — <what the human can do>."""
+    return 'WARNING: ' + ' — '.join((seen, why, action))
+
+
 def aiwp_verdict(argv):
-    """Returns ('ask', reason) for the commands of scripts/aiwp-cmds.sh that the human confirms (release, deploy, the
-    hotfix commands, checkpoint, developer --create, gate --untested, apply --apply, close --discard), or None."""
+    """Returns ('ask', reason) for the commands of scripts/aiwp-cmds.sh that the human confirms (release, the hotfix
+    commands, apply --apply, close --discard), ('warn', warning) for the ones that are no hard rule and run with no
+    question from this hook (deploy, checkpoint, developer --create, gate --untested), or None."""
     words = argv[1:]
     sub = words[0] if words else ''
     if sub == 'release':
@@ -968,9 +976,11 @@ def aiwp_verdict(argv):
             'and pushes a release tag'
         )
     if sub == 'deploy':
-        return 'ask', (
-            'aiwp-cmds.sh deploy updates the final stack of a project, the one the person uses, from a branch; confirm '
-            'only when the person ran /docker-deploy'
+        return 'warn', warning(
+            'aiwp-cmds.sh deploy',
+            'it updates the final stack of a project, the one the person uses, from a branch',
+            'expected only after /docker-deploy; not asked: bash scripts/aiwp-cmds.sh rollback <repo> returns to the '
+            'images before it',
         )
     if sub == 'hotfix':
         return 'ask', (
@@ -988,17 +998,24 @@ def aiwp_verdict(argv):
             'aiwp-cmds.sh hotfix-down writes developer of the project: it merges main into developer and pushes it'
         )
     if sub == 'checkpoint':
-        return 'ask', (
-            'aiwp-cmds.sh checkpoint creates the checkpoint tags of /normalize-projects on developer and main and '
-            'pushes them to the remote'
+        return 'warn', warning(
+            'aiwp-cmds.sh checkpoint',
+            'it creates the checkpoint tags of /normalize-projects on developer and main and pushes them to the remote',
+            'expected only during /normalize-projects; the tags mark points of history and change no branch',
         )
     if sub == 'gate' and '--untested' in words:
-        return 'ask', (
-            'aiwp-cmds.sh gate --untested takes a normalization into developer without running its tests; confirm only '
-            'if the person chose to go on untested'
+        return 'warn', warning(
+            'aiwp-cmds.sh gate --untested',
+            'it takes a normalization into developer without running its tests',
+            'expected only when you chose to go on untested; run the tests of developer before the release',
         )
     if sub == 'developer' and '--create' in words:
-        return 'ask', 'aiwp-cmds.sh developer --create creates developer on the remote of the project'
+        return 'warn', warning(
+            'aiwp-cmds.sh developer --create',
+            'it creates the developer branch on the remote of the project',
+            'expected only during /normalize-projects; a project that should not have developer: say so before its '
+            'merge',
+        )
     if sub == 'apply' and '--apply' in words:
         return 'ask', 'aiwp-cmds.sh apply --apply applies the Terraform plan to the cloud; check the plan shown'
     if sub == 'close' and '--discard' in words:
@@ -1464,8 +1481,8 @@ class CoreGuard:
 
 
 def command_verdict(argv, wrappers):
-    """Returns ('deny' | 'ask', reason) for one simple command that is not git (wrappers already dropped), or None.
-    Everything else is left to Claude Code's own permission mode."""
+    """Returns ('deny' | 'ask' | 'warn', reason) for one simple command that is not git (wrappers already dropped), or
+    None. Everything else is left to Claude Code's own permission mode."""
     name, args = os.path.basename(argv[0]), argv[1:]
     words = plain_words(args)
     # Before --help: aiwp _sync reads only its first argument, so "aiwp _sync --help" still syncs.
@@ -2656,9 +2673,13 @@ ANONYMOUS_LABEL = 'com.docker.volume.anonymous'
 NETWORK_FORMAT = '{"internal":{{json .Internal}},"labels":{{json .Labels}},"options":{{json .Options}}}'
 # The bridge options that keep the host's gateway out of an internal network (Docker 28 and later).
 ISOLATED_GATEWAY = ('com.docker.network.bridge.gateway_mode_ipv4', 'com.docker.network.bridge.gateway_mode_ipv6')
-# What docker container inspect prints of a container: its networks and what may reach the host past them.
+# The label agent-copy.py writes on every service of a copy's override: "true" only for a service it judged safe
+# (no WARNING), "false" for the others. Only a container with "true" may get exec with no question.
+SAFE_LABEL = 'com.aiwp.copy.safe'
+# What docker container inspect prints of a container: its labels, its networks and what may reach the host past them.
 CONTAINER_FORMAT = (
-    '{"networks":{{json .NetworkSettings.Networks}},"privileged":{{json .HostConfig.Privileged}},'
+    '{"labels":{{json .Config.Labels}},'
+    '"networks":{{json .NetworkSettings.Networks}},"privileged":{{json .HostConfig.Privileged}},'
     '"capadd":{{json .HostConfig.CapAdd}},"pid":{{json .HostConfig.PidMode}},"ipc":{{json .HostConfig.IpcMode}},'
     '"uts":{{json .HostConfig.UTSMode}},"cgroupns":{{json .HostConfig.CgroupnsMode}},'
     '"devices":{{json .HostConfig.Devices}},"securityopt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}}}'
@@ -2674,10 +2695,15 @@ SAFE_SECURITY_OPTIONS = {'no-new-privileges', 'no-new-privileges:true', 'no-new-
 def reaches_host(container, clone):
     """Returns None when a container (what CONTAINER_FORMAT prints) may reach the host past its networks, read as an
     allowlist; else (the volumes it mounts, the containers whose namespaces it shares), both to be checked against
-    the group. It must not be privileged or add capabilities, its pid, ipc, uts and cgroup namespaces must be its
-    own (PRIVATE_MODES) or container:<x>, it must have no devices and only no-new-privileges as security options, and
-    every mount must be a named volume or a bind of a folder inside the clone, out of its .git (stays_in) and not the
-    clone itself. Anything else, or what cannot be read, may reach the host."""
+    the group. It must carry SAFE_LABEL=true (aiwp-cmds.sh up judged its service safe: a missing label, "false" or
+    anything else falls back to the permission mode), must not be privileged or add capabilities, its pid, ipc, uts
+    and cgroup namespaces must be its own (PRIVATE_MODES) or container:<x>, it must have no devices and only
+    no-new-privileges as security options, and every mount must be a named volume or a bind of a folder inside the
+    clone, out of its .git (stays_in) and not the clone itself. Anything else, or what cannot be read, may reach the
+    host."""
+    labels = container.get('labels')
+    if not isinstance(labels, dict) or labels.get(SAFE_LABEL) != 'true':
+        return None
     if container.get('privileged') is not False or container.get('capadd') or container.get('devices'):
         return None
     if not set(container.get('securityopt') or []) <= SAFE_SECURITY_OPTIONS:
@@ -2930,10 +2956,19 @@ def alone_reason(asks):
     )
 
 
-def emit(decision, reason):
-    """Prints the hook decision."""
+def emit(decision, reason, warnings=()):
+    """Prints the hook decision, with the warnings of the line as the message shown to the human."""
     output = {'hookEventName': 'PreToolUse', 'permissionDecision': decision, 'permissionDecisionReason': reason}
-    print(json.dumps({'hookSpecificOutput': output}))
+    printed = {'hookSpecificOutput': output}
+    if warnings:
+        printed['systemMessage'] = '\n'.join(warnings)
+    print(json.dumps(printed))
+
+
+def emit_warnings(warnings):
+    """Prints only the warnings, as the message shown to the human, with no permission decision: Claude Code's own
+    permission mode decides, as for any command the hook is silent about."""
+    print(json.dumps({'systemMessage': '\n'.join(warnings)}))
 
 
 def decide(data, root, run=subprocess.run):
@@ -2942,12 +2977,15 @@ def decide(data, root, run=subprocess.run):
     secret, chmod, chown, chgrp, git init or git clone in the read-only core of an installed workspace, aiwp update,
     rollback and repair; a line that gets around the person's merge order (CLAUDECODE or CLAUDE_CODE_SESSION_ID
     changed, .history/merge-orders/ written, scripts/session-title.py run). Asks: deleting a database (but in the
-    task's own Docker group), deleting, moving or emptying Grafana's data, aiwp-cmds.sh release, deploy, hotfix,
-    hotfix-tag, hotfix-down, checkpoint, developer --create, gate --untested, apply --apply and close --discard; a line
-    that would ask and holds other top-level commands too is denied instead, with "Run it alone:", so the question
-    shows only what it asks about (a cd, pushd, popd or an assignment travels with the asked command). Allows, with no
-    question, a line it can tell stays in one clone of tmp/work/ and reaches no remote system, Docker only in the
-    task's own group (approval); never over a deny or an ask. The rest is left to Claude Code's own permission mode."""
+    task's own Docker group), deleting, moving or emptying Grafana's data, aiwp-cmds.sh release, hotfix, hotfix-tag,
+    hotfix-down, apply --apply and close --discard; a line that would ask and holds other top-level commands too is
+    denied instead, with "Run it alone:", so the question shows only what it asks about (a cd, pushd, popd or an
+    assignment travels with the asked command). Warns, with no permission decision: aiwp-cmds.sh deploy, checkpoint,
+    developer --create and gate --untested (a WARNING shown to the human; Claude Code's permission mode decides, and
+    a deny or an ask of the same line keeps its decision; an ask or a "Run it alone" shows the line's warnings with
+    it). Allows, with no question, a line it can tell stays in one
+    clone of tmp/work/ and reaches no remote system, Docker only in the task's own group (approval); never over a deny,
+    an ask or a warning. The rest is left to Claude Code's own permission mode."""
     command = data['tool_input']['command']
     if not isinstance(command, str):
         raise TypeError('command is not a string')
@@ -2959,7 +2997,7 @@ def decide(data, root, run=subprocess.run):
         if GUARDED_WORD.search(command):
             emit('ask', UNREADABLE + '. Confirm.')
         return
-    asks, asked, staging, created = [], set(), [], []
+    asks, asked, staging, created, warnings = [], set(), [], [], []
     core = CoreGuard(root, cwd, run, entries)
     docker = DockerGroups(root, run)
     for entry in entries:
@@ -3003,7 +3041,12 @@ def decide(data, root, run=subprocess.run):
         if refusal:
             emit(*refusal)
             return
-        for _, reason in found:
+        for kind, reason in found:
+            if kind == 'warn':
+                # A warning asks nothing: it neither counts as a question nor makes the line "Run it alone".
+                if reason not in warnings:
+                    warnings.append(reason)
+                continue
             asked.add(entry['group'])
             if reason not in asks:
                 asks.append(reason)
@@ -3011,9 +3054,13 @@ def decide(data, root, run=subprocess.run):
         groups = {entry['group'] for entry in entries if not travels(entry)}
         # A command that runs a file the line wrote keeps the question: alone, in a later call, the file is not seen.
         if groups - asked and not shared.get('fed'):
-            emit('deny', alone_reason(asks))
+            emit('deny', alone_reason(asks), warnings)  # BR-4: the line's warnings travel with the refusal
         else:
-            emit('ask', 'Confirm before running: ' + '; '.join(reason.rstrip('.') for reason in asks[:3]) + '.')
+            reasons = '; '.join(reason.rstrip('.') for reason in asks[:3])
+            emit('ask', 'Confirm before running: ' + reasons + '.', warnings)
+        return
+    if warnings:
+        emit_warnings(warnings)  # no approval either: a warned line is left to the permission mode
         return
     clone = approval(entries, root, shared, docker)
     if clone:

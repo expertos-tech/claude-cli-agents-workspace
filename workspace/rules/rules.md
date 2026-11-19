@@ -71,7 +71,7 @@
 
 ## Language
 
-- Replies and written requests: in the language the human writes in; technical terms stay as the market uses them (`AGENTS.md` "Role").
+- Replies and written requests: in the human's preferred language, else in the language the human writes in; technical terms stay as the market uses them (`AGENTS.md` "Role").
 - The workspace core, its tools and its records: English only (code, routes, file names, identifiers, messages, docs, commit messages). Translations of documents live in `i18n/<locale>/` of the product repository, never in the core.
 - Projects in `projects/` and POCs in `custom/pocs/`: English code is recommended (file names, identifiers, routes, technical and log messages, commit messages), not required; a project's own rules or `custom/my-rules/` decide. Their docs follow `rules/docs.md`.
 - MUST write a docstring/doc comment for every method and function, public or private, in the language of the code.

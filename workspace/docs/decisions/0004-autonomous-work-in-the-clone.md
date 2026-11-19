@@ -1,6 +1,9 @@
 # 0004 Autonomous work in the clone, a Docker copy per task, the merge only by the person
 
-Status: accepted
+Status: partly superseded by 0005
+
+Note: 0005 supersedes the review effort by content (`xhigh` for code, `high` for documents) and the independent review
+of a stage; the review effort now follows its base, and the other parts of this record stand.
 
 ## Context
 
@@ -69,3 +72,5 @@ and image tags), and the hook asked before deleting any Docker volume, so a test
 - `aiwp-cmds.sh up <repo>` for the final stack gives way to `/docker-deploy`.
 
 ## Change history
+
+2026-11-18 — the review effort by content and the review of a stage superseded by 0005 — validators block only hard rules — the owner

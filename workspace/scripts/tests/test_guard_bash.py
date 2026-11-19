@@ -122,13 +122,24 @@ def workspace():
     return FakeRun({ROOT: {}, PROJECT: {}, CLONE: {}, CUSTOM: {}, ELSEWHERE: {}})
 
 
-def decision(command, root=ROOT, cwd=PROJECT, run=None):
-    """Runs decide() and returns the decision object it printed, or None when it stayed silent."""
+def printed(command, root=ROOT, cwd=PROJECT, run=None):
+    """Runs decide() and returns the whole JSON it printed, or None when it printed nothing."""
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         guard.decide({'tool_input': {'command': command}, 'cwd': cwd}, root, run or workspace())
     text = out.getvalue()
-    return json.loads(text)['hookSpecificOutput'] if text else None
+    return json.loads(text) if text else None
+
+
+def decision(command, root=ROOT, cwd=PROJECT, run=None):
+    """Runs decide() and returns the decision object it printed, or None when it stayed silent or only warned (a
+    WARNING with no permission decision)."""
+    found = printed(command, root, cwd, run)
+    if found is None:
+        return None
+    assert set(found) <= {'hookSpecificOutput', 'systemMessage'}, found
+    assert 'hookSpecificOutput' in found or found['systemMessage'].startswith('WARNING: '), found
+    return found.get('hookSpecificOutput')
 
 
 def verdict(command, cwd=PROJECT):
@@ -383,10 +394,6 @@ class WorkspaceCommandTests(unittest.TestCase):
             ('bash scripts/aiwp-cmds.sh release app --pr-if-refused', 'release'),
             ('bash scripts/aiwp-cmds.sh release app --tag v1.2.0', 'release'),
             ('bash scripts/aiwp-cmds.sh release app --pr-if-refused --tag v1.2.0', 'release'),
-            ('bash scripts/aiwp-cmds.sh checkpoint app', 'checkpoint'),
-            ('bash scripts/aiwp-gate.sh checkpoint app --date 2026-11-16', 'checkpoint'),
-            ('bash scripts/aiwp-cmds.sh developer app --create', 'developer --create'),
-            ('bash scripts/aiwp-cmds.sh gate 2026-11-16-normalize-app/app --untested', 'gate --untested'),
             ('bash scripts/aiwp-cmds.sh hotfix 2026-11-17-hotfix-login/app abc123', 'hotfix'),
             ('bash scripts/aiwp-cmds.sh hotfix w/app abc123 --pr-if-refused', 'hotfix'),
             ('bash scripts/aiwp-gate.sh hotfix w/app abc123', 'hotfix'),
@@ -439,6 +446,109 @@ class WorkspaceCommandTests(unittest.TestCase):
             'bash -n scripts/aiwp-cmds.sh',
         ):  # fmt: skip
             self.assertIsNone(verdict(command), command)
+
+
+def warned(test, message, seen, why):
+    """Asserts a message in the one format of rules/security.md "Warnings": "WARNING: " and three filled parts (what was
+    seen, why it may be a problem, what the human can do) joined by an em dash with a space on each side."""
+    test.assertTrue(message.startswith('WARNING: ' + seen + ' \u2014 '), message)
+    parts = message[len('WARNING: ') :].split(' \u2014 ')
+    test.assertEqual(len(parts), 3, message)
+    test.assertTrue(all(part.strip() for part in parts), message)
+    test.assertIn(why, parts[1], message)
+
+
+# The four commands of scripts/aiwp-cmds.sh that are no hard rule (rules/security.md): a warning, never a question.
+WARNED = (
+    ('bash scripts/aiwp-cmds.sh deploy billing-api developer', 'aiwp-cmds.sh deploy', 'updates the final stack'),
+    ('bash scripts/aiwp-cmds.sh checkpoint app', 'aiwp-cmds.sh checkpoint', 'pushes them to the remote'),
+    ('bash scripts/aiwp-cmds.sh developer app --create', 'aiwp-cmds.sh developer --create', 'creates the developer'),
+    (
+        'bash scripts/aiwp-cmds.sh gate 2026-11-16-normalize-app/app --untested', 'aiwp-cmds.sh gate --untested',
+        'without running its tests',
+    ),
+)  # fmt: skip
+
+
+class WarningTests(unittest.TestCase):
+    """deploy, checkpoint, developer --create and gate --untested print a WARNING and make no permission decision; a
+    deny or an ask of the same line keeps its decision."""
+
+    def test_each_of_the_four_warns_with_no_permission_decision(self):
+        for command, seen, why in WARNED:
+            found = printed(command, cwd=ROOT)
+            self.assertEqual(set(found), {'systemMessage'}, command)
+            warned(self, found['systemMessage'], seen, why)
+
+    def test_other_spellings_warn_too(self):
+        for command, seen in (
+            ('aiwp-cmds.sh deploy app main', 'aiwp-cmds.sh deploy'),
+            ('bash scripts/aiwp-gate.sh checkpoint app --date 2026-11-16', 'aiwp-cmds.sh checkpoint'),
+            ('cd /w && bash scripts/aiwp-cmds.sh developer app --create', 'aiwp-cmds.sh developer --create'),
+            ('bash -c "bash scripts/aiwp-cmds.sh gate w/app --untested"', 'aiwp-cmds.sh gate --untested'),
+            ('source scripts/aiwp-cmds.sh checkpoint app', 'aiwp-cmds.sh checkpoint'),
+        ):
+            found = printed(command, cwd=ROOT)
+            self.assertEqual(set(found), {'systemMessage'}, command)
+            self.assertTrue(found['systemMessage'].startswith('WARNING: ' + seen + ' \u2014 '), command)
+
+    def test_a_warning_with_other_commands_is_no_run_it_alone(self):
+        found = printed('npm test && bash scripts/aiwp-cmds.sh deploy app main; ls', cwd=ROOT)
+        self.assertEqual(set(found), {'systemMessage'})
+        found = printed('bash scripts/aiwp-cmds.sh checkpoint app && bash scripts/aiwp-cmds.sh deploy a b', cwd=ROOT)
+        self.assertEqual(found['systemMessage'].count('WARNING: '), 2)
+
+    def test_a_deny_or_an_ask_of_the_same_line_keeps_its_decision(self):
+        result = decision('bash scripts/aiwp-cmds.sh deploy app main && terraform apply', cwd=ROOT)
+        self.assertEqual(result['permissionDecision'], 'deny')
+        self.assertIn('terraform', result['permissionDecisionReason'])
+        # The warned command counts as another command of the line: the question still runs alone.
+        result = decision('bash scripts/aiwp-cmds.sh checkpoint app && dropdb billing', cwd=ROOT)
+        question(self, result, True)
+        self.assertNotIn('checkpoint', result['permissionDecisionReason'])
+        # In one top-level command the question stays, and the warning is shown with it.
+        found = printed('bash -c "bash scripts/aiwp-cmds.sh gate w/app --untested && dropdb billing"', cwd=ROOT)
+        self.assertEqual(found['hookSpecificOutput']['permissionDecision'], 'ask')
+        warned(self, found['systemMessage'], 'aiwp-cmds.sh gate --untested', 'without running its tests')
+
+    def test_run_it_alone_shows_the_warnings_of_the_line(self):
+        # BR-4, AC-3: the refusal carries the WARNING of the other command, as a question does.
+        line = 'bash scripts/aiwp-cmds.sh release billing-api && bash scripts/aiwp-cmds.sh deploy billing-api'
+        found = printed(line, cwd=ROOT)
+        question(self, found['hookSpecificOutput'], True)
+        self.assertIn('release', found['hookSpecificOutput']['permissionDecisionReason'])
+        warned(self, found['systemMessage'], 'aiwp-cmds.sh deploy', 'updates the final stack')
+        # Every warning of the line, each once, in the order of the line.
+        found = printed(
+            'bash scripts/aiwp-cmds.sh checkpoint app && dropdb billing; bash scripts/aiwp-cmds.sh deploy a b', cwd=ROOT
+        )
+        question(self, found['hookSpecificOutput'], True)
+        lines = found['systemMessage'].split('\n')
+        self.assertEqual(len(lines), 2, lines)
+        warned(self, lines[0], 'aiwp-cmds.sh checkpoint', 'pushes them to the remote')
+        warned(self, lines[1], 'aiwp-cmds.sh deploy', 'updates the final stack')
+        # A "Run it alone" with no warned command prints no message.
+        found = printed('npm test && dropdb billing', cwd=ROOT)
+        question(self, found['hookSpecificOutput'], True)
+        self.assertNotIn('systemMessage', found)
+
+    def test_help_and_the_plain_forms_stay_silent(self):
+        for command in (
+            'bash scripts/aiwp-cmds.sh deploy --help', 'bash scripts/aiwp-cmds.sh checkpoint --help',
+            'bash scripts/aiwp-cmds.sh developer app', 'bash scripts/aiwp-cmds.sh gate w/app',
+            'bash scripts/aiwp-cmds.sh gate --help --untested',
+        ):  # fmt: skip
+            self.assertIsNone(printed(command, cwd=ROOT), command)
+
+    def test_the_kept_questions_of_aiwp_cmds_still_ask(self):
+        for command in (
+            'bash scripts/aiwp-cmds.sh release app', 'bash scripts/aiwp-cmds.sh close w --discard',
+            'bash scripts/aiwp-cmds.sh apply p --apply', 'bash scripts/aiwp-cmds.sh hotfix w/app abc123',
+            'bash scripts/aiwp-cmds.sh hotfix-tag app v1.2.1', 'bash scripts/aiwp-cmds.sh hotfix-down app',
+        ):  # fmt: skip
+            found = printed(command, cwd=ROOT)
+            self.assertEqual(set(found), {'hookSpecificOutput'}, command)
+            question(self, found['hookSpecificOutput'], False, command)
 
 
 class SilentTests(unittest.TestCase):
@@ -1856,16 +1966,24 @@ HOST_REACHING = (
     'dockercfg', 'colima', 'ssh', 'devices', 'seccomp', 'cloneroot', 'clonegit', 'gw', 'pidpeer', 'ipcpeer', 'utsc',
     'cgrouphost', 'cgroupc', 'otherpeer', 'nopeer', 'foreignvol', 'novolname', 'missingvol', 'nomode', 'oddmode',
     'nnpmix', 'sharedanon', 'unusedanon',
+    # Clean by docker inspect, but not marked safe by aiwp-cmds.sh up: a service it warned about (sysctls,
+    # userns_mode, runtime, gpus... that inspect does not show), no label at all, or a value other than "true".
+    'warned', 'unmarked', 'nolabels', 'oddlabel', 'spacelabel',
 )  # fmt: skip
 # Services of the group whose container keeps to the group: a volume and a namespace of the group, no-new-privileges.
 KEEPS_TO_GROUP = ('data', 'grouppeer', 'nnp', 'nnptrue', 'shareable', 'anon')
 HOME = os.path.expanduser('~')
 
 
+SAFE = {guard.SAFE_LABEL: 'true'}
+
+
 def box(*networks, privileged=False, capadd=None, pid='', ipc='private', uts='', cgroupns='private', mounts=(),
-        devices=(), opts=None):  # fmt: skip
-    """Returns what docker container inspect prints of a container (guard.CONTAINER_FORMAT) on those networks."""
+        devices=(), opts=None, labels=None):  # fmt: skip
+    """Returns what docker container inspect prints of a container (guard.CONTAINER_FORMAT) on those networks; its
+    labels mark it safe, as aiwp-cmds.sh up does for a service with no WARNING, unless labels says otherwise."""
     found = {'networks': {name: {} for name in networks}, 'privileged': privileged, 'capadd': capadd, 'pid': pid}
+    found['labels'] = {LABEL: GROUP, **SAFE} if labels is None else labels
     found.update({'ipc': ipc, 'uts': uts, 'cgroupns': cgroupns, 'mounts': list(mounts) if mounts is not None else None})
     found.update({'devices': list(devices), 'securityopt': opts})
     return found
@@ -1936,6 +2054,11 @@ class TrailTestCase(unittest.TestCase):
         'a1b2': {'com.docker.volume.anonymous': ''}, 'c3d4': {'com.docker.volume.anonymous': ''},
         'e5f6': {'com.docker.volume.anonymous': ''}, 'psvol:a1b2': [GROUP, GROUP], 'psvol:c3d4': [GROUP, 'billing'],
         'c-flat': 'null',
+        'c-warned': box(GROUP + '_internal', labels={LABEL: GROUP, guard.SAFE_LABEL: 'false'}),
+        'c-unmarked': box(GROUP + '_internal', labels={LABEL: GROUP}),
+        'c-nolabels': {**box(GROUP + '_internal'), 'labels': None},
+        'c-oddlabel': box(GROUP + '_internal', labels={LABEL: GROUP, guard.SAFE_LABEL: 'True'}),
+        'c-spacelabel': box(GROUP + '_internal', labels={LABEL: GROUP, guard.SAFE_LABEL: ' true'}),
         GROUP + '_internal': {'internal': True, 'labels': {LABEL: GROUP}, 'options': ISOLATED},
         GROUP + '_gw': {'internal': True, 'labels': {LABEL: GROUP}, 'options': {}},
         GROUP + '_edge': {'internal': False, 'labels': {LABEL: GROUP}},
@@ -2121,6 +2244,10 @@ class DockerGroupTests(TrailTestCase):
         self.assertEqual(guard.option_value(['--file'], 0), ('--file', '', 2))
         groups = guard.DockerGroups(self.root, self.run)
         self.assertTrue(groups.isolated(GROUP, 'app', self.clone))
+        # The same clean container, not marked safe by up (a service it warned about), keeps the question.
+        for name in ('warned', 'unmarked', 'nolabels', 'oddlabel', 'spacelabel'):
+            self.assertFalse(groups.isolated(GROUP, name, self.clone), name)
+        self.assertIn('"labels":{{json .Config.Labels}}', guard.CONTAINER_FORMAT)
         self.assertFalse(groups.isolated(GROUP, '-x', self.clone))
         self.run.labels['ps:' + GROUP + '/odd'] = ['-c']
         self.assertFalse(groups.isolated(GROUP, 'odd', self.clone))
@@ -2139,7 +2266,8 @@ class DockerGroupTests(TrailTestCase):
 
 class ProtectedFolderTests(TrailTestCase):
     """Grafana's data asks whatever runs it, even in a clone that is approved otherwise (BR-9, AC-8); the person's
-    merge order cannot be forged or run around (BR-13); aiwp-cmds.sh deploy asks (BR-16)."""
+    merge order cannot be forged or run around (BR-13); aiwp-cmds.sh deploy warns with no question; the hard rules
+    keep their question."""
 
     def test_deleting_moving_or_emptying_grafana_data_asks(self):
         for command, cwd in (
@@ -2272,12 +2400,34 @@ class ProtectedFolderTests(TrailTestCase):
             self.assertNotEqual(self.decided(command, self.root), 'deny', command)
         self.assertEqual(self.decided('git commit -m "fix merge-orders"'), 'allow')
 
-    def test_deploy_asks_and_says_it_updates_the_final_stack(self):
-        for command in ('bash scripts/aiwp-cmds.sh deploy billing-api developer', 'aiwp-cmds.sh deploy app main'):
-            result = self.result(command, self.root)
+    def test_deploy_warns_with_no_question_and_says_it_updates_the_final_stack(self):
+        for command, cwd in (
+            ('bash scripts/aiwp-cmds.sh deploy billing-api developer', self.root),
+            ('aiwp-cmds.sh deploy app main', self.root),
+            ('bash ../../../../scripts/aiwp-cmds.sh deploy billing-api developer', self.clone),
+            ('npm test && bash ../../../../scripts/aiwp-cmds.sh deploy billing-api developer', self.clone),
+        ):
+            found = printed(command, self.root, cwd, self.run)
+            self.assertEqual(set(found), {'systemMessage'}, command)  # no decision, no allow of the clone either
+            warned(self, found['systemMessage'], 'aiwp-cmds.sh deploy', 'updates the final stack')
+        self.assertIsNone(printed('bash scripts/aiwp-cmds.sh deploy --help', self.root, self.root, self.run))
+
+    def test_the_hard_rules_keep_their_question_beside_the_warnings(self):
+        up = '../../../../'
+        for command, cwd, text in (
+            ('bash scripts/aiwp-cmds.sh release app', self.root, 'aiwp-cmds.sh release'),
+            ('bash ' + up + 'scripts/aiwp-cmds.sh release app', self.clone, 'aiwp-cmds.sh release'),
+            ('bash scripts/aiwp-cmds.sh close ' + WORK + ' --discard', self.root, 'aiwp-cmds.sh close --discard'),
+            ('bash ' + up + 'scripts/aiwp-cmds.sh close ' + WORK + ' --discard', self.clone, 'close --discard'),
+            ('docker volume rm other_db', self.root, 'docker volume rm'),
+            ('docker volume rm other_db', self.clone, 'docker volume rm'),
+            ('docker volume rm ' + GROUP + '_db other_db', self.clone, 'docker volume rm'),
+            ('rm -rf tools/observability/.data', self.root, 'the data of Grafana'),
+            ('rm -rf ' + up + 'tools/observability/.data', self.clone, 'the data of Grafana'),
+        ):
+            result = self.result(command, cwd)
             question(self, result, False, command)
-            self.assertIn('updates the final stack', result['permissionDecisionReason'], command)
-        self.assertIsNone(self.decided('bash scripts/aiwp-cmds.sh deploy --help', self.root))
+            self.assertIn(text, result['permissionDecisionReason'], command)
 
     def test_helpers(self):
         self.assertIsNone(guard.word_place('$NOPE_X/a', self.root, self.root))

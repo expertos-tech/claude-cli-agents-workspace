@@ -191,6 +191,34 @@ test_scoped_rule_obsolete() {
   rc_is 0
 }
 
+# The preferred language lives in .claude/settings.local.json, which aiwp new writes: no run of the setup asks it
+# or changes that file, whatever it syncs around it.
+test_settings_local_json_never_touched() {
+  fixture
+  echo '{"permissions": {"allow": []}}' >"$BASE/root/rules/agents/settings.json"
+  rule scoped.md
+  mkdir -p "$BASE/root/custom/my-rules" "$BASE/root/.claude"
+  printf -- '---\npaths:\n  - "**/*.py"\n---\n\n# mine\n' >"$BASE/root/custom/my-rules/mine.md"
+  printf '{\n  "permissions": {"allow": ["Bash(ls)"]},\n  "language": "portuguese"\n}\n' >"$BASE/root/.claude/settings.local.json"
+  cp "$BASE/root/.claude/settings.local.json" "$BASE/local.orig"
+  run
+  rc_is 0
+  has "written: .claude/settings.json"
+  has "written: .claude/rules/scoped.md"
+  hasnt "settings.local.json"
+  hasnt "language"
+  cmp -s "$BASE/local.orig" "$BASE/root/.claude/settings.local.json"; check "sync: byte for byte the same" $?
+  # A source that changes makes the next sync rewrite .claude/; the local settings still stay.
+  echo '{"permissions": {"allow": ["Read"]}}' >"$BASE/root/rules/agents/settings.json"
+  rm "$BASE/root/rules/scoped.md"
+  run --quiet
+  rc_is 0
+  run --check
+  rc_is 0
+  hasnt "settings.local.json"
+  cmp -s "$BASE/local.orig" "$BASE/root/.claude/settings.local.json"; check "quiet and check: byte for byte the same" $?
+}
+
 test_custom_repo_missing_says_how_to_get_it() {
   fixture
   run

@@ -6,7 +6,8 @@
 # Run: bash scripts/tests/check-workspace/test-check-workspace.sh
 # CHECK_WORKSPACE_TEST_TMP fixes the folder of the throwaway tree (kcov needs one stable path to merge hits).
 set -uo pipefail
-# Under kcov only the scripts under test are traced; the harness is not (see scripts/tests/lib/lib.sh).
+# Under kcov only the scripts under test are traced; the harness is not, which keeps its captured output away from
+# kcov's parser (see kcov_resync).
 { set +x; } 2>/dev/null
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +29,7 @@ STUB_LOG="$BASE_DIR/stub.log"
 FAKE_BIN="$BASE_DIR/fakebin"
 export STUB_LOG
 # The suites the gate must run, in order. The tree stubs exactly these.
-EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/single-agent/test-single-agent.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh"
+EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh"
 # How many suites the gate has: a new suite changes one line of this file, not every count below.
 SUITE_COUNT="$(echo "$EXPECTED_SUITES" | wc -w | tr -d ' ')"
 PASS=0
@@ -1189,6 +1190,41 @@ test_AC25_secrets_config_by_target() {
   log_has "--path ./ is the root scan" "gitleaks-root.toml"
 }
 
+# Every secret finding is in the secrets check, so the gate can hold it alone as a hard rule: trivy's secret scanner
+# runs there (whole target and --files copy), and vuln runs only the vulnerability scanner.
+test_trivy_secret_scanner_is_part_of_secrets_not_vuln() {
+  new_validate_tree trivy-secrets
+  mkdir -p "$TREE/a"
+  printf 'x\n' >"$TREE/a/notes.md"
+  vl --only secrets
+  rc_is 0
+  log_has "secrets runs trivy's secret scanner on the whole target" "trivy fs --quiet --scanners secret --severity HIGH,CRITICAL --exit-code 1 --skip-dirs refs,.history,**/.data,**/node_modules,**/tools/container-console-docker-ce/internal/webui/dist,tmp,projects,custom,logs --skip-files **/.env /work"
+  : >"$STUB_LOG"
+  vl --only vuln
+  log_has "vuln runs the vulnerability scanner only" "trivy fs --quiet --scanners vuln --severity"
+  log_lacks "and no secret scanner" "secret"
+  : >"$STUB_LOG"
+  local list="$BASE_DIR/trivy-files.list"
+  printf 'a/notes.md\n' >"$list"
+  vl --only secrets --files "$list"
+  log_has "with --files, trivy scans the copy of the list" "--skip-files **/.env /work/.history/validate-secrets."
+  # A finding of trivy's secret scanner alone fails secrets; vuln does not see it.
+  cat >"$FAKE_BIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >>"$STUB_LOG"
+case "$*" in *"--scanners secret "*) echo "CRITICAL: AWS (aws-access-key-id)"; exit 1 ;; esac
+exit 0
+STUB
+  vl --only secrets,vuln
+  rc_is 1
+  has "secrets fails on a trivy secret finding" "FAIL secrets"
+  has "its finding is shown" "aws-access-key-id"
+  has "vuln passes" "PASS vuln"
+  vl --only secrets --files "$list"
+  rc_is 1
+  has "so does the --files copy" "FAIL secrets"
+}
+
 test_AC25_vuln_and_iac_skip_tmp_only_at_the_root() {
   new_validate_tree skip-dirs
   mkdir -p "$TREE/tmp/worktrees/r/b" "$TREE/projects/x"
@@ -1694,7 +1730,8 @@ test_AC24_poc_paths_are_never_lint_gated() {
   put tools/p/run.sh DEFECT
   cwj
   rc_is 0
-  log_lacks "AC-24 a POC defect reaches no linter" "tools"
+  # tools/p, the POC: the skip list of trivy's secret scanner names the console's tools/ folder, never this one.
+  log_lacks "AC-24 a POC defect reaches no linter" "tools/p"
   log_has "AC-24 secrets run" " gitleaks dir /work/.history/validate-secrets."
   STUB_SECRETS_RC=1 cwj
   rc_is 1
@@ -2091,17 +2128,11 @@ test_gate_runs_only_the_suite_of_what_changed() {
   new_tree selection-lib
   put scripts/lib/projects.sh
   branch_gate
-  eq "a shared library runs the suites of the scripts that source it, or call one that does" "5" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "a shared library runs the suites of the scripts that source it, or call one that does" "4" "$(grep -c '^suite ' "$STUB_LOG")"
   eq "the projects layout suite" "1" "$(grep -c '^suite tests/test-projects-layout.sh' "$STUB_LOG")"
-  eq "and the single-agent suite" "1" "$(grep -c '^suite tests/single-agent/' "$STUB_LOG")"
   eq "and the project state suite" "1" "$(grep -c '^suite tests/aiwp-project-state/' "$STUB_LOG")"
   eq "and the gate suite (its clean checks)" "1" "$(grep -c '^suite tests/aiwp-gate/' "$STUB_LOG")"
   eq "and the work area suite (open)" "1" "$(grep -c '^suite tests/aiwp-cmds/' "$STUB_LOG")"
-  new_tree selection-test-lib
-  put scripts/tests/lib/lib.sh
-  branch_gate
-  eq "the shared test library runs the suite that sources it" "1" "$(grep -c '^suite ' "$STUB_LOG")"
-  eq "the single-agent suite" "1" "$(grep -c '^suite tests/single-agent/' "$STUB_LOG")"
   new_tree selection-guard
   put scripts/guard-subagent-model.sh
   branch_gate
@@ -2113,14 +2144,13 @@ test_gate_runs_only_the_suite_of_what_changed() {
   rc_is 0
   eq "settings.json alone runs the subagent guard suite" "1" "$(grep -c '^suite tests/guard-subagent-model/' "$STUB_LOG")"
   eq "and the bash guard suite" "1" "$(grep -c '^suite tests/guard-bash/' "$STUB_LOG")"
-  eq "and the single-agent suite" "1" "$(grep -c '^suite tests/single-agent/' "$STUB_LOG")"
   eq "and the aiwp suite (the release notice hook)" "1" "$(grep -c '^suite tests/aiwp/' "$STUB_LOG")"
-  eq "and no other" "4" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "and no other" "3" "$(grep -c '^suite ' "$STUB_LOG")"
   branch_gate
   has "same settings.json" "CACHED suite scripts/tests/guard-subagent-model/test-guard-subagent-model.sh"
   put rules/agents/settings.json '{"hooks":{"a":1}}'
   branch_gate
-  eq "a changed settings.json runs them again" "8" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "a changed settings.json runs them again" "6" "$(grep -c '^suite ' "$STUB_LOG")"
 }
 
 test_gate_stops_at_the_first_failure() {
@@ -2206,7 +2236,9 @@ test_ledger_keeps_a_validate_pass_while_the_folder_holds() {
   rc_is 0
   CHECK_LEDGER_DISABLE="" vl --only secrets
   has "same folder" "CACHED secrets"
-  eq "the tool ran once" "1" "$(grep -c '^docker ' "$STUB_LOG")"
+  # The secrets check runs two tools, gitleaks and trivy's secret scanner: each ran once.
+  eq "gitleaks ran once" "1" "$(grep -c ' gitleaks ' "$STUB_LOG")"
+  eq "trivy ran once" "1" "$(grep -c ' trivy fs ' "$STUB_LOG")"
   put docs/a.md "changed"
   CHECK_LEDGER_DISABLE="" vl --only secrets
   has "a changed file runs it" "PASS secrets"

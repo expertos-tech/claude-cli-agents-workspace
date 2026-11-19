@@ -421,6 +421,25 @@ test_up_refuses_what_it_cannot_isolate_and_the_final_stack() {
   has "no compose file in"
 }
 
+# A service off the copy's safe list (privileged) only polices the person's compose: the copy starts and says so once.
+test_up_starts_a_service_off_the_safe_list_with_a_warning() {
+  fixture
+  docker_stub
+  run open "$W" app
+  printf 'services: {}\n' >"$(clone)/compose.yaml"
+  printf '{"name":"agent_1116-sample-change","services":{"web":{"image":"acme/web","privileged":true,"ports":[{"target":80,"protocol":"tcp"}]},"db":{"image":"postgres:16"}}}\n' >"$STUB/config.json"
+  dock up "$W/app"
+  rc_is 0
+  has "WARNING: service web sets privileged, off the safe list of a copy — "
+  has "so exec in web falls back to the permission mode"
+  hasnt "service db sets"
+  has "published: agent_1116-sample-change"
+  grep -q 'up -d --build$' "$DOCKER_LOG"; check "the copy started" $?
+  grep -q 'internal: true' "$R/tmp/work/$W/agent-app.compose.yaml"; check "its networks still internal" $?
+  [ "$(grep -c '"com.aiwp.copy.safe": "false"' "$R/tmp/work/$W/agent-app.compose.yaml")" = 1 ]; check "web labeled unsafe" $?
+  [ "$(grep -c '"com.aiwp.copy.safe": "true"' "$R/tmp/work/$W/agent-app.compose.yaml")" = 1 ]; check "db labeled safe" $?
+}
+
 test_down_stops_the_group_and_keeps_volumes() {
   fixture
   docker_stub
@@ -729,6 +748,9 @@ YAML
   local db_id web_id net nets
   db_id="$(docker ps -q --filter "label=com.docker.compose.project=$g" --filter label=com.docker.compose.service=db)"
   web_id="$(docker ps -q --filter "label=com.docker.compose.project=$g" --filter label=com.docker.compose.service=web)"
+  # No WARNING for either service: the override marks both safe, the label guard-bash reads before an exec.
+  eq "db marked safe" "true" "$(docker inspect -f '{{index .Config.Labels "com.aiwp.copy.safe"}}' "$db_id")"
+  eq "web marked safe" "true" "$(docker inspect -f '{{index .Config.Labels "com.aiwp.copy.safe"}}' "$web_id")"
   nets="$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$db_id")"
   [ -n "$nets" ]; check "db has networks" $?
   for net in $nets; do

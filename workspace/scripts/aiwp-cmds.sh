@@ -57,17 +57,22 @@ Commands:
         built service the group's own image (<group>-<service>), drops a fixed container_name and a fixed network or
         volume name (compose !reset), and moves every published port to a random free host port in 61000-65535 (on
         Linux free in /proc/net, in docker ps and by a bind test; elsewhere by docker ps and the bind test); the port
-        of the last up is kept while it is free. The compose files are checked against an allowlist first;
-        anything off it is refused, named, and nothing starts: Docker Engine older than 28; a top-level key other
-        than services, networks, volumes, secrets, configs, name and x-*; a service key off the list of
-        scripts/agent-copy.py (SERVICE_KEYS: so no privileged, cap_add, devices, volumes_from, sysctls...); a build
-        with network, ssh, secrets, additional_contexts or entitlements, or a context or Dockerfile outside the
-        clone; an env_file, a bind, or a secret or config file outside the clone (links followed) or of a container
-        runtime socket; a volume the files do not declare, or one with driver_opts or a driver other than local; a
-        network that is external, not a bridge or with driver_opts; security_opt other than no-new-privileges; pid,
-        ipc, uts, cgroup or network_mode other than service:<x> of the same files (ipc private or shareable and cgroup
-        private pass); deploy other than resources (no devices), replicas, restart_policy, update_config; a log driver
-        other than json-file, local or none; an extra host on host-gateway. Every network of
+        of the last up is kept while it is free. The compose files are checked against an allowlist first. What
+        would undo the copy's isolation is refused, named, and nothing starts: Docker Engine older than 28; a
+        top-level key other than services, networks, volumes, secrets, configs, name and x-*; a build with network,
+        ssh, secrets, additional_contexts or entitlements, or a context or Dockerfile outside the clone; an env_file,
+        a bind, or a secret or config file outside the clone (links followed) or of a container runtime socket; a
+        volume the files do not declare, or one with driver_opts or a driver other than local; volumes_from a
+        container outside the files; a network that is external, not a bridge or with driver_opts; network_mode
+        other than service:<x> of the same files; a log driver other than json-file, local or none. What only
+        polices the person's own services is a warning, and the copy starts: a service key off the list of
+        scripts/agent-copy.py (SERVICE_KEYS: privileged, cap_add, devices, volumes_from, sysctls...); security_opt
+        other than no-new-privileges; pid, ipc, uts or cgroup other than service:<x> of the same files (ipc private
+        or shareable and cgroup private are no warning); deploy other than resources, replicas, restart_policy,
+        update_config, or reserved devices; an extra host on host-gateway. One line per such service,
+        "WARNING: service <s> sets <settings>, off the safe list of a copy — <why> — <what to do>": guard-bash
+        auto-allows a command in a copy's container only when docker inspect shows it cannot reach the host, so exec
+        there may fall back to the permission mode. Every network of
         the copy is internal (internal: true, and driver_opts com.docker.network.bridge.gateway_mode_ipv4 and _ipv6
         set to isolated, so not even its gateway, the host, answers); a service that publishes a port also joins
         <group>_edge (compose key agent-edge, labeled com.docker.compose.project=<group> like the others), the copy's

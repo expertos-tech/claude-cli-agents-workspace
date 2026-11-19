@@ -9,10 +9,29 @@ paths:
   - "maintainers/**"
 ---
 
-# docs.md
+@workspace/rules/docs.md
 
-- English, direct, no generic intro. Each page has one role: reference, explanation or how-to.
-- Documentation changes in the same commit as what it describes.
+The sections below win where they differ; its `paths:` do not limit it here.
+
+---
+
+## Ignore from the product rule
+
+- Placement and language, "a change to an English document updates its translations in the same commit": here they
+  are brought up to date once, at the release (CAW rules).
+- The rules of a project, a POC, a component, an SDK and a project root repo: this repository is none of them. Its
+  two changelogs are written by `/caw-merge` (`CLAUDE.md` "The maintenance process", step 6).
+
+## Mapping
+
+| Product | Here |
+| --- | --- |
+| `/merge`, `/merge --main`, `/merge --hotfix` | `/caw-merge`, `/caw-merge --main`, `/caw-merge --hotfix` |
+| the root `CHANGELOG.md`, the version of the repository | `workspace/CHANGELOG.md`, the product's version, for a product change (`workspace/`, `install.sh`); the root `CHANGELOG.md` for every change, its sections dated by the product release |
+| Decision records of the workspace (`docs/decisions/`) | `workspace/docs/decisions/` |
+
+## CAW rules
+
 - Translations: `i18n/pt-BR/<path>` and `i18n/es/<path>` for every `README.md` of the repository (the root one,
   `maintainers/` and the product's), every page of the root `docs/` and of `workspace/docs/` except decision records,
   and every page of `workspace/tools/*/docs/`. Nothing else is translated (`CLAUDE.md`, `.claude/`, the other files of
@@ -30,4 +49,3 @@ paths:
 - The root `docs/` documents the project: how to install and use it, contribute, maintain and release it; the
   product's own guide stays in `workspace/docs/`. The root `README.md` stays short and links to `docs/`.
 - `maintainers/` is public: no company names, no personal paths (`security.md`).
-- Decision records of the product follow `workspace/rules/docs.md` "Decision records".
