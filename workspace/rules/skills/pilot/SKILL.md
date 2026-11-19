@@ -3,7 +3,6 @@ name: pilot
 description: "Set or show the verification mode: assisted (auto plus short explanation boxes for people new to the workspace), auto (the agent runs every check a human could do by hand, visual ones included) or manual (the human gets a checklist and the agent waits; this session only). assisted and auto also become the default of this installation. Use only when the user asks."
 argument-hint: "[assisted|auto|manual]"
 disable-model-invocation: true
-allowed-tools: Bash(bash scripts/pilot-mode.sh show), Bash(bash scripts/pilot-mode.sh set auto), Bash(bash scripts/pilot-mode.sh set assisted)
 model: claude-opus-5-5
 effort: low
 ---

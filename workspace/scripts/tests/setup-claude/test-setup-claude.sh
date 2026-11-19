@@ -328,7 +328,8 @@ test_claude_md_excludes_of_the_custom_layer_reach_the_settings() {
 core_allow() {
   printf '%s\n' 'Edit(/tmp/work/**)' 'Bash(bash scripts/aiwp-cmds.sh open *)' 'Bash(bash scripts/aiwp-cmds.sh status)' \
     'Bash(bash scripts/aiwp-cmds.sh status *)' 'Bash(bash scripts/aiwp-cmds.sh push *)' 'Bash(bash scripts/aiwp-cmds.sh up *)' \
-    'Bash(bash scripts/aiwp-cmds.sh down *)'
+    'Bash(bash scripts/aiwp-cmds.sh down *)' 'Bash(bash scripts/pilot-mode.sh show)' \
+    'Bash(bash scripts/pilot-mode.sh set auto)' 'Bash(bash scripts/pilot-mode.sh set assisted)'
 }
 # Checks that two texts are equal: got, want, description.
 same() { if [ "$1" = "$2" ]; then check "$3" 0; else check "$3: [$1]" 1; fi; }

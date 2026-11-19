@@ -17,8 +17,9 @@ Creates or syncs .claude/ (git-ignored) from rules/ and the custom layer (versio
                                 which the workspace must not load; one path or glob relative to the workspace root
                                 per line, inside projects/<repo>/ or custom/pocs/<poc>/ only, # and blank lines
                                 ignored, any other line skipped with a warning; and, in its permissions.allow, after
-                                the source's own and never twice, the core allow rules: edits in tmp/work/ and the
-                                aiwp-cmds.sh commands open, status, push, up and down; deny and ask still win)
+                                the source's own and never twice, the core allow rules: edits in tmp/work/, the
+                                aiwp-cmds.sh commands open, status, push, up and down, and exactly the three
+                                pilot-mode.sh commands of /pilot (show, set auto, set assisted); deny and ask still win)
   rules/skills/<name>/**     -> .claude/skills/<name>/** (stale files removed)
   rules/*.md with `paths:`   -> .claude/rules/*.md    (path-scoped rules; a rule that loses its
                                 front matter or is deleted makes its copy stale)
@@ -55,7 +56,8 @@ USAGE
 # and never twice: the autonomous work of /request edits its clone in tmp/work/ and runs the border commands of
 # aiwp-cmds.sh with no prompt. Generated here, not written in rules/agents/settings.json, so they are part of the
 # mandatory core that no configuration removes; a deny or ask rule still wins (Claude Code checks deny, ask, allow).
-# close stays out on purpose: a wildcard cannot leave out --discard.
+# close stays out on purpose: a wildcard cannot leave out --discard. /pilot reads and writes the default pilot mode with
+# the three exact pilot-mode.sh commands below, never a wildcard: anything else (set manual included) still asks.
 core_allow=(
   "Edit(/tmp/work/**)"
   "Bash(bash scripts/aiwp-cmds.sh open *)"
@@ -64,6 +66,9 @@ core_allow=(
   "Bash(bash scripts/aiwp-cmds.sh push *)"
   "Bash(bash scripts/aiwp-cmds.sh up *)"
   "Bash(bash scripts/aiwp-cmds.sh down *)"
+  "Bash(bash scripts/pilot-mode.sh show)"
+  "Bash(bash scripts/pilot-mode.sh set auto)"
+  "Bash(bash scripts/pilot-mode.sh set assisted)"
 )
 
 check=0
