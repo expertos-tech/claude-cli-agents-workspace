@@ -20,6 +20,11 @@
             "type": "command",
             "command": "python3 -I -B \"$CLAUDE_PROJECT_DIR/tests/caw-session-index.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 -I -B \"$CLAUDE_PROJECT_DIR/tests/caw-language.py\"",
+            "timeout": 10
           }
         ]
       }

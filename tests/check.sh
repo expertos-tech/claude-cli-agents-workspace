@@ -23,7 +23,10 @@ Runs the gate of the repository, from any cwd:
      .claude/settings.json registers its SessionStart hook tests/caw-session-index.py;
      caw-layers-tests: tests/test-caw-layers.sh, the scenarios of that check on throwaway trees;
      caw-session-index: tests/test-caw-session-index.sh, the scenarios of the SessionStart hook
-     tests/caw-session-index.py on this tree (read only) and on throwaway copies.
+     tests/caw-session-index.py on this tree (read only) and on throwaway copies;
+     caw-language: tests/test-caw-language.sh, the scenarios of the SessionStart hook tests/caw-language.py (it asks
+     for the preferred language when no "language" setting is set) on throwaway folders, never the real settings,
+     and that .claude/settings.json registers it.
   4. caw-work: tests/test-caw-work.sh, the scenarios of tests/caw-work.sh (work clones under tmp/work/ and their
      git hooks), in a throwaway repository with a local remote; it never touches this repository.
 
@@ -102,6 +105,13 @@ else
   printf '%s\n' "$index_out"
   echo "FAIL caw-session-index: the scenarios of tests/caw-session-index.py above failed" \
     "(bash tests/test-caw-session-index.sh)"
+  failed=1
+fi
+if language_out="$(bash "$repo/tests/test-caw-language.sh" 2>&1)"; then
+  echo "PASS caw-language"
+else
+  printf '%s\n' "$language_out"
+  echo "FAIL caw-language: the scenarios of tests/caw-language.py above failed (bash tests/test-caw-language.sh)"
   failed=1
 fi
 if caw_out="$(bash "$repo/tests/test-caw-work.sh" 2>&1)"; then
