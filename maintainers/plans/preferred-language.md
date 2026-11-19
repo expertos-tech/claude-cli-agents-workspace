@@ -1,6 +1,7 @@
 # The preferred language of communication
 
-Status: approved, D-1 to D-4 by the owner (2026-11-18). Request: `maintainers/requests/preferred-language.md`.
+Status: built (2026-11-18). Request: `maintainers/requests/qa/preferred-language.md`, with what the build decided
+beyond it in its Execution block.
 
 ## 1. Goal
 
