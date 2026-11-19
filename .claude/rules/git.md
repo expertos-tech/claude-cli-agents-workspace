@@ -64,4 +64,7 @@ The sections below win where they differ; its `paths:` do not limit it here.
   meanwhile: fetched and made again once). Anything else is refused with the reason and nothing is pushed. Never by
   hand.
 - Never rewrite published history: no force push, no rebase or amend of a pushed commit, no moved or deleted tag.
+  Starting a request over is not a force push: `bash tests/caw-work.sh close <work> --discard --start-over` deletes
+  only that request's own work branch on the remote, with a lease on the sha the clone last pushed (someone pushed
+  there since: refused, nothing deleted), never `developer`, `main` or a tag.
 - Tags only through `/caw-merge --main`.
