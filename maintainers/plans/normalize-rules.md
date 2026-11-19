@@ -1,6 +1,6 @@
 # `/normalize-rules`: bringing the rules of an older workspace into `custom/my-rules/`
 
-Status: built (`workspace/rules/skills/normalize-rules/`). Request: `maintainers/requests/normalize-rules.md`. Depends on `/rules` (`custom/my-rules/`,
+Status: built (`workspace/rules/skills/normalize-rules/`). Request: `maintainers/requests/qa/normalize-rules.md`. Depends on `/rules` (`custom/my-rules/`,
 `custom/rules-config.json`) and shares its approach with `/normalize-projects`.
 
 ## 1. The idea
