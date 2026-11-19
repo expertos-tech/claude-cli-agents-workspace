@@ -28,8 +28,11 @@ Every `.git` below the folder, a folder (a repository) or a file (a worktree), i
 | Repository with pending work | Changed files, commits not pushed, or local branches with no upstream | `bring` (it keeps the local branches) and a pending-work request |
 | Nested repository | A repository inside another one | `bring` after its parent, at its path inside it |
 | Worktree | `.git` file with `gitdir:`; listed by `git worktree list` of its main repository | Never used as such: its branch comes with the main repository; a detached `HEAD` gets a branch `import/<worktree>` so its commits are not lost; its changes go to the pending-work request |
+| Moved worktree | Its `.git` file and its entry in `<repository>/.git/worktrees/` name another root (the older workspace was copied from another machine) | Paired by the entry and counted once, with its branch; the person may repair the pointers with `git worktree repair` in the older workspace; the import never does |
 | Work clone | A repository whose `origin` is the same as a project's, outside the projects folder (for example a `tmp/work/` of the older workspace) | Its local branches are fetched into the imported project as local branches; its changes go to the pending-work request |
 | The older workspace itself | The repository at the folder's root | Not a project: skipped, listed |
+| A clone of the older workspace | A repository whose `origin` is the older workspace or one of its worktrees | Its own work: listed, never asked |
+| Repository with missing objects | A ref to a missing object (a snapshot taken while git wrote), or an `objects/info/alternates` whose folder is gone | Its complete branches and tags are brought, the others named in its pending-work request; with nothing complete it is not brought, with the reason, and the import goes on |
 
 The pending-work request does not analyse the code. Per project, it lists each source with pending work: its path,
 its branch, the commits not pushed (`git log @{u}..` or the branch with no upstream), and the changed files by name
@@ -102,7 +105,8 @@ An example question:
 - `.env` files, keys and credentials are never read. A backlog item is scanned for secrets before it is written; a hit
   writes only its source path and a note.
 - Nothing is pushed: `custom/` is committed by path; the projects keep the remotes of their sources.
-- Every step of `apply` is recorded; a failed step stops there, with what was done and what is left.
+- Every step of `apply` is recorded; a failed step stops there, with what was done and what is left. A repository or
+  branch that cannot be brought for a missing object is recorded as not brought, with why, and the rest goes on.
 
 ## 5. Tests
 

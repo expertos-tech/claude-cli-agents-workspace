@@ -25,15 +25,24 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
   each with its evidence (BR-9); the model answers through the script and runs no change itself. A run that stops
   resumes from the state.
 - BR-3: every repository below the folder is brought into `projects/` with `bring`, outermost first, a nested one at
-  its path inside its parent; the repository at the folder's root (the older workspace itself) is not.
+  its path inside its parent; the repository at the folder's root (the older workspace itself) is not, nor a clone of
+  it (a repository whose `origin` is the older workspace or one of its worktrees: its own work, listed, never asked).
+  A repository with missing objects (a ref to a missing object, an `objects/info/alternates` whose folder is gone) is
+  brought with every branch and tag whose objects are complete; each other one is named; one with no complete branch
+  is not brought, with the reason, and the import goes on.
 - BR-4: a worktree is never used as such: its branch comes with its main repository; a detached `HEAD` gets a branch
-  `import/<worktree-name>` in the imported repository.
+  `import/<worktree-name>` in the imported repository. A worktree whose pointers name another path (the older
+  workspace was moved or copied from another machine) is paired with its entry in `<repository>/.git/worktrees/` and
+  counted once, at its real path, with its branch; the plan says the person may repair the pointers with
+  `git worktree repair` in the older workspace; the import never does.
 - BR-5: a work clone (a repository outside the projects folder whose `origin` is a project's) gives its local branches
   to the imported project, as local branches; a name already taken gets the prefix `import/<clone-name>/`.
 - BR-6: per project with pending work (changed files, commits not pushed, branches with no upstream, in the repository,
   its worktrees or its work clones), one request `custom/requests/<yyyy-mm-dd>-<project>-pending-work.md`, state
   `ready`, adjustment size: each source path, its branch, its commits not pushed and its changed files by name, and
-  "compare each with the base when you work on it". No code is analysed and no changed file is copied.
+  "compare each with the base when you work on it". A repository with no remote at all is said once to be unpushed
+  work as a whole; what could not be brought for a missing object is named. No code is analysed and no changed file
+  is copied.
 - BR-7: a code folder with no git (a build or package manifest, not inside a repository) is listed with the command to
   make it a repository with its remote; one that matches a tool of this workspace's `tools/` (name, or most files by
   hash) is listed as covered. Nothing of either is brought.
@@ -53,7 +62,9 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
   unless the person includes it on its own.
 - BR-11: before anything is written, the plan `custom/migrations/import-<yyyy-mm-dd>.md` shows what will be brought,
   the pending work, the backlog and what is not imported; the person changes rows or confirms. Then `apply` runs each
-  step once, recording it; `custom/` is committed by path and never pushed.
+  step once, recording it; a failed step stops there and the next `apply` resumes from it, but a repository or branch
+  that cannot be brought for a missing object is recorded as not brought and the rest goes on; `custom/` is committed
+  by path and never pushed.
 
 ## 4. Acceptance criteria
 
@@ -77,7 +88,13 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
 - AC-8a: Given a project with a worktree and a work clone, when the person marks it `skip`, then it is not in
   `projects/`, none of its branches is anywhere in the workspace, it has no pending-work request, and the plan lists it
   as skipped with its size.
-- AC-9: AC-1 to AC-8a are scenario tests of `scripts/workspace-import.py` with invented data, run by the suite with no
+- AC-8b: Given an older workspace whose worktree pointers name another root, a project with a ref to a missing
+  object, a repository whose `alternates` folder is gone, a clone of the older workspace itself and a project with no
+  remote, then each worktree is counted once with its branch and the plan says the workspace was moved; the complete
+  branches are brought and the broken ref is named in the pending-work request; the repository with nothing complete
+  is not brought, with the reason, and the import goes on; the clone is listed as the older workspace's own work with
+  no question; the project with no remote is said once to be unpushed work as a whole.
+- AC-9: AC-1 to AC-8b are scenario tests of `scripts/workspace-import.py` with invented data, run by the suite with no
   model.
 - AC-10: Given a copy of a real older workspace in a test installation, its remotes made unpushable, when
   `/import-workspace` runs end to end, then every repository, worktree and work clone of its inventory is accounted for
