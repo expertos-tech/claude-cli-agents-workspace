@@ -87,7 +87,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
-| `qa/request-in-progress.md` | this merge | AC-1 to AC-3, AC-7, AC-8 proven by scenario tests; AC-4 in part (the reply pending a session run); AC-5, AC-6 pending a run through `doing/` |
+| `qa/request-in-progress.md` | this merge | AC-1 to AC-3, AC-7, AC-8 proven by scenario tests; AC-4 to AC-6 by headless rehearsals |
 | `qa/import-workspace.md` | this merge | All proven: AC-1 to AC-9 by scenario tests, AC-10 by a headless run on a copy of a real older workspace |
 | `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |

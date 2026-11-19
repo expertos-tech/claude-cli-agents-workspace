@@ -147,14 +147,29 @@ Acceptance criteria:
   branch holding `doing/`; one scenario per refusal).
 - AC-3, AC-8: proven by the scenarios of `workspace/scripts/tests/aiwp-cmds/test-aiwp-cmds.sh`.
 - AC-4: the scripts' part (resume, start over leaving no folder nor remote branch) proven by the scenarios of both
-  suites; the reply of `/request` and `/caw-request` (what it shows, the question) pending: no session run.
-- AC-5, AC-6: in the skills and rules; pending a run with a request that went through `doing/`.
+  suites; the reply proven by headless rehearsals (`claude -p`, read-only, invented fixtures `billing-export`,
+  `acme-login`): `/request` in a test installation and `/caw-request` in the clone show the work folder, branch, last
+  commit, files not committed, commits not pushed and the `## Stopped` section, then ask resume or start over, each
+  with the right command.
+- AC-5: proven by rehearsals: `/merge` moves `doing/` to `qa/<project>/` (step 8), `/caw-merge` moves it to `qa/`
+  with the README row to "QA", both paths in one commit.
+- AC-6: proven by rehearsals on `6cbae6b` and `0bec432`: the `/merge` and `/caw-merge` summaries and the product
+  closing board name the request `<file>.md in progress: <work>`, with no run command for it; the maintenance closing
+  board does it at the end of `➜ Next` once the session has `process.md` of `0bec432` in context (a rehearsal in a
+  clone under `tmp/work/` loads the root's rules, still the old ones until this merge).
 - AC-7: proven by the scenarios of both suites.
 
 Checks: `bash tests/check.sh --base origin/developer --i18n-pending` passed (`SKIP repo-terms`: no terms list);
-`test-aiwp-cmds.sh` 44, `test-caw-work.sh` 56, `test_session_title.py` 37; `/caw-test-install` PASS, and the
+`test-aiwp-cmds.sh` 44, `test-caw-work.sh` 57, `test_session_title.py` 37; `/caw-test-install` PASS, and the
 installed `session-title.py` named a session from a request in `doing/`.
 
 Warnings of the stages: W-1 fix in `b9aecd7`; W-2 (no company-terms scan, no list) accept; W-3 fix in `5dec4f2` and
 `6948aeb`; W-4 (open refuses when the secret scan cannot run), W-5 (`close` exit 2 on an unknown option), W-6
 (`start` refuses a root only behind its remote), W-7 (a request in `doing/` must be committed as is): accept.
+
+Warnings of the merge review: W-1 (AC-4 to AC-6 not proven by a session run) fix: the rehearsals above; W-2 (start
+over fell back to the remote sha with no `caw.pushed`) fix in `06affea`: it refuses and deletes nothing; W-3 (the root
+changelog entry missed `open --request` and the `status` lines) fix in `d0972a8`. Warnings of the rehearsals: W-4 (the
+boards wrote the request in progress in free text, not `in progress: <work>`) fix in `6cbae6b` and `0bec432`: the form
+`<file>.md in progress: <work>`, in English, with its slot in the boards; W-5 (a test installation made inside a clone
+hides its own `CLAUDE.md` behind `**/tmp/work/**`) accept.
