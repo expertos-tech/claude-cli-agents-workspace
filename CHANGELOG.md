@@ -119,8 +119,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   and sets its row's new Status column to `doing`, in one commit pushed to `developer` before the clone opens: the
   one exception to `developer` moving only by `/caw-merge`, refused unless the root is clean, equal to
   `origin/developer`, and the commit is only that rename and that cell. `/caw-request` resolves `doing/` and asks
-  resume or start over (`open --resume`, `close --discard --start-over`); `close --discard` makes the reverse
-  commit; `/caw-merge` moves the request from `doing/` to `qa/`; no closing board offers a request in progress.
+  resume or start over (`open --resume`, `close --discard --start-over`); `open --request <name>` records the
+  request of a work, and `close --discard` makes the reverse commit; `bash tests/caw-work.sh status` prints the
+  request of each work (`request=`) and a request of `doing/` no work records (`stale:`); `/caw-merge` moves the
+  request from `doing/` to `qa/`; no closing board offers a request in progress.
 
 ### Changed
 
