@@ -71,8 +71,9 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - The closing board, the summary of `/caw-merge` and any "next request" line never offer a request in `doing/` (the
   Status `doing` of its README row) as one to run: `Left` and `➜ Next` name it `<name> in progress: <work>` (the
   `request=` line of `bash tests/caw-work.sh status`), the words `in progress:` in English like the labels, with no
-  `/caw-request` command. The one exception is this stage's own
-  request with stages left: `/caw-request <name>` resumes it.
+  `/caw-request` command. A request in `doing/` that comes, in the order of the README, before the one `➜ Next`
+  offers is always named in the board itself, at the end of `➜ Next` (`; <name> in progress: <work>`), never only in
+  the text above it. The one exception is this stage's own request with stages left: `/caw-request <name>` resumes it.
 - `/caw-merge` takes the work into `developer` and writes the root `CHANGELOG.md` and, for a product change,
   `workspace/CHANGELOG.md`. Other pushes only when the owner asks, each request covering that push only. Only the
   product is released, through `/caw-merge --main`; the root sections are dated by that release.
@@ -93,6 +94,6 @@ Left:       <next stages, with effort | /caw-merge | <name> in progress: <work> 
 Pending:    <decisions for the owner, findings, refused push | none>
 Warnings:   <the decision of each warning of the board: W-1 accept, W-2 fix in <sha>, W-3 request <file> | none>
 Request:    maintainers/requests/<file>.md | tmp/request.md | none
-➜ Next: <the command to run, and where: /caw-merge from the clone, /caw-request <name>>[; <name> in progress: <work>]
+➜ Next: <the command to run, and where: /caw-merge from the clone, /caw-request <name>>[; <name> in progress: <work>, each request of doing/ ahead of it]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
