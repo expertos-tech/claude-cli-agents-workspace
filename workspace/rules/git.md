@@ -19,9 +19,9 @@
 
 - One work folder per request: `tmp/work/<yyyy-mm-dd>-<kebab-slug>/`, never `tmp/` itself. Open a clone of each repo the request touches: `bash scripts/aiwp-cmds.sh open <work> <repo>... [--branch <type>/<slug>]` (`<repo>` relative to `projects/`, or `custom` for a POC). Say the clone's path to the human and work only there.
 - Base branch: `developer` where the repo has it, else `main`. `projects/<repo>` stays checked out on its base and is never edited.
-- Branch name: `<type>/<kebab-description>`, ASCII, lowercase, with the types of "Commits"; it must not exist on the remote yet.
+- Branch name: `<type>/<kebab-description>`, ASCII, lowercase, with the types of "Commits"; it must not exist on the remote yet, but for a resumed request (`open --resume`).
 - The clone has the repo's local `.env` files (copied by `open`); install its dependencies there.
-- `bash scripts/aiwp-cmds.sh status` lists the clones, what is not pushed and what is not committed; `close <work>` deletes a work folder once everything in it is merged and on the remote.
+- `bash scripts/aiwp-cmds.sh status` lists the request of each work, the clones, what is not pushed and what is not committed, and a request of `custom/requests/doing/` no work records as `stale`; `close <work>` deletes a work folder once everything in it is merged and on the remote. `close <work> --discard` puts its request back in `custom/requests/`; `--discard --start-over` also deletes its remote work branches and keeps the request in `doing/` ("Requests").
 - A hotfix (`/merge --hotfix`) works on `fix/<slug>`, in `tmp/work/<yyyy-mm-dd>-hotfix-<slug>/`, opened with `--from-main`: from the remote `main`, which is its base. Its conflict with `developer`, when there is one, on `fix/<slug>-developer`, from `developer`.
 - A release (`/merge --main`) works on `fix/release-vX-Y-Z`, in `tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/`: the full check and the final review of `developer`, its fixes and the dated CHANGELOG.
 - A normalization (`/normalize-projects`) works on `feat/ai-workspace-migration` and goes through the gate like any work, after the human approved its plan and tested the branch.
@@ -56,9 +56,11 @@ Closing a wave, in this order:
    - `fix`: done now, in the clone; the tests of what changed run again; committed and pushed as in step 1.
    - `request`: a `ready` request in `custom/requests/`, adjustment size of `templates/request.md`, with the warning as its source; committed in step 4.
    - `accept`: the risk is kept. It is an authorization: `/merge` gives it to the review and never reports it again.
-3. Resume point. Work left in the plan: append to the request, after a `---`, `## Stopped — <yyyy-mm-dd>`: where the work stopped (the work folder, the clone, its branch and the sha of step 1), the decisions taken (those of the warnings board included), the pending items, and the next steps with their effort ("Steps and effort"). The request stays pending in `custom/requests/`; one typed in the conversation is first written there as `<yyyy-mm-dd>-<kebab-slug>.md` (never overwriting: `-2`, `-3`), with a "Requested" section. Nothing left: nothing appended; `/merge` records the delivery ("Requests").
+3. Resume point. Work left in the plan: append to the request, after a `---`, `## Stopped — <yyyy-mm-dd>`: where the work stopped (the work folder, the clone, its branch and the sha of step 1), the decisions taken (those of the warnings board included), the pending items, and the next steps with their effort ("Steps and effort"). The request stays in `custom/requests/doing/`, where `/request` moved it: the next `/request <name>` finds it there and resumes. One typed in the conversation, or `tmp/request.md`, is first written in `custom/requests/` as `<yyyy-mm-dd>-<kebab-slug>.md` (never overwriting: `-2`, `-3`), with a "Requested" section, and stays there. Nothing left: nothing appended; `/merge` records the delivery ("Requests").
 4. Checkpoint of `custom/`: commit by path only this session's files there (both paths of a move), then push. Other sessions' files stay out.
 5. Closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the values are in the language of the conversation. Its `Warnings:` line lists the decision of each warning of step 2. Then stop: the next wave starts in a new session, from the request.
+
+The closing board, the summary of `/merge` and any "next request" line never offer a request of `custom/requests/doing/` as one to run: it is in progress in another work, and they name it `in progress: <work>` (`bash scripts/aiwp-cmds.sh status` gives the work), with no `/request` command. The one exception is this wave's own request with steps left: its next step runs with `/request <file>.md`, which resumes it.
 
 The warnings board looks like the closing board, so it stands out. Its labels stay as below; the values are in the language of the conversation, each warning in the format of `rules/security.md` "Warnings":
 
@@ -94,15 +96,16 @@ Request:    custom/requests/<file>.md | none
 
 ## Requests
 
-A request goes through three folders of `custom/requests/`, one per state of its work:
+A request goes through four folders of `custom/requests/`, one per state of its work:
 
 | Folder | State | Moved by |
 | --- | --- | --- |
-| `custom/requests/` | Pending: `idea` (decisions open) or `ready` | `/draft-request`, the human, a review finding |
+| `custom/requests/` | Pending: `idea` (decisions open) or `ready` | `/draft-request`, the human, a review finding; `bash scripts/aiwp-cmds.sh close <work> --discard` puts one back |
+| `custom/requests/doing/` | In progress: its work is open in `tmp/work/<work>/`, from the open of its clone until `/merge` | `/request`, through `bash scripts/aiwp-cmds.sh open ... --request <file>`, right after the clones open |
 | `custom/requests/qa/<project>/` | On `developer`, not released; a hotfix: on `main`, marked `Merge into developer pending.` | `/merge`, after phase 2; `/merge --hotfix`, once `main` has the fix |
 | `custom/requests/done/<project>/` | Released | `/merge --main <project>`; `/merge --hotfix`, once `developer` holds `main` |
 
-- A request never moves while its waves run. `<project>` is the project the release names (`rules/rules.md` "Workspace projects"); a request that touched several projects gets one copy per project.
+- A request moves once, to `doing/`, when its clone opens, and never again while its waves run: a wave that stops leaves it there, and `/merge` takes it from there (or from `custom/requests/`, for one that never went through `doing/`) to `qa/<project>/`. `doing/` is one flat folder (the `**Project:**` line names the project). `tmp/request.md` and a request typed in the conversation never go to `doing/`. `<project>` is the project the release names (`rules/rules.md` "Workspace projects"); a request that touched several projects gets one copy per project.
 - At each merge into `developer`, `/merge` appends to the request, after a `---`, `## Execution — <yyyy-mm-dd>, merged into developer at <sha>`: what was done by step with the commits, the decisions taken while running, the deviations from the request, the status of each acceptance criterion (proven: how; pending: what is missing; failed: why), the checks, the decision of each warning (of the waves' boards and of the merge's: `W-1 accept`, `W-2 fix in <sha>`, `W-3 request <file>`), and what is left. A request with no file gets one in `qa/<project>/` with a "Requested" section that sums up what the human asked.
 - `/merge --main` validates everything in `qa/<project>/` against what was done, and adds `Released in <project> vX.Y.Z` to each file it moves to `done/<project>/`.
 - There is no backlog: an idea is a pending request in state `idea`, in the adjustment size of `templates/request.md`. A warning becomes a `ready` request when the human answers `request` in a warnings board ("Waves"), of a wave or of `/merge`.
