@@ -24,7 +24,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
-0. First, before round 2: `assisted-mode` (`validators-warn-not-block` is in qa).
+0. First, before round 2: `assisted-mode` and `validators-warn-not-block` are in qa.
 1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
    (except `measure-quality-indicators`, which waits for `import-from-fork`).
 2. Round 2: `import-workspace` first (the owner needs it to migrate the final project), then `fork-my-rules`,
@@ -40,7 +40,6 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 | Round | Request | Notes |
 | --- | --- | --- |
-| 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 0 | `request-in-progress.md` | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
 | 0 | `draft-prompt.md` | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
 | 2 | `import-workspace-code-folders.md` | After `import-workspace`: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
@@ -83,6 +82,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/assisted-mode.md` | this merge | All proven: AC-1, AC-5, AC-6 in interactive and headless sessions of a test installation, AC-2 and AC-9 headless (AC-9 at the root and in a work clone), AC-3, AC-4, AC-7, AC-10 by scenario tests; AC-8 by the rule text only |
 | `qa/import-workspace.md` | this merge | All proven: AC-1 to AC-9 by scenario tests, AC-10 by a headless run on a copy of a real older workspace |
 | `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |
