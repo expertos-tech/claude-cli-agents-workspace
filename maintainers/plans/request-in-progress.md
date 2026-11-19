@@ -1,6 +1,6 @@
 # request-in-progress.md
 
-**Status:** decided by the owner (D-1, D-2); request: `maintainers/requests/request-in-progress.md`.
+**Status:** built; decided by the owner (D-1, D-2); request: `maintainers/requests/qa/request-in-progress.md`.
 
 ## Problem
 

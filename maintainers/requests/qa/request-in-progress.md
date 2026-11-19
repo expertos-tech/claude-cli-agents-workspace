@@ -106,3 +106,55 @@ The subagents of each step run with the step's effort, passed in the call.
   the moved file; something very simple that needs nothing; made before the branch so it already holds it".
 - Authorized: start over deletes the half-done work folder and its remote work branch. Reason: the owner: "start over:
   delete the half-done branch and start again".
+
+---
+
+## Execution — 2026-11-19, merged into developer
+
+Branch `feat/request-in-progress`, clone `tmp/work/2026-11-19-request-in-progress/claude-cli-agents-workspace`.
+
+Done, by stage:
+
+- Stage 1, the product (high): `c616af6` (`aiwp-cmds.sh open --request`, `--resume`, `close --discard`,
+  `--discard --start-over`, `status` with `request=` and `stale:`, with scenario tests), `d142422` (`session-title.py`
+  reads a bare name in `custom/requests/doing/` too), `1bf1c1f` (`rules/git.md`, `/request`, `/merge`,
+  `docs/usage.md`).
+- Stage 2, the maintenance (high): `396d108` (`tests/caw-work.sh start` and the same options as the product, with
+  scenario tests), `20a4a3a` (`/caw-request`, `/caw-merge`, `security.md`, `git.md`, `process.md`), `792eb5c` (the
+  requests README with a Status column, `docs/maintenance.md`, `docs/repository.md`).
+- Warnings of the stages: `b9aecd7` (W-1), `5dec4f2` and `6948aeb` (W-3).
+- `developer` brought in by `8c4ec54` (conflicts in `workspace/scripts/README.md` and the requests README: both
+  sides' rows kept, the new rows with the Status column). Changelogs: `e879302`.
+
+Decisions taken while running:
+
+- The product moves the request in `aiwp-cmds.sh open --request` itself, only after every clone opened, and records
+  it in `tmp/work/<work>/.request`; the start commit's body names the work and branch, so a resume finds them when
+  the folder is gone.
+- `open` and `close` move only a pure rename; a pending request not committed is scanned for secrets (the scan of
+  `guard-bash`) and committed by its path first (W-3); a request already in `doing/` must be committed as is.
+- Start over is `close <work> --discard --start-over`; the remote work branch is deleted with a lease on the sha the
+  clone pushed last, never `developer`, `main` or a tag (W-1 wrote this next to the hard rule).
+- `caw-work.sh start` refuses a root `developer` only behind its remote instead of moving it (BR-2 says equal).
+- This request did not go through `doing/` itself: it is the one that creates it.
+
+Deviations from the request: `session-title.py` (a hook) also changed, so a resumed request names its session;
+`close` now refuses an unknown option (exit 2).
+
+Acceptance criteria:
+
+- AC-1, AC-2: proven by the scenarios of `tests/test-caw-work.sh` (the start commit on a throwaway remote, the
+  branch holding `doing/`; one scenario per refusal).
+- AC-3, AC-8: proven by the scenarios of `workspace/scripts/tests/aiwp-cmds/test-aiwp-cmds.sh`.
+- AC-4: the scripts' part (resume, start over leaving no folder nor remote branch) proven by the scenarios of both
+  suites; the reply of `/request` and `/caw-request` (what it shows, the question) pending: no session run.
+- AC-5, AC-6: in the skills and rules; pending a run with a request that went through `doing/`.
+- AC-7: proven by the scenarios of both suites.
+
+Checks: `bash tests/check.sh --base origin/developer --i18n-pending` passed (`SKIP repo-terms`: no terms list);
+`test-aiwp-cmds.sh` 44, `test-caw-work.sh` 56, `test_session_title.py` 37; `/caw-test-install` PASS, and the
+installed `session-title.py` named a session from a request in `doing/`.
+
+Warnings of the stages: W-1 fix in `b9aecd7`; W-2 (no company-terms scan, no list) accept; W-3 fix in `5dec4f2` and
+`6948aeb`; W-4 (open refuses when the secret scan cannot run), W-5 (`close` exit 2 on an unknown option), W-6
+(`start` refuses a root only behind its remote), W-7 (a request in `doing/` must be committed as is): accept.
