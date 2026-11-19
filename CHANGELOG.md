@@ -48,6 +48,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `/import-workspace`: the work of an older workspace (repositories, worktree and work-clone branches, pending work,
   backlog) brought into this one by `scripts/workspace-import.py`, never its rules; `aiwp-cmds.sh bring-branch`, and
   `bring` with a read-only source and partial bring of a folder with missing objects.
+- `/pilot assisted`, the default of a new workspace: `auto` plus short boxes that explain the flow at the moments a
+  newcomer gets it wrong, each waiting for Continue, Don't show this again or the better way; `/pilot auto` makes
+  `auto` the default, kept per workspace in `.claude/pilot-mode`; an existing workspace with history updates to
+  `auto`. The `aiwp` suite is split in three to stay under the time budget.
 
 ### Added
 
@@ -113,6 +117,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   request without names); the request `import-workspace-code-folders` with its plan (every code folder found by
   extension, POC, tool or project in rounds, a local repository with its history), from a warning of that run; the
   plan `terms-list` (the company-terms list of the maintainer machine), decided as is.
+- `/caw-pilot assisted` at the root, the default: the root `CLAUDE.md` "Pilot mode" imports the git-ignored
+  `.claude/pilot-mode.local.md` that `/caw-pilot auto` and `/caw-pilot assisted` write (a missing import is skipped
+  silently, so no hook was added for it); in `assisted` the session reads `.claude/assisted.md`, a layer over the
+  product's `rules/assisted.md` with the maintenance's situations (the first reply, a change with no request, a commit
+  or push on `developer` or `main`, something private to commit, a new task after a closing board, a translation
+  between releases), which `tests/check.sh` checks with the other layers (`caw-layers`). A session started in a work
+  clone, where Claude Code skips that import, gets the mode from `tests/caw-session-index.py`, which reads the root's
+  file. The request `assisted-mode`, proven in real sessions of a test installation and at the root.
 
 ### Changed
 
