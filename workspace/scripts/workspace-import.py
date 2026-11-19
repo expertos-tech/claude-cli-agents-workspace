@@ -9,13 +9,19 @@ it runs. The script does every step that is a fact and keeps the state in custom
   R-n  a repository outside the projects folder: "project", "data" (of the older workspace) or "backlog" (its
        markdown files become backlog items; not brought); a clone of it follows the answer. Its evidence says when
        it sits in scratch of the older workspace (a dot folder, or a folder its own repository ignores). One whose
-       origin is the older workspace itself or one of its worktrees is its own work: listed, never asked
+       origin is the older workspace itself, one of its worktrees, or a place of its own tree that is no other
+       repository, worktree or bare repository (a worktree removed since) is its own work: listed, never asked. A
+       local origin under the root it had before it was copied here is read as the same path under the folder
   P-n  the destination in projects/ of a repository whose path is no kebab-case path under the projects folder, or
        is taken: a kebab-case path, or "skip" (not brought)
   C-n  a code folder with no git that no tool of tools/ covers: "project" or "tool" (of the older workspace). None
        is asked inside a repository or a worktree (valid or orphan), nor for scratch of the older workspace (inside a
        dot folder, or a folder its own repository ignores, outside the projects folder): counted only
-  B-n  a backlog item: the project it is about, or "workspace" (the older workspace's own process: dropped)
+  B-n  a backlog item: the project it is about, or "workspace" (about the older workspace itself, its process or its
+       tools, not a project of this import: dropped). Asked for markdown in a backlog folder (backlog/, ideas/,
+       todo/, requests/) of the older workspace's own tree, and for the markdown of a repository answered backlog;
+       never for one of another repository (a data repository's backlog folder included) nor for scratch of the
+       older workspace (a dot folder, or a folder its own repository ignores): those are counted in the plan
 An orphan worktree (a .git file whose gitdir <repository>/.git/worktrees/<name> is gone, and no such entry left)
 belongs to that repository: its project's pending-work request names it, to compare its files by hand; nothing of it
 is fetched. A worktree moved with the older workspace (copied from another machine or folder: its .git file and the
@@ -25,11 +31,12 @@ comes with its repository, a detached head is fetched from the entry. The plan s
 person may repair the pointers there with git worktree repair, the import never does. The worktrees of the older
 workspace itself are one line of the plan: their count and the folders they live under.
 Missing objects (a snapshot taken while git wrote, a clone whose objects/info/alternates names a folder that is gone):
-scan names each repository's refs that point to a missing object and its gone alternates; counts leave those refs out,
-and a count git cannot make is said, never taken for 0. bring brings every complete branch and names the others; a
-project with nothing complete, or a branch that cannot be fetched for a missing object, is recorded as not brought and
-apply goes on; the pending-work request names each. A project with no remote: its request says once that the whole
-repository is unpushed work, every local branch brought as it is.
+scan names each repository's refs that point to a missing object and its gone alternates (in a moved workspace, also
+where that folder is under the folder now, when it is: a repair of the pointer fixes it; the import never repairs
+it); counts leave those refs out, and a count git cannot make is said, never taken for 0. bring brings every complete
+branch and names the others; a project with nothing complete, or a branch that cannot be fetched for a missing object,
+is recorded as not brought and apply goes on; the pending-work request names each. A project with no remote: its
+request says once that the whole repository is unpushed work, every local branch brought as it is.
 
 Commands:
   scan <folder>        the inventory (read only) and the questions; writes a new state
@@ -118,6 +125,7 @@ UNREAD_NOTE = 'Its text was not copied: it could not be read. Read it at its sou
 GIT_SAFE = ('-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false')
 SHA = re.compile(r'[0-9a-f]{40}(?:[0-9a-f]{24})?\Z')
 GLOB_PREFIX = {'branches': 'refs/heads/', 'remotes': 'refs/remotes/'}
+ABOUT_WORKSPACE = 'about the older workspace itself, its process or its tools, not a project of this import'
 MOVED_NOTE = (
     'its worktrees still point there; each is read where it is now. The person may repair those pointers in the '
     'older workspace with `git worktree repair`; the import never does'
@@ -590,22 +598,52 @@ def read_moved(folder, rel, moved, broken):
     return worktree
 
 
-def own_keys(folder, paths):
-    """The url_key of each path that is the older workspace itself: the folder, where it was before it was copied,
-    and its own worktrees, there and here; a repository with one of them as its origin is its own clone."""
-    return {'local:' + os.path.realpath(p) for p in [folder, *paths]}
+def here(path, folder, old_roots):
+    """A path of the older workspace as it is in the folder: one under a root it had before it was copied here
+    (old_roots) is the same path under the folder; any other is unchanged."""
+    for old in old_roots:
+        old = os.path.realpath(old)
+        if path == old or path.startswith(old + '/'):
+            return folder + path[len(old) :]
+    return path
 
 
-def classify(repos, own=frozenset()):
+def local_origin(key):
+    """The path a local origin names (its url_key without local: and a trailing /.git), or None for a remote URL."""
+    if not (key or '').startswith('local:'):
+        return None
+    path = key[len('local:') :]
+    return path[: -len('/.git')] if path.endswith('/.git') else path
+
+
+def own_origin(folder, own, others, root_repo):
+    """A test of a local origin path (as in the folder): True when it is the older workspace's own work: the folder,
+    one of its own worktrees (own), or a place of its own tree that is no other repository or worktree (others), such
+    as one of its worktrees removed since the clone was made."""
+
+    def test(path):
+        """True when the path is the older workspace's own."""
+        if path is None or not inside(path, folder):
+            return False
+        if path == folder or any(inside(path, p) for p in own):
+            return True
+        # A bare repository kept in the older workspace is a remote of its own, not the workspace.
+        bare = os.path.isfile(os.path.join(path, 'HEAD')) and os.path.isdir(os.path.join(path, 'objects'))
+        return root_repo and not bare and not any(inside(path, p) for p in others)
+
+    return test
+
+
+def classify(repos, own=lambda path: False):
     """Sets the kind of each repository: 'project' (the first of its remote in the projects folder), 'clone' (another
     repository of the same remote: a work clone, clone_of its project), 'candidate' (outside the projects folder,
-    alone with its remote: an R question), 'self' (outside the projects folder, its origin the older workspace itself
-    or one of its worktrees, own: its own work) or 'unreadable'."""
+    alone with its remote: an R question), 'self' (outside the projects folder, its origin a local path that own
+    takes for the older workspace itself: its own work) or 'unreadable'."""
     groups = {}
+    in_projects = {r.get('origin_key') for r in repos if r['in_projects'] and 'error' not in r}
     for repo in repos:
-        key = repo.get('origin_key') or ''
-        key = key[: -len('/.git')] if key.endswith('/.git') else key
-        if 'error' not in repo and not repo['in_projects'] and key in own:
+        key = repo.get('origin_key')
+        if 'error' not in repo and not repo['in_projects'] and key not in in_projects and own(local_origin(key)):
             repo['kind'] = 'self'
             continue
         if repo.get('origin_key'):
@@ -746,12 +784,12 @@ def heading_of(path):
 
 
 def repo_markdown(folder, repo, found, trees):
-    """The markdown files of a repository that may be backlog items, should it be answered "backlog": in it and in
-    no repository or worktree inside it, not in a backlog folder already (those are items anyway), not in done/, qa/,
-    archive/ nor in a dot or instruction folder, no README nor instruction file."""
+    """The markdown files of a repository that may be backlog items, only should it be answered "backlog": in it and
+    in no repository or worktree inside it, its backlog folder included, not in done/, qa/, archive/ nor in a dot or
+    instruction folder, no README nor instruction file."""
     items = []
     for rel in found['all_markdown']:
-        if not rel.startswith(repo + '/') or rel in found['markdown'] or nearest(rel, trees - {'.'}) != repo:
+        if not rel.startswith(repo + '/') or nearest(rel, trees - {'.'}) != repo:
             continue
         parts = rel[len(repo) + 1 :].lower().split('/')
         folders, name = parts[:-1], parts[-1]
@@ -777,7 +815,19 @@ def inventory(root, folder):
     root_worktrees = [p for p in root_listed if ('.', os.path.normpath(p)) not in replaced]
     root_worktrees += [os.path.join(folder, rel) for rel, m in sorted(moved.items()) if m['main'] == '.']
     old_roots = sorted({m['old_root'] for m in moved.values()})
-    classify(repos, own_keys(folder, [*old_roots, *root_listed, *root_worktrees]))
+    # A local path of the old root (an origin, an alternates) is read as the same path under the folder.
+    for repo in repos:
+        origin = local_origin(repo.get('origin_key'))
+        if origin and old_roots:
+            repo['origin_key'] = 'local:' + here(origin, folder, old_roots)
+        now = [here(os.path.realpath(a), folder, old_roots) for a in repo.get('alternates', []) if os.path.isabs(a)]
+        now = [p for p in now if os.path.isdir(p)]
+        if now:
+            repo['alternates_here'] = now
+    own = {here(os.path.realpath(p), folder, old_roots) for p in [*root_listed, *root_worktrees]}
+    others = {os.path.join(folder, rel) for rel in (repo_rels | set(found['git_files'])) - {'.'}}
+    others |= {here(os.path.realpath(w['path']), folder, old_roots) for r in repos for w in r.get('worktrees', [])}
+    classify(repos, own_origin(folder, own, others - own, '.' in repo_rels))
     broken = {r['path']: r.get('broken', []) for r in repos}
     worktrees, seen = [], set()
     for repo in repos:
@@ -825,10 +875,17 @@ def inventory(root, folder):
     owned = {rel for rel, kind in kinds.items() if kind in ('project', 'clone', 'self')} | trees
     instruction_dirs = {i.rstrip('/') for i in found['instructions'] if i.endswith('/')}
     code, scratch = code_folders(root, folder, found, repo_rels | trees, instruction_dirs, projects)
-    backlog = []
-    for rel in found['markdown']:
-        if nearest(rel, owned) is None:
-            backlog.append({'path': rel, 'heading': heading_of(os.path.join(folder, rel))})
+    # A repository outside the projects folder owns its tree: its markdown, a backlog folder included, is items only
+    # once it is answered backlog (repo_markdown).
+    holding = owned | {rel for rel, kind in kinds.items() if kind == 'candidate'}
+    items = [rel for rel in found['markdown'] if nearest(rel, holding) is None]
+    # Scratch is no backlog: a copy in a dot folder or a folder the older workspace ignores is counted, never asked.
+    places = {rel: os.path.dirname(rel) or '.' for rel in items}
+    scratched = scratch_of(folder, found, projects, sorted(set(places.values())))
+    backlog = [{'path': r, 'heading': heading_of(os.path.join(folder, r))} for r in items if places[r] not in scratched]
+    copies = [rel for rel in items if places[rel] in scratched]
+    if copies:
+        scratch.update(markdown=len(copies), markdown_tops=sorted({rel.split('/')[0] + '/' for rel in copies}))
     for repo in repos:
         if repo['kind'] == 'candidate':
             repo['markdown'] = repo_markdown(folder, repo['path'], found, repo_rels | trees)
@@ -1026,8 +1083,9 @@ ASK = {
     'P': 'Where in projects/ does it go? A kebab-case path (the proposal, or another), or "skip" (not brought).',
     'C': 'Is this code folder a project (listed with the command to make it a repository) or a tool of the older '
     'workspace? "project" or "tool". Nothing of either is brought.',
-    'B': 'Which project is this item about? One of projects, or "workspace" (the older workspace\'s own process: '
-    'dropped). A title for its request with --title (default: its heading).',
+    'B': 'Which project is this item about? One of projects, or "workspace": about the older workspace itself, its '
+    'process or its tools (a code folder answered tool), not a project of this import; dropped. A title for its '
+    'request with --title (default: its heading).',
 }
 
 
@@ -1156,22 +1214,37 @@ def damage_notes(repo):
     if repo.get('broken'):
         notes.append(f'{len(repo["broken"])} ref(s) point to a missing object: {", ".join(repo["broken"])}')
     if repo.get('alternates'):
-        notes.append(f'its objects/info/alternates names {", ".join(repo["alternates"])}, which is gone')
+        notes.append(
+            f'its objects/info/alternates names {", ".join(repo["alternates"])}, which is gone' + moved_alternates(repo)
+        )
     if repo.get('unread'):
         notes.append(f'its changed files were not read: {repo["unread"]}')
     return notes
+
+
+def moved_alternates(repo):
+    """For a gone alternates the copy still holds under the folder: where it is now, and that a repair of the pointer
+    in the older workspace fixes it (the import never does); else ''."""
+    if not repo.get('alternates_here'):
+        return ''
+    return (
+        f'; it is at {", ".join(repo["alternates_here"])} now: a repair of that pointer in the older workspace fixes '
+        'it; the import never does'
+    )
 
 
 def summary(state):
     """One line with the counts of the inventory."""
     kinds = [r['kind'] for r in state['repos']]
     own = f', {kinds.count("self")} clone(s) of the older workspace itself' if 'self' in kinds else ''
+    scratch = state.get('scratch') or {'count': 0}
+    copies = f', {scratch["markdown"]} scratch backlog file(s)' if scratch.get('markdown') else ''
     parts = [
         f'{len(kinds)} repositories ({kinds.count("project")} in the projects folder, {kinds.count("clone")} work '
         f'clone(s), {kinds.count("candidate")} outside it{own})',
         f'{len(state["worktrees"])} worktree(s)',
         f'{len(state["code_folders"])} code folder(s) with no git',
-        f'{(state.get("scratch") or {"count": 0})["count"]} scratch folder(s)',
+        f'{scratch["count"]} scratch folder(s){copies}',
         f'{len(state["backlog"])} backlog item(s)',
         f'{len(state["instructions"])} instruction file(s) or folder(s)',
     ]
@@ -1282,7 +1355,7 @@ def plan_model(root, state):
     model['backlog'], model['dropped'] = [], []
     for question in [q for q in state['questions'] if q['kind'] == 'B' and q['status'] == 'answered']:
         if question['answer'] == 'workspace':
-            model['dropped'].append((question, "the older workspace's own process"))
+            model['dropped'].append((question, ABOUT_WORKSPACE))
         elif question['answer'] in set(names.values()) - allowed:
             model['dropped'].append((question, f'its project {question["answer"]} is not imported'))
         elif question['answer'] in allowed:
@@ -1381,7 +1454,7 @@ def pending_sources(state, repos, role, path):
         branches = [b for b in repo['branches'] if b['pending'] and b['name'] not in {w['branch'] for w in worktrees}]
         branches = [] if no_remote else branches
         detached = counted(repo['detached'])
-        damage = {key: repo[key] for key in ('broken', 'alternates', 'unread') if repo.get(key)}
+        damage = {key: repo[key] for key in ('broken', 'alternates', 'alternates_here', 'unread') if repo.get(key)}
         if repo['changes'] or branches or repo['stashes'] or detached or damage or no_remote:
             source = {
                 'path': os.path.join(state['source'], rel), 'what': what, 'branch': repo['branch'],
@@ -1445,7 +1518,7 @@ def source_lines(source, brought):
         lines.append(
             f'  - Its objects/info/alternates names {", ".join(code(a) for a in source["alternates"])}, which is gone: '
             'the objects it borrowed from there are missing (a clone made with --shared or --reference); only the '
-            'branches whose objects are complete can be brought'
+            'branches whose objects are complete can be brought' + moved_alternates(source)
         )
     for branch in source['branches']:
         upstream = branch['upstream'].replace('refs/remotes/', '')
@@ -1619,6 +1692,12 @@ def not_imported(state, model):
     if scratch['count']:
         tops = ', '.join(code(top) for top in scratch['tops'])
         lines.append(f'- Scratch of the older workspace: {scratch["count"]} code folder(s) with no git under {tops}')
+    if scratch.get('markdown'):
+        tops = ', '.join(code(top) for top in scratch['markdown_tops'])
+        lines.append(
+            f'- Scratch of the older workspace: {scratch["markdown"]} markdown file(s) of backlog folders under '
+            f'{tops}: never asked'
+        )
     answers = {q['subject']: q['answer'] for q in state['questions'] if q['kind'] == 'C' and q['status'] == 'answered'}
     for folder in state['code_folders']:
         where = os.path.join(source, folder['path'])

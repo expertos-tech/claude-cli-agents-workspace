@@ -638,7 +638,10 @@ class OlderLayoutTest(Fixture):
         self.assertEqual(orphans, {'old': 'projects/billing-api', 'moved': 'projects/billing-api'})
         self.assertEqual(sorted(state['other_git_files']), ['submodule', 'worktrees/plain', 'worktrees/stray'])
         notes = next(r for r in state['repos'] if r['path'] == 'Notes Repo')
-        self.assertEqual([m['path'] for m in notes['markdown']], ['Notes Repo/drafts/pdf.md'])
+        # Its own backlog folder is its markdown, asked only once it is answered backlog; never a backlog item now.
+        markdown = [m['path'] for m in notes['markdown']]
+        self.assertEqual(markdown, ['Notes Repo/backlog/x.md', 'Notes Repo/drafts/pdf.md'])
+        self.assertNotIn('Notes Repo/backlog/x.md', {b['path'] for b in state['backlog']})
 
     def test_a_backlog_repository_and_orphans_in_the_plan(self):
         """R backlog: its markdown files are B questions; the orphans go to the pending work, never fetched."""

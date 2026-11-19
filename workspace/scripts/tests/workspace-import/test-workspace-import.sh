@@ -302,7 +302,7 @@ test_ac1_to_ac6_the_import_brings_projects_branches_and_requests() {
     "$req" "$OLD/backlog/2026-11-09-export-invoices.md"
   check "text unchanged" $?
   ! grep -rqF "session queue" "$W/custom/requests"; check "process item has no request" $?
-  file_has "$plan" "Faster session queue (the older workspace's own process)"
+  file_has "$plan" "Faster session queue (about the older workspace itself, its process or its tools, not a project of this import)"
   # AC-6: nothing of the rules imported.
   [ ! -e "$W/custom/my-rules" ] && [ ! -e "$W/custom/rules-config.json" ]; check "no rules imported" $?
   # custom/ committed by path, not pushed.
@@ -593,6 +593,12 @@ test_a_workspace_copied_from_another_folder_counts_each_worktree_once() {
   git -C "$OLD" worktree add -q -b agent/one "$OLD/tmp/agents/one"
   git -C "$OLD" worktree add -q --detach "$OLD/tmp/agents/two"
   git clone -q "$OLD" "$OLD/tmp/agents/self"
+  # A clone made with --shared of a worktree of the older workspace itself, that worktree removed since: its origin
+  # and its objects/info/alternates name the old root, and nothing of the folder is at that worktree's path.
+  git -C "$OLD" worktree add -q --detach "$OLD/tmp/worktrees/agent-old"
+  git clone -q --shared "$OLD/tmp/worktrees/agent-old" "$OLD/tmp/agents/copy"
+  git -C "$OLD" worktree remove --force "$OLD/tmp/worktrees/agent-old"
+  local old_root="$OLD"
   spike="$(git -C "$OLD/worktrees/billing-api-spike" rev-parse HEAD)"
   mv "$OLD" "$moved"
   OLD="$moved"
@@ -600,6 +606,7 @@ test_a_workspace_copied_from_another_folder_counts_each_worktree_once() {
   imp scan "$OLD"
   rc_is 0
   has "2 worktree(s)"
+  has "attention: tmp/agents/copy: its objects/info/alternates names $old_root/.git/objects, which is gone; it is at $OLD/.git/objects now"
   imp questions --json
   hasnt "tmp/agents"
   answers_to_plan
@@ -607,6 +614,8 @@ test_a_workspace_copied_from_another_folder_counts_each_worktree_once() {
   file_has "$plan" "git worktree repair"
   file_has "$plan" "2 worktree(s) of the older workspace itself, under \`tmp/agents/\`"
   file_has "$plan" "\`$OLD/tmp/agents/self\`: a clone of the older workspace itself"
+  file_has "$plan" "\`$OLD/tmp/agents/copy\`: a clone of the older workspace itself"
+  eq "the clone of a removed worktree listed once" 1 "$(grep -cF "$OLD/tmp/agents/copy" "$plan")"
   ! grep -qF "a .git file of no repository" "$plan"; check "no pointer left as a stray .git file" $?
   ! grep -qF "orphan" "$plan"; check "no moved worktree taken for an orphan" $?
   eq "the detached worktree once, from its git folder" 1 "$(grep -cF "billing-api/.git/worktrees/billing-api-spike\` | \`HEAD\`" "$plan")"
@@ -719,6 +728,65 @@ test_a_project_with_no_remote_is_unpushed_work_said_once() {
   pending="$W/custom/requests/$TODAY-lab-pending-work.md"
   file_has "$pending" "No remote: the whole repository is unpushed work"
   ! grep -qF "no upstream" "$pending"; check "no branch listed as if behind a remote" $?
+}
+
+# F-7: backlog folders in scratch of the older workspace (an editor's backups in a dot folder, a folder it ignores).
+test_backlog_items_in_scratch_are_counted_never_asked() {
+  workspace
+  older
+  local backup="$OLD/.history/file-backups/a1/20261101/tmp/worktrees/agent/backlog" plan
+  mkdir -p "$backup" "$OLD/tmp/scratch/backlog"
+  printf '# Export invoices as CSV\n\nA backup copy.\n' >"$backup/2026-11-09-export-invoices.md"
+  printf '# Old copy\n' >"$OLD/tmp/scratch/backlog/copy.md"
+  imp scan "$OLD"
+  rc_is 0
+  imp answer R-1 data
+  imp questions --json
+  rc_is 0
+  has '"id": "B-2"'
+  hasnt '"id": "B-3"'
+  hasnt ".history"
+  hasnt "tmp/scratch"
+  answers_to_plan
+  plan="$W/custom/migrations/import-$TODAY.md"
+  file_has "$plan" "Scratch of the older workspace: 2 markdown file(s) of backlog folders under \`.history/\`, \`tmp/\`: never asked"
+}
+
+# F-8: a repository outside the projects folder owns its tree: its backlog folder is items only when answered backlog.
+test_a_data_repository_gives_no_backlog_item() {
+  workspace
+  older
+  mkdir -p "$OLD/notes/backlog"
+  printf '# Copy of the export item\n' >"$OLD/notes/backlog/copy.md"
+  imp scan "$OLD"
+  rc_is 0
+  imp questions --json
+  hasnt '"id": "B-'
+  imp answer R-1 data
+  rc_is 0
+  imp questions --json
+  hasnt "notes/backlog/copy.md"
+  hasnt '"id": "B-3"'
+  imp answer R-1 backlog
+  rc_is 0
+  imp questions --json
+  has "$OLD/notes/backlog/copy.md"
+}
+
+# F-9: "workspace" drops an item about the older workspace itself, its process or its tools, said so in the plan.
+test_an_item_answered_workspace_is_dropped_as_about_the_older_workspace() {
+  workspace
+  older
+  local plan
+  imp scan "$OLD"
+  imp answer R-1 data
+  imp questions
+  has 'about the older workspace itself'
+  has 'its tools'
+  answers_to_plan
+  plan="$W/custom/migrations/import-$TODAY.md"
+  file_has "$plan" "Faster session queue (about the older workspace itself, its process or its tools, not a project of this import)"
+  ! grep -qF "own process)" "$plan"; check "the old reason is gone" $?
 }
 
 test_refusals() {
