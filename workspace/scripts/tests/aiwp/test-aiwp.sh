@@ -287,7 +287,7 @@ test_install_missing_prerequisite() {
 test_install_empty_folder_install_here() {
   fixture
   mkdir -p "$T/empty"
-  answers "$T/answers" "Choose [1-2]:" 1 "custom layer repository" ""
+  answers "$T/answers" "Choose [1-2]:" 1 "custom layer repository" "" "Preferred language" portuguese
   in_pty "$T/empty" "$T/answers" bash "$INSTALLER"
   rc_is 0
   has "1) Install here: $T/empty"
@@ -296,6 +296,9 @@ test_install_empty_folder_install_here() {
   [ "$(version_of "$T/empty")" = 0.1.0 ]; check "workspace created in the current folder" $?
   [ -d "$T/empty/custom/.git" ]; check "custom answered on the terminal: a local repository" $?
   [ "$(registry_paths)" = "$T/empty" ]; check "registered" $?
+  # The language answered on the terminal, through the installer: the native setting of Claude Code.
+  has "language: portuguese, in .claude/settings.local.json"
+  content_is "$T/empty/.claude/settings.local.json" $'{\n  "language": "portuguese"\n}'
 }
 
 test_install_empty_folder_another_path() {
@@ -303,11 +306,12 @@ test_install_empty_folder_another_path() {
   mkdir -p "$T/empty" "$T/full"
   echo mine >"$T/full/mine.txt"
   answers "$T/answers" "Choose [1-2]:" 3 "Answer 1 or 2." 2 "(a new or an empty folder):" "$T/full" \
-    "give a new or an empty folder." "$T/ws-other" "custom layer repository" ""
+    "give a new or an empty folder." "$T/ws-other" "custom layer repository" "" "Preferred language" ""
   in_pty "$T/empty" "$T/answers" bash "$INSTALLER"
   rc_is 0
   has "$T/full is not empty: give a new or an empty folder."
   has "created: $T/ws-other"
+  absent "$T/ws-other/.claude/settings.local.json"
   [ "$(version_of "$T/ws-other")" = 0.1.0 ]; check "workspace created in the path given" $?
   [ -z "$(ls -A "$T/empty")" ]; check "the current folder stays empty" $?
   content_is "$T/full/mine.txt" mine
@@ -319,7 +323,7 @@ test_install_non_empty_folder_asks_only_the_path() {
   echo mine >"$T/cwd/mine.txt"
   # shellcheck disable=SC2088  # the answer a person types: the installer expands the ~
   answers "$T/answers" "(a new or an empty folder):" "" "(a new or an empty folder):" "$T/cwd/mine.txt" \
-    "not a folder: give a new or an empty folder." "~/ws-home" "custom layer repository" ""
+    "not a folder: give a new or an empty folder." "~/ws-home" "custom layer repository" "" "Preferred language" ""
   # As curl | bash runs it: the script on stdin, the answers from the terminal.
   # shellcheck disable=SC2016  # $1 expands in the inner bash
   in_pty "$T/cwd" "$T/answers" bash -c 'cat "$1" | bash' _ "$INSTALLER"
@@ -327,6 +331,7 @@ test_install_non_empty_folder_asks_only_the_path() {
   has "This folder is not empty ($T/cwd)"
   hasnt "Install here"
   has "created: $HOME/ws-home"
+  absent "$HOME/ws-home/.claude/settings.local.json"
   [ "$(version_of "$HOME/ws-home")" = 0.1.0 ]; check "~ expands to HOME" $?
 }
 
@@ -539,6 +544,9 @@ test_new_layout_and_modes() {
   mode_is "$WS/tools/container-console-colima/internal/webui/dist/placeholder.html" 444
   absent "$WS/tools/azurite-console"
   present "$WS/.claude/setup-stamp"
+  # No terminal: the language is never asked, and nothing is written.
+  hasnt "Preferred language"
+  absent "$WS/.claude/settings.local.json"
   # The product only: nothing of the repository root.
   content_is "$WS/README.md" "PRODUCT README"
   local f
@@ -626,6 +634,119 @@ test_new_failure_leaves_nothing() {
   rc_is 1
   has "could not clone the custom layer"
   absent "$WS"
+}
+
+# --- aiwp new: the preferred language of communication
+
+# Runs subcommand $1 of the python helper embedded in aiwp.sh (its py function) with the remaining arguments: the
+# helper's own code, read from the script under test. Sets OUT and RC.
+aiwp_py() {
+  OUT="$(awk "/<<'PY'\$/ && !seen { on = 1; seen = 1; next } /^PY\$/ { on = 0 } on" "$AIWP" | "$PY3" -I - "$@" 2>&1)"
+  RC=$?
+}
+
+test_new_asks_the_language_on_a_terminal() {
+  fixture
+  run_install
+  local long
+  long="$(printf 'a%.0s' $(seq 1 41))"
+  # Invalid answers are asked again; the valid one is stored trimmed, as typed.
+  answers "$T/answers" "custom layer repository" "" "Preferred language" "portugu3se" "Preferred language" "português" \
+    "Preferred language" "$long" "Preferred language" "  portuguese  "
+  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" new "$WS"
+  rc_is 0
+  has "created: $WS"
+  has "not a language name: use only English letters, spaces, hyphens and parentheses."
+  has "not a language name: at most 40 characters."
+  [ "$(grep -o 'Preferred language of communication with Claude' <<<"$OUT" | wc -l | tr -d ' ')" = 4 ]
+  check "asked four times" $?
+  has "language: portuguese, in .claude/settings.local.json"
+  content_is "$WS/.claude/settings.local.json" $'{\n  "language": "portuguese"\n}'
+  # The setup ran after the question, and the file stays where the person can edit it.
+  present "$WS/.claude/setup-stamp"
+  [ -w "$WS/.claude/settings.local.json" ]; check "settings.local.json is writable" $?
+  # An empty answer writes nothing.
+  answers "$T/answers" "custom layer repository" "" "Preferred language" ""
+  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" new "$T/ws2"
+  rc_is 0
+  has "created: $T/ws2"
+  hasnt "language: "
+  absent "$T/ws2/.claude/settings.local.json"
+  # The end of input (Ctrl-D) writes nothing, and the workspace is still created.
+  answers "$T/answers" "custom layer repository" "" "Preferred language" $'\x04'
+  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" new "$T/ws3"
+  rc_is 0
+  has "created: $T/ws3"
+  absent "$T/ws3/.claude/settings.local.json"
+  [ "$(version_of "$T/ws3")" = 0.1.0 ]; check "workspace created after the end of input" $?
+}
+
+test_settings_language_keeps_other_keys() {
+  fixture
+  mkdir -p "$T/s"
+  local f="$T/s/settings.local.json"
+  printf '{"model": "sonnet", "language": "spanish", "permissions": {"allow": ["Bash(ls)"]}}' >"$f"
+  chmod 600 "$f"
+  aiwp_py settings-language "$f" portuguese
+  rc_is 0
+  "$PY3" -I -c 'import json, sys
+data = json.load(open(sys.argv[1]))
+assert list(data) == ["model", "language", "permissions"], list(data)
+assert data["language"] == "portuguese" and data["model"] == "sonnet", data
+assert data["permissions"] == {"allow": ["Bash(ls)"]}, data' "$f"
+  check "language replaced, every other key kept in its place" $?
+  grep -q '^  "model": "sonnet",$' "$f"; check "2-space indent" $?
+  mode_is "$f" 600
+  [ "$(ls -A "$T/s")" = settings.local.json ]; check "no temp file left" $?
+  # A missing file is created with the key alone.
+  aiwp_py settings-language "$T/s/new.json" spanish
+  rc_is 0
+  content_is "$T/s/new.json" $'{\n  "language": "spanish"\n}'
+  # A file that is not a JSON object, or not JSON, or not a regular file, is left as it is, with a warning.
+  printf '["language"]\n' >"$T/s/list.json"
+  cp "$T/s/list.json" "$T/s/list.orig"
+  aiwp_py settings-language "$T/s/list.json" portuguese
+  rc_is 1
+  has "is not a JSON object; it was left as it is"
+  cmp -s "$T/s/list.json" "$T/s/list.orig"; check "a JSON list is left as it is" $?
+  printf '{"model": \n' >"$T/s/bad.json"
+  cp "$T/s/bad.json" "$T/s/bad.orig"
+  aiwp_py settings-language "$T/s/bad.json" portuguese
+  rc_is 1
+  has "cannot be read"
+  cmp -s "$T/s/bad.json" "$T/s/bad.orig"; check "invalid JSON is left as it is" $?
+  ln -s new.json "$T/s/link.json"
+  aiwp_py settings-language "$T/s/link.json" portuguese
+  rc_is 1
+  [ -L "$T/s/link.json" ]; check "a link stays a link" $?
+  content_is "$T/s/new.json" $'{\n  "language": "spanish"\n}'
+}
+
+test_update_and_opening_keep_the_language_setting() {
+  fixture
+  setup_ws || return
+  local f="$WS/.claude/settings.local.json" before
+  printf '{\n  "permissions": {"allow": ["Bash(ls)"]},\n  "language": "portuguese"\n}\n' >"$f"
+  cp "$f" "$T/before.json"
+  before="$(inode_mtime "$f")"
+  publish_v2
+  # update in a terminal: it never asks the language and never touches the file.
+  answers "$T/answers" "Choose [1]:" ""
+  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" update
+  rc_is 0
+  hasnt "Preferred language"
+  [ "$(version_of "$WS")" = 0.2.0 ]; check "updated to 0.2.0" $?
+  cmp -s "$T/before.json" "$f"; check "update: settings.local.json byte for byte the same" $?
+  # The opening (which runs setup-claude.sh), rollback and repair do not touch it either.
+  run_aiwp_in "$WS"
+  rc_is 0
+  run_aiwp_in "$WS" rollback
+  rc_is 0
+  run_aiwp_in "$WS" repair
+  rc_is 0
+  hasnt "Preferred language"
+  cmp -s "$T/before.json" "$f"; check "opening, rollback, repair: byte for byte the same" $?
+  [ "$(inode_mtime "$f")" = "$before" ]; check "never rewritten (same inode and mtime)" $?
 }
 
 # --- opening
@@ -933,6 +1054,83 @@ test_update_keeps_the_last_three_backups() {
   [ "$(find "$WS/.aiwp/backup" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 3 ]; check "three backups kept" $?
   present "$WS/.aiwp/backup/0.1.0"
   absent "$WS/.aiwp/backup/0.0.1"
+}
+
+# --- update: the link of the removed single-agent mode
+# The fixture never ships scripts/single-claude.sh, so a link to it in the workspace is the dangling link an update
+# leaves once the file is gone: the state the cleanup looks at, with no change to the fixture.
+
+SINGLE_LINE="removed ~/.local/bin/single-claude: the single-agent mode no longer exists"
+
+test_update_removes_the_single_claude_link_of_this_workspace() {
+  fixture
+  setup_ws || return
+  ln -s "$WS/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  publish_v2
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  has "$SINGLE_LINE"
+  absent "$HOME/.local/bin/single-claude"
+  [ -L "$HOME/.local/bin/aiwp" ]; check "the aiwp link is untouched" $?
+  # The same file through another spelling of the workspace path (a link to it), on a run that is up to date.
+  ln -s "$WS" "$T/alias"
+  ln -s "$T/alias/scripts/../scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "up to date: 0.2.0"
+  has "$SINGLE_LINE"
+  absent "$HOME/.local/bin/single-claude"
+}
+
+test_update_keeps_a_single_claude_link_to_another_folder() {
+  fixture
+  setup_ws || return
+  second_ws
+  ln -s "$WS2/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  publish_v2
+  run_aiwp_in "$T" update "$WS"
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  hasnt "single-claude"
+  [ -L "$HOME/.local/bin/single-claude" ]; check "the link to another workspace stays" $?
+  [ "$(readlink "$HOME/.local/bin/single-claude")" = "$WS2/scripts/single-claude.sh" ]; check "its target unchanged" $?
+  # A link to a single-claude.sh that exists, in a folder outside every workspace, is left alone too.
+  rm -f "$HOME/.local/bin/single-claude"
+  mkdir -p "$T/elsewhere/scripts"
+  echo mine >"$T/elsewhere/scripts/single-claude.sh"
+  ln -s "$T/elsewhere/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  run_aiwp_in "$T" update "$WS"
+  rc_is 0
+  has "up to date: 0.2.0"
+  hasnt "single-claude"
+  [ -L "$HOME/.local/bin/single-claude" ]; check "the link to an existing file stays" $?
+}
+
+test_update_keeps_a_regular_file_named_single_claude() {
+  fixture
+  setup_ws || return
+  printf '#!/usr/bin/env bash\necho mine\n' >"$HOME/.local/bin/single-claude"
+  publish_v2
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  hasnt "single-claude"
+  [ -f "$HOME/.local/bin/single-claude" ] && [ ! -L "$HOME/.local/bin/single-claude" ]; check "the file stays" $?
+  content_is "$HOME/.local/bin/single-claude" "$(printf '#!/usr/bin/env bash\necho mine')"
+}
+
+test_update_with_no_single_claude_link_says_nothing() {
+  fixture
+  setup_ws || return
+  local before
+  before="$(ls -A "$HOME/.local/bin")"
+  publish_v2
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  hasnt "single-claude"
+  [ "$(ls -A "$HOME/.local/bin")" = "$before" ]; check "the bin folder unchanged" $?
 }
 
 test_edited_core_stops_update_and_repair_fixes() {

@@ -9,7 +9,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BASE="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'real_cleanup; rm -rf "$BASE"' EXIT
+trap 'real_cleanup; chmod -R u+rwX "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE AIWP_TERMS_FILE
@@ -93,7 +93,7 @@ fixture() {
   mkdir -p "$DSTUB/containers" "$DSTUB/res"
   : >"$DOCKER_LOG"
   unset DOCKER_DOWN CAW_TEST_INSTALL INSTALL_RESULT
-  printf 'tmp/\n' >"$R/.gitignore"
+  printf 'tmp/\n.claude/settings.local.json\n' >"$R/.gitignore"
   printf '# sample\n' >"$R/README.md"
   git -C "$R" add -A
   git -C "$R" commit -q -m base
@@ -210,6 +210,105 @@ test_open_needs_an_origin() {
   rc_is 1
   has "no origin remote"
   [ ! -e "$R/tmp/work/$W" ]; check "nothing created" $?
+}
+
+# The value of "language" in a settings file, or "-" when the file has none or cannot be read.
+language_of() {
+  python3 -I -c 'import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError):
+    data = None
+print(data.get("language", "-") if isinstance(data, dict) else "-")' "$1"
+}
+
+# BR-1, BR-3: open gives a new clone the root's preferred language, so a session there neither asks it again nor misses it.
+test_open_copies_the_preferred_language() {
+  fixture
+  mkdir -p "$R/.claude"
+  printf '{\n  "language": "portuguese",\n  "model": "x"\n}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "language: portuguese (from the root .claude/settings.local.json)"
+  eq "clone language" "portuguese" "$(language_of "$C/.claude/settings.local.json")"
+  eq "only the language is copied" '{"language": "portuguese"}' "$(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$C/.claude/settings.local.json")"
+  git -C "$C" check-ignore -q -- .claude/settings.local.json; check "git ignores it in the clone" $?
+  eq "clone clean" "" "$(git -C "$C" status --porcelain)"
+  eq "no temp file left" "settings.local.json" "$(ls -A "$C/.claude")"
+  eq "root file untouched" "portuguese" "$(language_of "$R/.claude/settings.local.json")"
+}
+
+# A clone file keeps its other keys, and a language of its own is never replaced.
+test_open_merges_the_language_into_the_clone_file() {
+  fixture
+  mkdir -p "$R/.claude"
+  printf '{"language": "portuguese"}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  mkdir -p "$C/.claude"
+  printf '{"permissions": {"allow": ["Bash(ls)"]}, "env": {"A": "1"}}\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "(already open)"
+  has "language: portuguese"
+  eq "language added" "portuguese" "$(language_of "$C/.claude/settings.local.json")"
+  eq "other keys kept" '{"permissions": {"allow": ["Bash(ls)"]}, "env": {"A": "1"}, "language": "portuguese"}' \
+    "$(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$C/.claude/settings.local.json")"
+  printf '{"language": "spanish", "model": "y"}\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  hasnt "language: portuguese"
+  eq "own language kept" '{"language": "spanish", "model": "y"}' "$(cat "$C/.claude/settings.local.json")"
+  # A malformed clone file is left as it is, with a warning; open still succeeds.
+  printf '{"language": \n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "attention: "
+  has "left as it is"
+  eq "malformed file untouched" '{"language": ' "$(cat "$C/.claude/settings.local.json")"
+  printf '["portuguese"]\n' >"$C/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "left as it is"
+  eq "not an object: untouched" '["portuguese"]' "$(cat "$C/.claude/settings.local.json")"
+}
+
+# No language at the root (no file, no key, an empty one, a malformed file): nothing written, nothing said.
+test_open_without_a_root_language_writes_nothing() {
+  fixture
+  run open "$B"
+  rc_is 0
+  hasnt "language:"
+  hasnt "attention: the language"
+  [ ! -e "$C/.claude/settings.local.json" ]; check "no file without the root file" $?
+  local body
+  for body in '{"model": "x"}' '{"language": "  "}' '{"language": 3}' '{"language": ' '["portuguese"]'; do
+    mkdir -p "$R/.claude"
+    printf '%s\n' "$body" >"$R/.claude/settings.local.json"
+    run open "$B"
+    rc_is 0
+    hasnt "language:"
+    hasnt "attention"
+    [ ! -e "$C/.claude/settings.local.json" ]; check "nothing written for [$body]" $?
+  done
+}
+
+# A clone where git would not ignore .claude/settings.local.json gets no file: it would be committed.
+test_open_copies_the_language_only_where_git_ignores_it() {
+  fixture
+  # The default global excludes file ($XDG_CONFIG_HOME/git/ignore, else ~/.config/git/ignore) may ignore it already.
+  local XDG_CONFIG_HOME="$BASE/xdg"
+  export XDG_CONFIG_HOME
+  printf 'tmp/\n' >"$R/.gitignore"
+  git -C "$R" commit -q -am "no ignore of the local settings"
+  git -C "$R" push -q origin developer
+  mkdir -p "$R/.claude"
+  printf '{"language": "portuguese"}\n' >"$R/.claude/settings.local.json"
+  run open "$B"
+  rc_is 0
+  has "attention: "
+  has "git does not ignore"
+  [ ! -e "$C/.claude/settings.local.json" ]; check "nothing written" $?
 }
 
 test_every_commit_is_pushed() {
@@ -1093,8 +1192,8 @@ test_accept_terms_keeps_the_hard_refusals() {
   has "never pushes a tag"
 }
 
-# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work, caw-layers and
-# caw-session-index suites are stubs (the gate copies the terms list it gets to GATE_TERMS_OUT).
+# tests/check.sh repo-terms in a throwaway repository: the product gate and the caw-work, caw-layers,
+# caw-session-index and caw-language suites are stubs (the gate copies the terms list it gets to GATE_TERMS_OUT).
 test_check_repo_terms_skips_accepted_terms() {
   local k="$BASE/check.$CURRENT" list="$BASE/terms.$CURRENT.txt"
   rm -rf "$k"
@@ -1106,6 +1205,7 @@ test_check_repo_terms_skips_accepted_terms() {
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-review-fixtures.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-layers.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-session-index.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$k/tests/test-caw-language.sh"
   # The session index and its hook, as caw-layers requires them (tests/lib/layers.sh).
   mkdir -p "$k/.claude"
   printf '@workspace/AGENTS.md\n\n## Ignore from the product index\n\n## Mapping\n\n## CAW index\n' \
@@ -1231,6 +1331,96 @@ test_close_discard() {
   has "discarded: tmp/work/$W"
   [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
   eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+}
+
+# Builds a test installation inside the clone as tests/test-install.sh leaves it (git-ignored tmp/test-install/
+# <timestamp>/: core folders 555, files 444, executables 555, a bare remote.git), with two symlinks out of the work
+# folder: to a read-only file and to a read-only folder of $BASE, which close must leave as they are.
+read_only_install_in_clone() {
+  local d="$C/tmp/test-install/20261118-101500"
+  mkdir -p "$d/workspace/rules/skills/merge" "$d/workspace/scripts" "$d/home" "$BASE/outside.$CURRENT/dir"
+  git init -q --bare "$d/remote.git"
+  printf '# agents\n' >"$d/workspace/AGENTS.md"
+  printf '# merge\n' >"$d/workspace/rules/skills/merge/SKILL.md"
+  printf '#!/usr/bin/env bash\n' >"$d/workspace/scripts/aiwp.sh"
+  printf 'keep\n' >"$BASE/outside.$CURRENT/file"
+  printf 'keep\n' >"$BASE/outside.$CURRENT/dir/inner"
+  ln -s "$BASE/outside.$CURRENT/file" "$d/workspace/link-to-file"
+  ln -s "$BASE/outside.$CURRENT/dir" "$d/workspace/link-to-dir"
+  chmod 444 "$d/workspace/AGENTS.md" "$d/workspace/rules/skills/merge/SKILL.md" "$BASE/outside.$CURRENT/file" \
+    "$BASE/outside.$CURRENT/dir/inner"
+  chmod 555 "$d/workspace/scripts/aiwp.sh" "$BASE/outside.$CURRENT/dir"
+  find "$d/remote.git" -type f -exec chmod 444 {} +
+  find "$d/remote.git" "$d/workspace" -type d -exec chmod 555 {} +
+}
+# Checks that what the symlinks of read_only_install_in_clone point at kept its modes and content.
+outside_untouched() {
+  [ ! -w "$BASE/outside.$CURRENT/file" ] && [ ! -w "$BASE/outside.$CURRENT/dir" ] &&
+    [ ! -w "$BASE/outside.$CURRENT/dir/inner" ] && [ "$(cat "$BASE/outside.$CURRENT/dir/inner")" = keep ]
+  check "the targets of the symlinks kept their modes" $?
+}
+
+test_close_after_a_test_installation_in_the_clone() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  read_only_install_in_clone
+  merge_into_developer
+  run close "$W"
+  rc_is 0
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed completely" $?
+  eq "remote branch deleted" none "$(remote_sha "heads/$B")"
+  case "$OUT" in *"closed: tmp/work/$W"*"deleted on origin: $B"*) check "folder first, then the remote" 0 ;;
+    *) check "folder first, then the remote" 1 ;; esac
+  outside_untouched
+}
+
+test_close_discard_with_a_read_only_tree() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  read_only_install_in_clone
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  run close "$W" --discard
+  rc_is 0
+  has "discarded: tmp/work/$W"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed completely" $?
+  eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+  outside_untouched
+}
+
+# An rm first on PATH that fails as a delete the owner cannot complete does: close stops before the remote, says what
+# is left, and a later close (rm working again) finishes, the remote branch deleted then.
+test_close_failed_delete_keeps_the_remote_branch() {
+  fixture
+  run open "$B"
+  commit_in a.txt one
+  merge_into_developer
+  local pushed
+  pushed="$(remote_sha "heads/$B")"
+  mkdir -p "$BASE/rmstub.$CURRENT"
+  printf '#!/usr/bin/env bash\necho "rm: cannot remove: Permission denied" >&2\nexit 1\n' >"$BASE/rmstub.$CURRENT/rm"
+  chmod +x "$BASE/rmstub.$CURRENT/rm"
+  OUT="$(cd "$R" && PATH="$BASE/rmstub.$CURRENT:$PATH" bash "$R/tests/caw-work.sh" close "$W" 2>&1)"
+  RC=$?
+  rc_is 1
+  has "could not delete tmp/work/$W"
+  has "left: tmp/work/$W/claude-cli-agents-workspace"
+  has "the remote branch stays: $B"
+  hasnt "deleted on origin"
+  eq "remote branch kept" "$pushed" "$(remote_sha "heads/$B")"
+  [ -d "$C/.git" ]; check "clone kept" $?
+  OUT="$(cd "$R" && PATH="$BASE/rmstub.$CURRENT:$PATH" bash "$R/tests/caw-work.sh" close "$W" --discard 2>&1)"
+  RC=$?
+  rc_is 1
+  has "could not delete tmp/work/$W"
+  hasnt "discarded:"
+  run close "$W"
+  rc_is 0
+  has "deleted on origin: $B"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
+  eq "remote branch deleted" none "$(remote_sha "heads/$B")"
 }
 
 # Writes a tool of the clone: workspace/tools/<id>/compose.yaml (with $2 as its text) and an app file.

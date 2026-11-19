@@ -11,13 +11,17 @@ You own and maintain this project. A session opened at this root changes the pro
 - `claudeMdExcludes` patterns match absolute paths. The committed patterns assume the clone folder is named
   `claude-cli-agents-workspace`. In a clone with another name, add the same patterns with your clone's absolute path
   (for example `/abs/path/to/clone/workspace/**`) to `.claude/settings.local.json`, which git ignores.
-- No product hook runs here; the one hook of the root is the session index ("Layout"). Never run `workspace/scripts/setup-claude.sh` inside `workspace/`; exercise hooks in a
+- No product hook runs here; the hooks of the root are the session index ("Layout") and the language question
+  ("Language"). Never run `workspace/scripts/setup-claude.sh` inside `workspace/`; exercise hooks in a
   test installation (`/caw-test-install`).
 
 ## Language
 
-English in every file: code, docs, plans, requests, messages, commits. Reply in the language the person writes in; a
-plan, request or document is shown in that language and saved in English, with one line saying so.
+English in every file: code, docs, plans, requests, messages, commits. Reply in the preferred language, the Claude
+Code setting `language` (`.claude/settings.local.json` here, or the user's `~/.claude/settings.json`), even when a
+request file is in English. With none set, the SessionStart hook `tests/caw-language.py` has the session ask for it
+first and write it; until then, reply in the language the person writes in. A plan, request or document is shown in the
+reply language and saved in English, with one line saying so.
 Translations live in `i18n/<locale>/`, only for documents and READMEs (`.claude/rules/docs.md`).
 The project is documented in `docs/` (install, contribute, maintain, release); the product in `workspace/docs/`.
 
@@ -30,7 +34,7 @@ product skill", "Mapping" and "CAW rules", which win. The maintenance rules with
 (`security`, `review`, `models`, `git`, `docs`, `scripts` of `.claude/rules/`) are layers the same way: the first line
 of the body is `@workspace/rules/<name>.md`, read in full with the layer whenever it applies, whatever its `paths:`, then
 `---` and "Ignore from the product rule", "Mapping" and "CAW rules". When to read each one is the session index: the
-one hook here, at the session start and after a compaction (`tests/caw-session-index.py`), builds it from the
+hook `tests/caw-session-index.py`, at the session start and after a compaction, builds it from the
 product's index (`workspace/AGENTS.md` "Reference") with the layer `.claude/session-index.md` over it. The same hook
 defines the pointer: a line holding only `@<path>`, in this file or a rule or skill of `.claude/`, names a file to read in
 full from the root when the file holding it applies; an `@` anywhere else, a file of `workspace/` included, is not
@@ -38,7 +42,7 @@ one. The layers of
 skills, of rules and of the index are the only cases where this session follows a product file as instructions;
 nothing else of `workspace/` is read as instructions, and `tests/check.sh` checks every layer.
 
-`.claude/` (settings with the one hook, the session index; `rules/`, `skills/`, `agents/`), `tests/` (`check.sh`; `test-install.sh` arrives with
+`.claude/` (settings with the two hooks, the session index; `rules/`, `skills/`, `agents/`), `tests/` (`check.sh`; `test-install.sh` arrives with
 the installer), `maintainers/` (`plans/`, `requests/` with `qa/` and `done/`, `reviews/`: public), `tmp/` (git-ignored: test
 installations, private analyses, `tmp/request.md`), `logs/` (git-ignored), `workspace/` (the product), `docs/` (the project's documentation),
 `i18n/`, `README.md`, `CHANGELOG.md` (the repository's; the product's is `workspace/CHANGELOG.md`), `LICENSE`.

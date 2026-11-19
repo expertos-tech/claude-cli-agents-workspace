@@ -151,7 +151,12 @@ The owner answered the three warnings of the merge review with `fix` (the board 
 - The fourth warning of the review (a scratch push counts what any branch of `origin` has as scanned) was already
   the owner's decision: not reported again.
 - AC-4: the run of `tests/test-install.sh` from a work clone, right after the first merge, passed every check: the
-  snapshot went through the clone's own pre-push (BR-5, BR-6).
+  snapshot went through the clone's own pre-push (BR-5, BR-6). The run: 2026-11-18, after `developer` reached
+  `5817656`, `bash tests/caw-work.sh run 2026-11-18-validators-follow-ups -- bash tests/test-install.sh`; the
+  installation `tmp/test-install/20261118-211416/` of that clone; the snapshot `f185777` pushed to its throwaway
+  repository (`SKIP terms scan: no terms list`) and tagged `v0.1.0`; 23 checks `PASS`, `result: PASS`. The
+  installation was removed before the clone closed (its core is read-only). This closes the "Left:" of the block
+  above.
 
 Changelog: none (a fix of the same unreleased version, still described by its entry, and two paths).
 

@@ -129,10 +129,11 @@ Installs or updates Claude CLI Agents Workspace for the current user, then creat
        Linux and WSL  ${XDG_DATA_HOME:-~/.local/share}/claude-cli-agents-workspace
        macOS          ~/Library/Application Support/claude-cli-agents-workspace
   3. links ~/.local/bin/aiwp to the aiwp command of that folder, and says how to put ~/.local/bin on PATH.
-  4. creates the workspace with aiwp new <folder> (which also asks for the custom layer's repository) and adds it to
-     the registry of workspaces. The folder: the argument, else AIWP_WORKSPACE, else a question on the terminal
-     (/dev/tty, which works under curl | bash): in an empty current folder, 1) install here or 2) give another
-     path; in a folder with content, only the path. The folder must be new or empty; a bad answer is asked again.
+  4. creates the workspace with aiwp new <folder> (which also asks, on the terminal, for the custom layer's repository
+     and the preferred language of communication with Claude) and adds it to the registry of workspaces. The
+     folder: the argument, else AIWP_WORKSPACE, else a question on the terminal (/dev/tty, which works under
+     curl | bash): in an empty current folder, 1) install here or 2) give another path; in a folder with content,
+     only the path. The folder must be new or empty; a bad answer is asked again.
      When the data folder is installed already, the question also offers to only update it (3, or an empty path).
      With no terminal and no folder given, only the data folder is installed, and it says how to create one.
 Running it again updates the data folder; it never updates a workspace (aiwp update does, in a terminal). Native
@@ -279,7 +280,8 @@ NEXT
   fi
   echo
   echo "creating the workspace: $WORKSPACE_DIR"
-  # aiwp new asks for the custom layer's repository on the terminal; never on the pipe that holds this script.
+  # aiwp new asks for the custom layer's repository and the preferred language on the terminal; never on the pipe
+  # that holds this script.
   if [ "$tty" -eq 1 ]; then
     bash "$data/workspace/scripts/aiwp.sh" new "$WORKSPACE_DIR" </dev/tty || return 1
   else

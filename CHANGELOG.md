@@ -43,6 +43,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `high` into `main`; the gate's non-secret checks, four asks of `guard-bash` and the copy's unsafe services become
   warnings (decision record 0005).
 - `guard-bash`: a line refused with "Run it alone" shows the warnings of its other commands, as a question does.
+- The preferred language of communication: asked by `aiwp new` and kept as the Claude Code setting `language`, which
+  wins over the language of a request file; the single-agent mode is removed.
 
 ### Added
 
@@ -68,8 +70,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `pt-BR` and `es` translations of `docs/` and of every README outside the product, each with a language links line.
 - `tests/caw-work.sh`: opens a work clone (`open <type>/<slug>`), runs a closed list of commands in it (`run`),
   publishes what changed (`publish`: a tool as a Docker copy, the installer, a hook, a script or a rule as a test
-  installation), pushes and closes it; the clone's hooks push its branch after each commit only after the
-  company-terms scan of what leaves, and refuse `developer`, `main`, tags and force. `.claude/settings.json` allows
+  installation), pushes and closes it (the work folder first, a read-only test installation in it included, then
+  the remote branch, so a failed delete never leaves a clone without its branch); the clone's hooks push its branch
+  after each commit only after the company-terms scan of what leaves, and refuse `developer`, `main`, tags and
+  force. `.claude/settings.json` allows
   it and edits of `tmp/work/` with no prompt, so the one prompt of a task is the push of `developer`.
 - `/caw-pilot` and `/caw-docker-deploy`, the layers of `/pilot` and `/docker-deploy`.
 - The request `validators-warn-not-block`: validators block only real errors, the rest is a warning.
@@ -77,7 +81,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   "Warnings": a company term in what a work clone pushes is a warning, the push waits, and
   `bash tests/caw-work.sh push <work> --accept-terms` (an ask prompt: the owner's confirmation) records it in a
   private file next to the terms list and pushes; `check.sh` repo-terms honours it, and a new term warns again.
-- The session index, the one hook of the root: at the start of a session and after each compaction,
+- The session index, a hook of the root: at the start of a session and after each compaction,
   `tests/caw-session-index.py` tells the session which rule to read before which task, built from the product's own
   index (`workspace/AGENTS.md` "Reference") with `.claude/session-index.md` over it (rules left out, such as
   `quality.md`; words mapped, such as the gate to `/caw-merge`; rows only this repository has). It also defines the
@@ -93,9 +97,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   WARNING only; `/caw-merge --main` reviews each once per release (`reviewer`, effort `medium`) and judges the reports
   with `tests/review-fixtures.sh`; a failing fixture is a warning of the release, read to tell a fixture's own defect
   from a review rule that drifted. `tests/check.sh` checks the judge and the set (`review-fixtures`), never the model.
+- `tests/caw-language.py`, a second SessionStart hook at the root (start, resume, clear, compact): with no `language`
+  setting in the root `.claude/settings.local.json` or the user settings, it has the session ask the preferred language
+  of communication first and save it there; with one, it prints nothing; it never fails a session start. Its
+  scenarios run in `tests/check.sh` (`caw-language`). `bash tests/caw-work.sh open` copies that `language` into the
+  clone's own `.claude/settings.local.json`, so a session inside a clone replies in it too.
 
 ### Changed
 
+- `CLAUDE.md` "Language": the session replies in the `language` setting, even when a request file is in English; with
+  none set, in the language the person writes in. `.claude/rules/product.md`: the invariant "no language setting"
+  becomes the preferred language as the `language` setting, asked at install.
+- The `pt-BR` and `es` translations of the product's README, `docs/README.md`, `docs/usage.md` and
+  `scripts/README.md` are up to date with their sources.
 - `developer` is the default branch; `main` moves only by a product release.
 - The maintenance rules with a product counterpart (`security`, `review`, `models`, `git`, `docs`, `scripts` of
   `.claude/rules/`) are layers over the product rule of the same name, which stays the one source: each holds only

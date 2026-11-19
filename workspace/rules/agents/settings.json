@@ -28,7 +28,6 @@
     "allow": [],
     "deny": [
       "Edit(/.history/merge-orders/**)",
-      "Read(**/SINGLE-AGENT.md)",
       "Read(/custom/env/**)",
       "Edit(/custom/env/**)",
       "Read(**/.env)",

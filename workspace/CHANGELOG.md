@@ -26,6 +26,8 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 - `rules/quality.md` strongly recommends a test seed to a project with a database, and `/normalize-projects` reports its absence.
 - Hard rules and warnings (`rules/security.md`, decision record 0005): the hooks, the gate and the reviews refuse only a closed list (a secret committed, pushed or read; published history rewritten or a remote repository deleted; a git write in `projects/` or any write in the core outside the gate, Terraform outside `apply`; a merge without your order; a database or Grafana's data deleted without your confirmation; an irreversible change nobody asked for). Everything else is a warning, gathered and shown once, numbered (`W-1`, `W-2`...), each with what was seen, why it may be a problem, its risk (`HIGH`: it can reach the public or production, or lose data; `MEDIUM`: rework or a broken flow later; `LOW`: hygiene or quality) and a suggestion: in a warnings board that ends a wave before its closing board, and in `/merge` before it merges; both wait until you answer `fix`, `request` or `accept` for each, and the closing board's `Warnings:` line and the request's Execution block record your decisions. Also when `/draft-request` writes a request, which records what you keep as "Authorizations" so no hook, check or review asks or reports it again.
 - `tools/compose.yaml`: every container tool in one compose project, `claude-cli-agents-tools`, so the container console shows them as one group. Each tool's own `compose.yaml` still starts it alone, for development, and carries an `x-run-tools` block (title, description, URL) on its main service.
+- Your preferred language of communication: `aiwp new` asks it once on the terminal, right after the custom layer, by its English name (`portuguese`, `spanish`: English letters, spaces, hyphens and parentheses, at most 40; anything else is asked again), and writes it as the Claude Code setting `language` in `.claude/settings.local.json` of the workspace, keeping that file's other keys. Claude replies in it in every session, even when it runs a request file written in English; with none set (an empty answer, an install with no terminal), in the language you write in. `aiwp update` and `setup-claude.sh` never ask it and never change that file.
+- `aiwp update` removes a link `~/.local/bin/single-claude` that points at the updated workspace's `scripts/single-claude.sh`, gone with the single-agent mode, and says so; nothing else in `~/.local/bin` is touched.
 
 ### Changed
 
@@ -47,6 +49,7 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 ### Removed
 
 - The backlog (`custom/backlog/`, `templates/backlog-item.md`): an idea is a request in state `idea`.
+- The single-agent mode: `single-claude` (`scripts/single-claude.sh`), `scripts/single-agent.sh`, its `/single-agent` command and plugin, `docs/single-agent.md`, and the deny rule on `SINGLE-AGENT.md` that guarded its instructions. Working alone with one agent on a target is now how the workspace works by default. **Breaking:** the `single-claude` command no longer exists.
 
 ### Fixed
 
@@ -55,6 +58,8 @@ All notable changes to Claude CLI Agents Workspace are documented in this file. 
 
 ### After updating
 
+- Your preferred language: an existing workspace is not asked. Add `"language": "<its English name>"` (for example `"portuguese"`) to its `.claude/settings.local.json` to have Claude reply in it; change that key to switch.
+- A link `~/.local/bin/single-claude` you made for the single-agent mode is removed by `aiwp update`; a copy or a link elsewhere is yours to delete.
 - A task's Docker copy needs Docker Engine 28 or later; with an older one `aiwp-cmds.sh up <work>/<clone>` refuses with the reason.
 - `aiwp-cmds.sh up <repo>` for your final stack is refused: use `/docker-deploy` (`aiwp-cmds.sh deploy <repo> [developer|main]`); `rollback <repo>` still returns to the previous images.
 - The allow rules of the clone arrive by themselves at the next session start (`setup-claude.sh`).

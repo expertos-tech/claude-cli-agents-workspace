@@ -34,7 +34,6 @@ Once per workspace:
 | Check Docker, used by the validations | `docker info` |
 | Create the filled `.env` of the validation tools, `custom/env/docker.env` | `/local-env docker`, in a session; then fill the values in an editor |
 | Optional, but the only way to measure the sessions: start the observability stack (a local Grafana) | `/run-tools`, in a session, ticking Observability; then its README turns on the Claude Code telemetry |
-| Optional: install the single-agent mode | `ln -sf "<workspace>/scripts/single-claude.sh" ~/.local/bin/single-claude` |
 
 From then on `.claude/` keeps itself up to date: a session start hook runs `setup-claude.sh`.
 
@@ -54,7 +53,7 @@ cd <workspace> && aiwp
 - **One session per request.** When the subject is over, use `/clear` or open another session. A long session gets expensive: each step reads the whole context again.
 - **Effort:** `medium` fits work with a clear scope. Raise it to `high` with `/effort high` when the change touches a hook, a permission, a merge or security, or to debug a hard failure. For a single hard step, write `ultrathink` in the prompt.
 - **Session name:** `/request <file>` names the session after the project, numbered (`billing-api-1`, `billing-api-2`...), from the request's `**Project:**` line: the number is one more than the highest among the open sessions of that project. Without `/request`, Claude Code picks a title on its own; `/rename <name>` changes it.
-- **Language:** Claude replies in the language you write in.
+- **Language:** Claude replies in your preferred language of communication, the one `aiwp new` asked when it created the workspace, even when it runs a request file written in English. It is the Claude Code setting `language` in `.claude/settings.local.json` of the workspace (for example `"language": "portuguese"`); `aiwp update` never changes that file. With none set there or in your `~/.claude/settings.json`, Claude replies in the language you write in. To set or change it later, edit that key.
 
 ## The registry and updating
 

@@ -26,6 +26,9 @@ Commands:
         its upstream, through those hooks. Prints "path: tmp/work/<work>/claude-cli-agents-workspace". A clone of the
         same branch, in any work folder, is reused. Refused: a clone of another branch in the folder, and the branch
         already on the remote with no clone here.
+        A new or reused clone gets the "language" of this repository's .claude/settings.local.json in its own (git
+        ignores it there too), keeping its other keys and never replacing a language it has: "language: <it> (from
+        the root .claude/settings.local.json)".
   run <work>[/<clone>] -- <command>...
         Runs the command (no shell) with the clone as the current folder, only when it is on run's list; anything else
         is refused, running nothing, with "not on run's list: run it as a plain command (the permission mode
@@ -82,8 +85,11 @@ Commands:
   close <work> [--discard]
         Fetches origin and refuses, listing what would be lost, when the work folder holds something that is not a
         clone made by open, or a clone with files not committed, a stash, commits not on the remote, or its branch
-        not in origin/developer. Otherwise deletes the remote work branch (git push origin --delete, through the
-        pre-push hook) and tmp/work/<work>/. --discard deletes the folder anyway and leaves the remote branch. Before
+        not in origin/developer. Otherwise deletes tmp/work/<work>/ and then the remote work branch (git push
+        <clone's origin URL> --delete, from this repository). --discard deletes the folder anyway and leaves the
+        remote branch. The folder goes first, read-only files included (a test installation's: chmod -R u+rwX, no
+        symlink followed); the remote branch only once it is all gone, so a delete that fails exits 1, lists what is
+        left and leaves the remote branch and the clone to close again. Before
         the folder goes, the work's Docker copy groups are destroyed: the groups of its agent-*.compose.yaml files
         and the agent_ projects whose compose folder lies in a clone, by the label com.docker.compose.project and only
         when the name matches ^agent_[0-9]{4}-[a-z0-9][a-z0-9-]*$; a refused close destroys nothing.
@@ -208,6 +214,90 @@ write_hooks() {
   chmod +x "$hooks/post-commit" "$hooks/post-merge" "$hooks/post-rewrite" "$hooks/pre-push"
 }
 
+# Gives a clone the owner's preferred language: the "language" of this repository's .claude/settings.local.json (a
+# JSON object, "language" a non-empty string) written into the clone's own, git-ignored there too, keeping every other
+# key and never replacing a language the clone file has. No language at the root: nothing, silently. A clone file that
+# is not a JSON object, or one git would not ignore: left as it is, with one "attention:" line. Never fails open.
+copy_language() {
+  local clone="$1" source="$root/.claude/settings.local.json" ignored=0
+  [ -f "$source" ] || return 0
+  ! git -C "$clone" check-ignore -q -- .claude/settings.local.json 2>/dev/null || ignored=1
+  python3 -I - "$source" "$clone" "$ignored" <<'PY' || echo "attention: the preferred language was not copied into the clone"
+import json
+import os
+import sys
+import tempfile
+
+NAME = "settings.local.json"
+MAX_READ = 1_000_000
+
+
+def read_object(path):
+    """Return the JSON object of a file, or None when it cannot be read, is malformed or is not an object."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.loads(handle.read(MAX_READ))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def has_language(data):
+    """Return True when a settings object holds "language" as a non-empty string."""
+    value = data.get("language") if isinstance(data, dict) else None
+    return isinstance(value, str) and value.strip() != ""
+
+
+def write_atomically(folder, data):
+    """Write the settings object to folder/settings.local.json through a temp file of the same folder and a rename."""
+    fd, temp = tempfile.mkstemp(dir=folder, prefix="." + NAME + ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, os.path.join(folder, NAME))
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+
+
+def main():
+    """Copy the language of the root settings sys.argv[1] into the clone sys.argv[2] (sys.argv[3]: 1 when git ignores
+    the clone's .claude/settings.local.json); print what it did, or why it did not."""
+    root_data = read_object(sys.argv[1])
+    if not has_language(root_data):
+        return
+    language = root_data["language"]
+    shown = "".join(c if c.isprintable() else "?" for c in language)
+    folder = os.path.join(sys.argv[2], ".claude")
+    target = os.path.join(folder, NAME)
+    where = ".claude/" + NAME + " of the clone"
+    if sys.argv[3] != "1":
+        print(f"attention: the preferred language was not copied: git does not ignore the {where}")
+        return
+    if os.path.islink(folder) or (os.path.exists(folder) and not os.path.isdir(folder)):
+        print("attention: the preferred language was not copied: .claude of the clone is not a folder")
+        return
+    data = {}
+    if os.path.lexists(target):
+        data = read_object(target) if os.path.isfile(target) and not os.path.islink(target) else None
+        if data is None:
+            print(f"attention: the {where} is not a JSON object: left as it is, without the preferred language")
+            return
+        if has_language(data):
+            return
+    data["language"] = language
+    os.makedirs(folder, exist_ok=True)
+    write_atomically(folder, data)
+    print(f"language: {shown} (from the root .claude/{NAME})")
+
+
+main()
+PY
+}
+
 # open: the clone, its branch from origin/developer, its hooks and the first push.
 cmd_open() {
   [ $# -eq 1 ] || die 2 "usage: open <type>/<slug>"
@@ -220,6 +310,7 @@ cmd_open() {
   for c in "$work_root"/*/"$clone_dir"; do
     found="$(clone_branch "$c")" || continue
     if [ "$found" = "$branch" ]; then
+      copy_language "$c"
       echo "path: ${c#"$root"/} (already open)"
       return 0
     fi
@@ -256,6 +347,7 @@ cmd_open() {
   done
   git -C "$clone" config caw.branch "$branch"
   write_hooks "$clone"
+  copy_language "$clone"
   if with_timeout 120 git -C "$clone" push -q -u origin "HEAD:refs/heads/$branch"; then
     echo "pushed: $branch"
   else
@@ -633,7 +725,7 @@ cmd_status() {
 # close: deletes a work folder when nothing in it would be lost, and the remote branch of each clone once it is in
 # developer; --discard deletes the folder anyway and leaves the remote branches.
 cmd_close() {
-  local work="${1:-}" discard=0 entry name branch problems="" gone=()
+  local work="${1:-}" discard=0 entry name branch url i problems="" gone=() branches=() urls=()
   case "$work" in --help | -h) usage; return 0 ;; esac
   case "${2:-}" in "") ;; --discard) discard=1 ;; *) die 2 "usage: close <work> [--discard]" ;; esac
   [ $# -le 2 ] || die 2 "usage: close <work> [--discard]"
@@ -663,18 +755,53 @@ cmd_close() {
       echo "commit, push or merge it first, or close with --discard to delete it anyway (the remote branch stays)" >&2
       exit 1
     fi
+    # What the remote deletes need, read before the clones go: the branch and the clone's origin URL.
     for entry in ${gone[@]+"${gone[@]}"}; do
       branch="$(clone_branch "$entry")"
-      if with_timeout 120 git -C "$entry" push -q origin --delete "$branch"; then
-        echo "deleted on origin: $branch (it is in developer)"
-      else
-        echo "attention: could not delete $branch on origin; it is in developer, delete it by hand"
-      fi
+      url="$(git -C "$entry" remote get-url origin 2>/dev/null)" || url=""
+      branches+=("$branch")
+      urls+=("$url")
     done
   fi
   destroy_copies "$work_root/$work" || echo "attention: a Docker copy group of tmp/work/$work was not destroyed (above); the folder goes anyway"
-  rm -rf "${work_root:?}/$work"
+  if ! remove_folder "$work_root/$work"; then
+    echo "error: could not delete tmp/work/$work completely (above)" >&2
+    find "$work_root/$work" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 5 | while IFS= read -r entry; do
+      echo "left: ${entry#"$root"/}" >&2
+    done
+    for branch in ${branches[@]+"${branches[@]}"}; do
+      echo "the remote branch stays: $branch (deleted only once the folder is gone)" >&2
+    done
+    echo "make what is left deletable and close again (--discard once it is no longer a clone)" >&2
+    exit 1
+  fi
   if [ "$discard" -eq 1 ]; then echo "discarded: tmp/work/$work (the remote branch stays)"; else echo "closed: tmp/work/$work"; fi
+  for i in ${branches[@]+"${!branches[@]}"}; do
+    delete_remote_branch "${urls[$i]}" "${branches[$i]}"
+  done
+}
+
+# Deletes a work folder: makes what it holds writable for the owner first (a test installation leaves its core 555 and
+# 444), never following a symlink out of it (chmod -R, -P being the default on Linux and macOS, does not follow the
+# symlinks it meets; a work folder that is itself a symlink is only unlinked). Returns non-zero unless it is all gone.
+remove_folder() {
+  local dir="$1"
+  [ -L "$dir" ] || chmod -R u+rwX "$dir" 2>/dev/null || true
+  rm -rf "${dir:?}" || true
+  [ ! -e "$dir" ] && [ ! -L "$dir" ]
+}
+
+# Deletes a work branch on the remote <url> of its clone, once the clone is gone, from this repository (a plain push
+# --delete, never forced; only a name of a work branch, never developer, main or a tag).
+delete_remote_branch() {
+  local url="$1" branch="$2"
+  if [[ ! "$branch" =~ $branch_re ]] || [ -z "$url" ]; then
+    echo "attention: $branch was not deleted on origin: not a work branch or no origin URL; delete it by hand"
+  elif with_timeout 120 git -C "$root" push -q "$url" --delete "refs/heads/$branch"; then
+    echo "deleted on origin: $branch (it is in developer)"
+  else
+    echo "attention: could not delete $branch on origin; it is in developer, delete it by hand"
+  fi
 }
 
 # Prints why a push that is not a fast-forward of <remote ref> at <remote sha> is refused, and how to keep the change.

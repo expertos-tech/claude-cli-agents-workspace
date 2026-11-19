@@ -62,7 +62,7 @@ aiwp
 
 `aiwp` checks for a new release (it never updates), runs `scripts/setup-claude.sh` and starts `claude`; arguments for `claude` go after `--`.
 
-Always at the workspace root, even to work on a project: that is where the rules and hooks apply. Recommended: Claude Code's auto mode. The workspace leaves to it the judgment of what is destructive and keeps in hooks only what must never happen. Claude replies in the language you write in.
+Always at the workspace root, even to work on a project: that is where the rules and hooks apply. Recommended: Claude Code's auto mode. The workspace leaves to it the judgment of what is destructive and keeps in hooks only what must never happen. Claude replies in your preferred language, asked when the workspace is created (the Claude Code setting `language`), or else in the language you write in.
 
 ### 5. Ask
 
@@ -121,10 +121,6 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lists the state of every project and POC; or analyses one (four analysts, a plan you approve, the language of its docs) and migrates it on a tested branch, with checkpoint tags, into `developer` and `main` |
 
 The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `apply`, and `developer`, `checkpoint`, `bring` for the normalization). Claude Code's own commands still apply: `/rewind`, `/rename`, `/usage`.
-
-## Single-agent mode
-
-To work on a project, a tool of yours in `custom/tools/` or a POC of `custom/pocs/` without the workspace's instructions, hooks and skills: `single-claude [<path>] [--commit] [--merge] [--review]`, installed once with `ln -sf "<workspace>/scripts/single-claude.sh" ~/.local/bin/single-claude`. Guide: [docs/single-agent.md](docs/single-agent.md).
 
 ## Prompt project
 
