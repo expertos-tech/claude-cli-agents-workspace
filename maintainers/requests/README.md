@@ -43,7 +43,6 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 | 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 0 | `request-in-progress.md` | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
 | 0 | `draft-prompt.md` | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
-| 2 | `import-workspace.md` | Brings the work of an older workspace (repositories, worktrees, work clones, backlog), not its rules; replaces `normalize-rules`; design: `plans/import-workspace.md`; the owner needs it to migrate the final project |
 | 2 | `import-workspace-code-folders.md` | After `import-workspace`: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
 | 2 | `import-from-fork.md` | After `import-workspace`: the first release after the publication, the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
@@ -84,6 +83,7 @@ Small adjustments, effort low unless noted.
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/import-workspace.md` | this merge | All proven: AC-1 to AC-9 by scenario tests, AC-10 by a headless run on a copy of a real older workspace |
 | `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |
 | `qa/preferred-language.md` | this merge | All proven: AC-1 and AC-2 by headless runs, AC-3 on a pty of the test installation |

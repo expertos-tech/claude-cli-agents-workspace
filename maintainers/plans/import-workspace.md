@@ -1,9 +1,10 @@
 # `/import-workspace`: bringing the work of an older workspace, not its rules
 
-Status: ready. Request: `maintainers/requests/import-workspace.md`. Replaces the `normalize-rules` design (an import of
-the older workspace's rules into `custom/my-rules/`), dropped by the owner on 2026-11-19: the rules of another workspace
-risk blocking the process this workspace keeps in balance, and a run on a real older workspace showed that judging
-them costs much and still misses items. Shares `bring` with `/normalize-projects --from`.
+Status: built, on `developer` (2026-11-19). Request: `maintainers/requests/qa/import-workspace.md`. Replaces the
+`normalize-rules` design (an import of the older workspace's rules into `custom/my-rules/`), dropped by the owner on
+2026-11-19: the rules of another workspace risk blocking the process this workspace keeps in balance, and a run on a
+real older workspace showed that judging them costs much and still misses items. Shares `bring` with
+`/normalize-projects --from`.
 
 ## 1. The idea
 

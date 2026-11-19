@@ -1,7 +1,8 @@
 # `/import-workspace`: every code folder found, classified and brought with a repository
 
-Status: decided 2026-11-19 (section 5); request: `maintainers/requests/import-workspace-code-folders.md`. Source: warning W-1 of the AC-10 run of `requests/import-workspace.md`
-(2026-11-19) and the owner's direction on it. Extends `import-workspace.md`; nothing of it is built yet.
+Status: decided 2026-11-19 (section 5); request: `maintainers/requests/import-workspace-code-folders.md`. Source:
+warning W-1 of the AC-10 run of `requests/qa/import-workspace.md` (2026-11-19) and the owner's direction on it. Extends
+`import-workspace.md`; nothing of it is built yet.
 
 ## 1. What the AC-10 run showed
 

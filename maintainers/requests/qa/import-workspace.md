@@ -158,3 +158,58 @@ URL gone from every `.git/config`); nothing was ever pushed to the real server.
   answer (`8deaaf5`, `7c1baf9`).
 - The proof holds for its sha. The release need not repeat it unless `workspace/rules/skills/import-workspace/`,
   `workspace/scripts/workspace-import.py` or `bring`/`bring-branch` of `workspace/scripts/aiwp-gate.sh` change.
+
+## Execution — 2026-11-19, merged into developer
+
+Done, by stage:
+
+- Before the redesign: `324b965`, `a24ff75`, `d09851f`, `2cda5cf`, `4f4f8be` and `e230bcc` built `/normalize-rules`
+  (importing an older workspace's rules) and took it to a merge; its review's warnings were fixed, and proving one of
+  them showed its AC-7 failing (judging another workspace's rules costs much and still misses items). The owner
+  replaced it by this request (`06e7d92`): its skill, plan, request and changelog entries are gone from the range.
+- Stage 1, the script (high): `2d3a7a0` (`aiwp-cmds.sh bring-branch`; `bring` reads its source read-only), `7eabf7c`
+  (`scripts/workspace-import.py` with its scenario tests), `c120dd8` (BR-10a, `skip` and `include` with sizes),
+  `3f2b8cf` and `e21d530` (fixes from a first real scan: only real pending work counted).
+- Stage 2, the skill and AC-10 (medium): `d7833fb` (`/import-workspace` replaces `/normalize-rules`; docs). The AC-10
+  run found nine defects, fixed with scenario tests: `8deaaf5` (a moved workspace, missing objects, gone
+  `alternates`, clones of the older workspace, a project with no remote) and `7c1baf9` (backlog only from real
+  backlog folders, clones of removed worktrees, the drop reasons); the request updated in `9186470`, `372ba51`; the
+  proof in `eaf0290`, `bbce018`.
+- Warnings of the stage: `9982645` (two plans), `67407be` (the request `import-workspace-code-folders`).
+- Changelog: `6c18989`. `developer` brought in by `1cdb3a8` (conflicts in the plans and requests READMEs: both
+  sides' rows kept).
+
+Decisions taken while running:
+
+- The owner's redesign (2026-11-19): every fact in a script that goes back and forth with the model; no rule of the
+  older workspace imported; pending work never moved nor analysed, only pointed at by a request per project; the
+  person chooses the projects (`skip`, `include`, with sizes); all tests on a copy, never on the real older workspace.
+- AC-10 ran on a copy whose remotes were moved to a throwaway test project, and the network steps ran in one script
+  the owner ran; in the test installation the agent played the person.
+- A repository with missing objects is brought with what is complete, the rest named; one with nothing complete is
+  not brought, and apply goes on (BR-11).
+
+Deviations from the request: BR-3, BR-4, BR-6, BR-9, BR-10 and BR-11 were sharpened and AC-8b, AC-8c added from what
+the AC-10 run showed; the scope did not change.
+
+Acceptance criteria:
+
+- AC-1 to AC-8c: proven by the scenario tests of `scripts/tests/workspace-import/test-workspace-import.sh` (AC-1 to
+  AC-6 in one scenario, AC-7, AC-8, AC-8a, the AC-8b and AC-8c cases each in its own), with
+  `scripts/tests/test_workspace_import.py` and `scripts/tests/aiwp-gate/test-aiwp-gate.sh` for `bring` and
+  `bring-branch`.
+- AC-9: proven: the suite runs them with no model.
+- AC-10: proven on `372ba51` ("AC-10 proof" above), with the push and clone back of every imported project.
+
+Checks: `bash tests/check.sh --base origin/developer --i18n-pending` passed at every commit of the stages (`SKIP
+repo-terms`: no terms list on the maintainer machine, warning W-2).
+
+Warnings of the stages:
+
+- W-1 (backlog of a code folder with no git always dropped; code folders missed with no manifest): request
+  `maintainers/requests/import-workspace-code-folders.md`, with its decided plan.
+- W-2 (pushes of the work branch without the company-terms scan, no list): accept; plan `terms-list.md`, option A.
+- W-3 (apply matches the gate's "missing object" text), W-4 (`bring` walks every object first), W-5 (the aiwp-gate
+  suite over its time budget): accept.
+
+Left: `import-workspace-code-folders`.
