@@ -139,4 +139,10 @@ merge); `bash tests/test-install.sh` PASS.
 Warnings of the stage, decided by the owner: W-1 AC-3 proven only by text: accepted, evaluated after this merge; W-2
 the product's wave close not run in an installed workspace: fixed (the second pair of AC-4 runs, no commit).
 
+The merge review (medium): APPROVED_WITH_WARNINGS, no BLOCKER. Its warnings, in the warnings board before phase 2,
+decided by the owner: W-3 the gate's comment and record 0005 still named the merge summary: fixed (`29baced`); W-4
+`docs/releases.md` and `docs/maintenance.md` still said a warning is decided later: fixed (`347f319`). Found while
+fixing: `/merge` step 6 sent a fixed warning to the return review, which `rules/review.md` keeps for the fixes of
+BLOCKERs: corrected in `29baced`.
+
 Left: AC-3 evaluated after this merge.
