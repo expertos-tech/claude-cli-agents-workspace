@@ -97,6 +97,8 @@ folder above with .aiwp/manifest.json).
                 <folder>: update only that workspace, without asking which. --all: every registered workspace,
                 without asking; pinned ones are left as they are, and one where claude is running is skipped unless
                 --force. With no terminal, give --all or a folder. Updating a workspace clears its pin.
+                A link ~/.local/bin/single-claude to the workspace's scripts/single-claude.sh, gone with the
+                single-agent mode, is then removed and said; nothing else in ~/.local/bin is touched.
   rollback      Go back to the version of the newest backup and pin the workspace to it (.aiwp/pin), so aiwp
                 update --all leaves it alone; aiwp update <folder>, or choosing it by number, updates it again.
   repair        Restore every core file and folder to the manifest's version and permission, from the data
@@ -1683,7 +1685,37 @@ sync_in_subshell() {
   sync_core "$(dgit rev-parse HEAD)"
   run_setup --quiet || true
   register "$WS" "$(ws_version "$WS")" || echo "warning: could not record the new version in the registry" >&2
+  remove_single_claude_link || true
   printf '%s\tok\t%s\n' "$WS" "$SYNC_RESULT" >>"$results"
+}
+
+# Removes ~/.local/bin/single-claude, the link the docs of the single-agent mode had people create, only when it is
+# a symbolic link to scripts/single-claude.sh of this workspace ($WS) and that file no longer exists. Anything else
+# there (a link to another folder or to a file that exists, a regular file) is left alone, silently. Touches nothing
+# else in ~/.local/bin and never fails: a failed removal prints a warning.
+remove_single_claude_link() {
+  local link="$HOME/.local/bin/single-claude" target dir ws_scripts
+  [ -L "$link" ] || return 0
+  [ ! -e "$link" ] || return 0
+  target="$(readlink "$link")" || return 0
+  case "$target" in
+    /*) ;;
+    *) target="$HOME/.local/bin/$target" ;;
+  esac
+  if [ -e "$target" ] || [ -L "$target" ]; then return 0; fi
+  [ "$(basename "$target")" = single-claude.sh ] || return 0
+  # The same file however the workspace path is spelled: the folder of the target, resolved, is this workspace's
+  # scripts/ (a core folder that exists after the update).
+  if [ "$target" != "$WS/scripts/single-claude.sh" ]; then
+    dir="$(real_dir "$(dirname "$target")")" || return 0
+    ws_scripts="$(real_dir "$WS/scripts")" || return 0
+    if [ -z "$dir" ] || [ "$dir" != "$ws_scripts" ]; then return 0; fi
+  fi
+  if rm -- "$link" 2>/dev/null; then
+    echo "removed ~/.local/bin/single-claude: the single-agent mode no longer exists"
+  else
+    echo "warning: could not remove the link ~/.local/bin/single-claude to $target, which no longer exists; remove it by hand" >&2
+  fi
 }
 
 # Updates workspace $1 to the data folder's release, in a subshell: its own lock, journal recovery, the check for a

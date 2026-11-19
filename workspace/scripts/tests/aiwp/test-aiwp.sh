@@ -1056,6 +1056,83 @@ test_update_keeps_the_last_three_backups() {
   absent "$WS/.aiwp/backup/0.0.1"
 }
 
+# --- update: the link of the removed single-agent mode
+# The fixture never ships scripts/single-claude.sh, so a link to it in the workspace is the dangling link an update
+# leaves once the file is gone: the state the cleanup looks at, with no change to the fixture.
+
+SINGLE_LINE="removed ~/.local/bin/single-claude: the single-agent mode no longer exists"
+
+test_update_removes_the_single_claude_link_of_this_workspace() {
+  fixture
+  setup_ws || return
+  ln -s "$WS/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  publish_v2
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  has "$SINGLE_LINE"
+  absent "$HOME/.local/bin/single-claude"
+  [ -L "$HOME/.local/bin/aiwp" ]; check "the aiwp link is untouched" $?
+  # The same file through another spelling of the workspace path (a link to it), on a run that is up to date.
+  ln -s "$WS" "$T/alias"
+  ln -s "$T/alias/scripts/../scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "up to date: 0.2.0"
+  has "$SINGLE_LINE"
+  absent "$HOME/.local/bin/single-claude"
+}
+
+test_update_keeps_a_single_claude_link_to_another_folder() {
+  fixture
+  setup_ws || return
+  second_ws
+  ln -s "$WS2/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  publish_v2
+  run_aiwp_in "$T" update "$WS"
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  hasnt "single-claude"
+  [ -L "$HOME/.local/bin/single-claude" ]; check "the link to another workspace stays" $?
+  [ "$(readlink "$HOME/.local/bin/single-claude")" = "$WS2/scripts/single-claude.sh" ]; check "its target unchanged" $?
+  # A link to a single-claude.sh that exists, in a folder outside every workspace, is left alone too.
+  rm -f "$HOME/.local/bin/single-claude"
+  mkdir -p "$T/elsewhere/scripts"
+  echo mine >"$T/elsewhere/scripts/single-claude.sh"
+  ln -s "$T/elsewhere/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
+  run_aiwp_in "$T" update "$WS"
+  rc_is 0
+  has "up to date: 0.2.0"
+  hasnt "single-claude"
+  [ -L "$HOME/.local/bin/single-claude" ]; check "the link to an existing file stays" $?
+}
+
+test_update_keeps_a_regular_file_named_single_claude() {
+  fixture
+  setup_ws || return
+  printf '#!/usr/bin/env bash\necho mine\n' >"$HOME/.local/bin/single-claude"
+  publish_v2
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  hasnt "single-claude"
+  [ -f "$HOME/.local/bin/single-claude" ] && [ ! -L "$HOME/.local/bin/single-claude" ]; check "the file stays" $?
+  content_is "$HOME/.local/bin/single-claude" "$(printf '#!/usr/bin/env bash\necho mine')"
+}
+
+test_update_with_no_single_claude_link_says_nothing() {
+  fixture
+  setup_ws || return
+  local before
+  before="$(ls -A "$HOME/.local/bin")"
+  publish_v2
+  run_aiwp_in "$WS" update --all
+  rc_is 0
+  has "updated: 0.1.0 -> 0.2.0"
+  hasnt "single-claude"
+  [ "$(ls -A "$HOME/.local/bin")" = "$before" ]; check "the bin folder unchanged" $?
+}
+
 test_edited_core_stops_update_and_repair_fixes() {
   fixture
   setup_ws || return
