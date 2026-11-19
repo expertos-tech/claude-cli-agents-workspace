@@ -105,6 +105,9 @@ folder above with .aiwp/manifest.json).
                 single-agent mode, is then removed and said; nothing else in ~/.local/bin is touched.
   rollback      Go back to the version of the newest backup and pin the workspace to it (.aiwp/pin), so aiwp
                 update --all leaves it alone; aiwp update <folder>, or choosing it by number, updates it again.
+                A rollback from a core with rules/assisted.md to one with none, in a workspace with no
+                .claude/pilot-mode (nor a link there), writes assisted there, the default it had, so the next
+                update keeps it instead of taking the workspace for one from before /pilot assisted.
   repair        Restore every core file and folder to the manifest's version and permission, from the data
                 folder. Never touches custom/, projects/, tmp/, logs/, .claude/, .history/ or the tool outputs.
   check         Print one line when a newer release exists (one-day cache); never updates. --quiet: print only
@@ -1139,21 +1142,59 @@ has_history() {
   [ -n "$(find "$WS/projects" -mindepth 1 -maxdepth 1 ! -name README.md ! -name .DS_Store -print 2>/dev/null | head -n 1)" ]
 }
 
+# Succeeds when the core of manifest tsv $1 has rules/assisted.md, the rule of /pilot assisted.
+core_has_assisted() {
+  awk -F'\t' '$3 == "rules/assisted.md" { found = 1 } END { exit !found }' "$1"
+}
+
+# Succeeds when the workspace $WS has no .claude/pilot-mode, nor a link there.
+no_pilot_default() {
+  [ ! -e "$WS/.claude/pilot-mode" ] && [ ! -L "$WS/.claude/pilot-mode" ]
+}
+
+# Writes mode $1 to .claude/pilot-mode of $WS as scripts/pilot-mode.sh set does: a temporary file in .claude/ renamed
+# over it, so a reader never sees half a file. Called only when no file and no link is there (no_pilot_default).
+write_pilot_default() {
+  local tmp
+  mkdir -p "$WS/.claude" 2>/dev/null || return 1
+  tmp="$(mktemp "$WS/.claude/.pilot-mode.XXXXXX" 2>/dev/null)" || return 1
+  if printf '%s\n' "$1" >"$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$WS/.claude/pilot-mode"; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
 # The default pilot mode of a workspace that existed before /pilot assisted: when this update brings the core from
 # one with no rules/assisted.md (tsv $1) to one that has it (tsv $2), the workspace has history (has_history) and has
 # no .claude/pilot-mode yet, writes auto there, so a person who already knows the workspace sees no explanation boxes
 # (scripts/pilot-mode.sh). A new installation, or one already on such a core, is never switched; an existing file is
 # never changed. A failed write is a warning, never a failed update.
 keep_auto_pilot() {
-  local file="$WS/.claude/pilot-mode"
-  [ ! -e "$file" ] && [ ! -L "$file" ] || return 0
-  awk -F'\t' '$3 == "rules/assisted.md" { found = 1 } END { exit !found }' "$2" || return 0
-  ! awk -F'\t' '$3 == "rules/assisted.md" { found = 1 } END { exit !found }' "$1" || return 0
+  no_pilot_default || return 0
+  core_has_assisted "$2" || return 0
+  ! core_has_assisted "$1" || return 0
   has_history || return 0
-  if mkdir -p "$WS/.claude" && printf 'auto\n' >"$file"; then
+  if write_pilot_default auto; then
     echo "pilot mode: auto kept as the default of this workspace (it has history); /pilot assisted turns on the guided mode"
   else
     echo "warning: could not write .claude/pilot-mode; sessions start in assisted until /pilot auto" >&2
+  fi
+}
+
+# The default pilot mode of a workspace rolled back below /pilot assisted: when the rollback brings the core from one
+# with rules/assisted.md (tsv $1) to one with none (tsv $2) and the workspace has no .claude/pilot-mode (nor a link),
+# writes assisted there, the default it had, so the next update (keep_auto_pilot) does not take it for a workspace from
+# before the feature and switch it to auto. An existing file or link is never changed. A failed write is a warning,
+# never a failed rollback.
+keep_assisted_pilot() {
+  no_pilot_default || return 0
+  core_has_assisted "$1" || return 0
+  ! core_has_assisted "$2" || return 0
+  if write_pilot_default assisted; then
+    echo "pilot mode: assisted kept as the default of this workspace, for the next update; /pilot auto changes it"
+  else
+    echo "warning: could not write .claude/pilot-mode; the next aiwp update may set the default pilot mode to auto" >&2
   fi
 }
 
@@ -1942,6 +1983,7 @@ cmd_rollback() {
   mv -f "$WS/.aiwp/pin.tmp" "$WS/.aiwp/pin"
   rm -f "$WS/.aiwp/journal"
   echo "rolled back: $current -> $t_version; pinned at $t_version (aiwp update $WS updates it again)"
+  keep_assisted_pilot "$cur" "$target"
   register "$WS" "$t_version" || echo "warning: could not record the version in the registry" >&2
   run_setup --quiet || true
 }

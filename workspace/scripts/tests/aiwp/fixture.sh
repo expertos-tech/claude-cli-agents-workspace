@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fixture of the aiwp tests: a product repository with root files that must never reach a workspace, released as
-# v0.1.0 and v0.2.0, in two bare repositories (one with v0.1.0 only, one with both). Sourced by test-aiwp.sh.
+# v0.1.0 and v0.2.0, in two bare repositories (one with v0.1.0 only, one with both). Sourced by lib.sh.
 # Each tree carries the real scripts/aiwp.sh; v0.2.0's has a marker line and padding, to prove the new code runs, and
 # rules/assisted.md, the rule of /pilot assisted that v0.1.0 does not have.
 
