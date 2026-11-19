@@ -28,7 +28,7 @@ warning would. The agent works for the person, who knows their machine and their
 - **Everything else is a warning** in one format, `WARNING: <what> — <why> — <what the person can do>`, gathered and
   shown once. The work goes on and the person decides.
   - The gate: only the `secrets` check of `validate.sh` refuses; every other failing check is a warning under
-    "Warnings" of the audit file, which `/merge` lists in its summary.
+    "Warnings" of the audit file, which `/merge` shows in its warnings board (see the change history).
   - `guard-bash`: `deploy`, `checkpoint`, `developer --create` and `gate --untested` print a warning and the
     permission mode decides.
   - The Docker copy: a service with a key off the safe list (privileged, `cap_add`, devices, `sysctls`...) starts with
@@ -59,3 +59,6 @@ warning would. The agent works for the person, who knows their machine and their
 ## Change history
 
 2026-11-18 — record created — validators refuse only hard rules — the owner
+2026-11-18 — the one-line format stays the validators' output; the session shows each warning numbered, with its risk
+(`HIGH`, `MEDIUM`, `LOW`) and a suggestion, in a warnings board before the closing board of a wave and before `/merge`
+merges, and both wait for a decision on each (`rules/security.md` "Warnings", `rules/git.md` "Waves") — the owner

@@ -566,7 +566,7 @@ cmd_gate_check() {
       if [ "$untested" = 1 ]; then echo "- Tests: not run; the person chose to go on untested."; fi
     } >>"$report"
   fi
-  # The checks that failed but are not hard rules: /merge lists them in its summary, the person decides.
+  # The checks that failed but are not hard rules: /merge shows them in its warnings board, the person decides each.
   {
     echo
     echo "## Warnings"
