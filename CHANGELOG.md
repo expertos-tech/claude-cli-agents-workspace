@@ -37,8 +37,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   "Run it alone"), a Docker copy per task in its own `agent_` group on internal networks, `/docker-deploy` for the
   final stack, the merge only on the person's order, and the merge review by three questions with a return review
   after fixes (decision record 0004).
-- Validators refuse only a closed list of hard rules; the rest is a warning shown once (closing board, `/merge`
-  summary, `/draft-request` with "Authorizations"); one review per merge, effort `medium` into `developer` and
+- Validators refuse only a closed list of hard rules; the rest is a warning shown once (a numbered warnings board
+  with a risk level per warning, before the closing board of a wave and before the merge, waiting for a decision on
+  each; `/draft-request` with "Authorizations"); one review per merge, effort `medium` into `developer` and
   `high` into `main`; the gate's non-secret checks, four asks of `guard-bash` and the copy's unsafe services become
   warnings (decision record 0005).
 - `guard-bash`: a line refused with "Run it alone" shows the warnings of its other commands, as a question does.
@@ -108,8 +109,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Plans and requests are shown to the owner in their language and saved in English.
 - A merge into `developer` checks and reviews only the difference that enters, by the three questions, with effort
   `medium` (`high` into `main`), the owner's authorizations in the brief, and a return review after the fixes of its
-  BLOCKERs; a WARNING never blocks and is listed once in the summary for the owner to decide. No independent review
-  runs during the stages of a request, hooks and security included; the closing board lists the stage's warnings.
+  BLOCKERs; a WARNING never blocks and goes to the warnings board, where the owner decides each one before the merge goes on.
+  No independent review runs during the stages of a request, hooks and security included; a stage with warnings ends
+  with the warnings board, and the closing board lists the owner's decisions.
 - Translations are brought up to date once per release, by one agent; between releases they are listed as pending.
 - `/caw-merge --main` ends with the same final review as the product's: since the last tag, by the three questions.
 - `/caw-request` and `/caw-merge` no longer push the work branch by hand: the clone's hooks do; `/caw-commit` stages
