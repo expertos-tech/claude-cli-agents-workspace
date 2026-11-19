@@ -6,7 +6,8 @@
 # Run: bash scripts/tests/check-workspace/test-check-workspace.sh
 # CHECK_WORKSPACE_TEST_TMP fixes the folder of the throwaway tree (kcov needs one stable path to merge hits).
 set -uo pipefail
-# Under kcov only the scripts under test are traced; the harness is not (see scripts/tests/lib/lib.sh).
+# Under kcov only the scripts under test are traced; the harness is not, which keeps its captured output away from
+# kcov's parser (see kcov_resync).
 { set +x; } 2>/dev/null
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +29,7 @@ STUB_LOG="$BASE_DIR/stub.log"
 FAKE_BIN="$BASE_DIR/fakebin"
 export STUB_LOG
 # The suites the gate must run, in order. The tree stubs exactly these.
-EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/single-agent/test-single-agent.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh"
+EXPECTED_SUITES="tests/test-projects-layout.sh tests/check-workspace/test-check-workspace.sh tests/guard-subagent-model/test-guard-subagent-model.sh tests/guard-bash/test-guard-bash.sh tests/setup-claude/test-setup-claude.sh tests/heavy-run/test-heavy-run.sh tests/aiwp-cmds/test-aiwp-cmds.sh tests/aiwp-gate/test-aiwp-gate.sh tests/aiwp-project-state/test-aiwp-project-state.sh tests/aiwp/test-aiwp.sh tests/sync-env/test-sync-env.sh tests/run-tools/test-run-tools.sh"
 # How many suites the gate has: a new suite changes one line of this file, not every count below.
 SUITE_COUNT="$(echo "$EXPECTED_SUITES" | wc -w | tr -d ' ')"
 PASS=0
@@ -2127,17 +2128,11 @@ test_gate_runs_only_the_suite_of_what_changed() {
   new_tree selection-lib
   put scripts/lib/projects.sh
   branch_gate
-  eq "a shared library runs the suites of the scripts that source it, or call one that does" "5" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "a shared library runs the suites of the scripts that source it, or call one that does" "4" "$(grep -c '^suite ' "$STUB_LOG")"
   eq "the projects layout suite" "1" "$(grep -c '^suite tests/test-projects-layout.sh' "$STUB_LOG")"
-  eq "and the single-agent suite" "1" "$(grep -c '^suite tests/single-agent/' "$STUB_LOG")"
   eq "and the project state suite" "1" "$(grep -c '^suite tests/aiwp-project-state/' "$STUB_LOG")"
   eq "and the gate suite (its clean checks)" "1" "$(grep -c '^suite tests/aiwp-gate/' "$STUB_LOG")"
   eq "and the work area suite (open)" "1" "$(grep -c '^suite tests/aiwp-cmds/' "$STUB_LOG")"
-  new_tree selection-test-lib
-  put scripts/tests/lib/lib.sh
-  branch_gate
-  eq "the shared test library runs the suite that sources it" "1" "$(grep -c '^suite ' "$STUB_LOG")"
-  eq "the single-agent suite" "1" "$(grep -c '^suite tests/single-agent/' "$STUB_LOG")"
   new_tree selection-guard
   put scripts/guard-subagent-model.sh
   branch_gate
@@ -2149,14 +2144,13 @@ test_gate_runs_only_the_suite_of_what_changed() {
   rc_is 0
   eq "settings.json alone runs the subagent guard suite" "1" "$(grep -c '^suite tests/guard-subagent-model/' "$STUB_LOG")"
   eq "and the bash guard suite" "1" "$(grep -c '^suite tests/guard-bash/' "$STUB_LOG")"
-  eq "and the single-agent suite" "1" "$(grep -c '^suite tests/single-agent/' "$STUB_LOG")"
   eq "and the aiwp suite (the release notice hook)" "1" "$(grep -c '^suite tests/aiwp/' "$STUB_LOG")"
-  eq "and no other" "4" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "and no other" "3" "$(grep -c '^suite ' "$STUB_LOG")"
   branch_gate
   has "same settings.json" "CACHED suite scripts/tests/guard-subagent-model/test-guard-subagent-model.sh"
   put rules/agents/settings.json '{"hooks":{"a":1}}'
   branch_gate
-  eq "a changed settings.json runs them again" "8" "$(grep -c '^suite ' "$STUB_LOG")"
+  eq "a changed settings.json runs them again" "6" "$(grep -c '^suite ' "$STUB_LOG")"
 }
 
 test_gate_stops_at_the_first_failure() {

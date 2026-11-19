@@ -1,4 +1,0 @@
-{
-  "name": "single-agent",
-  "description": "Single-agent mode of the workspace: the /single-agent command and the session-name hook, loaded only by scripts/single-claude.sh"
-}

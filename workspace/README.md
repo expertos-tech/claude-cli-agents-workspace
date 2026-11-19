@@ -122,10 +122,6 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 
 The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `apply`, and `developer`, `checkpoint`, `bring` for the normalization). Claude Code's own commands still apply: `/rewind`, `/rename`, `/usage`.
 
-## Single-agent mode
-
-To work on a project, a tool of yours in `custom/tools/` or a POC of `custom/pocs/` without the workspace's instructions, hooks and skills: `single-claude [<path>] [--commit] [--merge] [--review]`, installed once with `ln -sf "<workspace>/scripts/single-claude.sh" ~/.local/bin/single-claude`. Guide: [docs/single-agent.md](docs/single-agent.md).
-
 ## Prompt project
 
 To write requests outside the development session, create a project in Claude just for that: paste into its instructions everything below the `<!-- paste below -->` marker of `rules/request-writing.md` and connect the workspace folder as reference. `/draft-request` follows the same file inside the workspace.

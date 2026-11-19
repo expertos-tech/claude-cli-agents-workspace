@@ -48,9 +48,7 @@ Wired in `rules/agents/settings.json`. Each reads the hook JSON on stdin.
 
 | Script | Does |
 | --- | --- |
-| `history.sh` | Adds an entry to the `history.txt` of a project, of a tool of yours (`custom/tools/<name>`) or of a POC, or shows the last ones (`add`, `flush`, `show`); never in the core. No rule asks for history entries; `single-agent.sh import-history` uses it to bring a single-agent session's entries into its target |
-| `single-claude.sh` | Run by the human, from a terminal: opens Claude in a project, a tool of yours or a POC folder without the workspace's instructions, hooks and skills (guide in `docs/single-agent.md`) |
-| `single-agent.sh` | Support of that mode: target validation, the generated `SINGLE-AGENT.md`, its session names, `import-history` |
+| `history.sh` | Adds an entry to the `history.txt` of a project, of a tool of yours (`custom/tools/<name>`) or of a POC, or shows the last ones (`add`, `flush`, `show`); never in the core. No rule asks for history entries |
 
 ## Tests
 
@@ -68,7 +66,6 @@ Each suite runs alone, on throwaway folders: `bash scripts/tests/<name>/test-<na
 | `tests/sync-env/` | `sync-env.sh` and `lib/env.sh` |
 | `tests/run-tools/`, `tests/test_run_tools.py` | `run-tools.sh` and `run-tools.py`, with fake docker, uname, systemctl, launchctl and make |
 | `tests/heavy-run/` | `heavy-run.sh` |
-| `tests/single-agent/` | `single-agent.sh` and `single-claude.sh` |
 | `tests/test-projects-layout.sh` | `init-repo.sh` (the marker included), `history.sh`, `lib/projects.sh` |
 | `tests/aiwp-project-state/` | `aiwp-project-state.sh`: no marker, equal, older with and without a newer migration, README without marker, POC, the workspace's own repository |
 

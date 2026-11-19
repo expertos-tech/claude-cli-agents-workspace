@@ -34,7 +34,6 @@ Once per workspace:
 | Check Docker, used by the validations | `docker info` |
 | Create the filled `.env` of the validation tools, `custom/env/docker.env` | `/local-env docker`, in a session; then fill the values in an editor |
 | Optional, but the only way to measure the sessions: start the observability stack (a local Grafana) | `/run-tools`, in a session, ticking Observability; then its README turns on the Claude Code telemetry |
-| Optional: install the single-agent mode | `ln -sf "<workspace>/scripts/single-claude.sh" ~/.local/bin/single-claude` |
 
 From then on `.claude/` keeps itself up to date: a session start hook runs `setup-claude.sh`.
 
