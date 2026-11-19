@@ -42,7 +42,7 @@ screen instead of the whole text.
 - It asks only when what is being asked is too vague to organize (no goal can be read, or two readings would be two
   different things): one message, few questions, each with a suggested answer. Every other gap goes to the plan,
   unanswered.
-- The plan, in the language of the input text (section 3.5), with these three sections, headings in that language:
+- The plan, in the person's language (section 3.5), with these three sections, headings in that language:
   - **Context**: what exists today and why the idea came up.
   - **Instructions**: what is wanted, grouped by subject, one bullet per point; constraints and preferences as said.
   - **Final guidance**: always the same order to the agent that will read it, then the gaps found:
@@ -93,27 +93,35 @@ screen instead of the whole text.
 - The new plan is placed by its criticality, then by what it depends on; the rows already there keep their level and
   relative order. The summary says where it went and why, so the person can move it.
 
-### 3.5 The language of plans and requests
+### 3.5 The language: what is shown and what is saved
 
-A rule, the same in the product and at the root: a plan or a request is saved in the language of the input text it
-came from (the ideas, the dictated text, the plan it is built from); a text in two languages takes the one most of it
-is written in. It is shown on screen in the reply language (the `language` setting). Not translated: the headings and
-bold labels of `templates/request.md` and the label of a status line (`**Project:**`, `**State:**`, `Status:`,
-"Execution"), because scripts and skills read them; technical terms of the market (commit, deploy, smoke test).
-Everything else stays as it is today: code, rules, skills, docs, commits and changelogs in English, translations of
-documents in `i18n/`. Plans and requests written before the build stay in English.
+Two rules, placed apart: one governs every reply, the other the files. The person's language is the Claude Code
+setting `language`, else the language the person writes in.
 
-It replaces "saved in English" where it is written today:
+**The screen.** Whatever is shown to the person is in the person's language, whatever the language of its source: a
+plan, a request, a document, a rule, a summary, a board. Source code and configuration are shown exactly as they are.
+Documentation in code (docstrings) and comments, shown for reading, are in the person's language. A block meant to be
+copied into a file, a diff or a patch is shown verbatim, because it must match the file, and explained around it;
+literal output (an error message, a log line, a command's output) is quoted verbatim and explained (A-7). Its place is
+the rule of the reply language: the bullet of `workspace/AGENTS.md` "Role" and of the root `CLAUDE.md` "Language",
+`workspace/docs/usage.md` "Language", and `.claude/rules/product.md` ("Claude answers in the person's language").
+
+**The files.** A plan is saved in the person's language; a request is saved in English, as today. Not translated in a
+plan: the labels of its status line (`Status:`, `Criticality:`). The product's `custom/plans/README.md` is in the
+person's language; the root's `maintainers/plans/README.md` stays in English, a translated document (A-8). Code,
+rules, skills, documents, commits and changelogs stay in English, translations of documents in `i18n/`. Plans written
+before the build stay as they are. Its place is where a file is written:
 
 - the root `CLAUDE.md` "Language" ("A plan, request or document is shown in the reply language and saved in English")
-  and `.claude/rules/process.md` step 2 (a plan approved in plan mode recorded "in English");
-- `workspace/AGENTS.md` (a plan, request or document written to a file "is in English");
-- `workspace/rules/request-writing.md` "Role" ("write the saved file in English");
-- `workspace/templates/request.md` (a request Claude writes "is saved in English");
-- the product skill `/new-request` step 6 and the root layer `/caw-new-request`.
+  and `.claude/rules/process.md` step 2 (a plan approved in plan mode recorded "in English"; "saved in English");
+- `.claude/rules/product.md`, its "English" bullet;
+- `workspace/AGENTS.md` "Role" (a plan, request or document written to a file "is in English");
+- `docs/maintenance.md` ("**Plans and requests** are shown to the owner in the owner's language and saved in
+  English");
+- `/draft-prompt` and `/caw-draft-prompt` (the plan); `/new-request` step 6 and `/caw-new-request` keep the request
+  in English.
 
-A document (a README, a page of `docs/`) stays in English with its translations in `i18n/`: the rule covers plans and
-requests only.
+`request-writing.md` "Role" and `templates/request.md` keep "saved in English": they speak of requests.
 
 ### 3.6 The screen summaries
 
@@ -158,8 +166,10 @@ Steps: 1. report (medium) · 2. sending (medium)
   a line or two goes straight to `/new-request`; the three sections, the fixed "Final guidance", the plans README with
   the priority order and the criticality, the screen summary. Owner: as above.
 - D-3: the draft is a plan, saved in plans; it becomes a request only through `/new-request`. Owner: answered by D-2.
-- D-4 and D-6: plans and requests, in the product and at the root, are saved in the language of the input text: a
-  rule, not an exception (section 3.5). Owner: yes.
+- D-4 and D-6: a plan is saved in the person's language and a request in English, in the product and at the root;
+  whatever is shown on screen is in the person's language, but code and configuration, shown as they are; comments and
+  documentation in code, shown, in the person's language (section 3.5). Owner: yes, revised 2026-11-19 (it replaced
+  "plans and requests in the language of the input text").
 - D-5: no alias and no transition for `/draft-request` or the old `/draft-prompt`: no workspace is installed yet.
   Owner: yes.
 - `/new-request` shows a summary instead of the whole request (section 3.6). Owner: asked for it.
@@ -180,11 +190,15 @@ Assumed, the owner can overturn:
   starts as a draft of `/caw-draft-prompt`.
 - A-5: the test of `session-title.py` checks that `/new-request` and `/draft-prompt` leave the title alone.
 - A-6: the translations in `i18n/` follow at the release (`.claude/rules/docs.md`).
+- A-7: a block meant to be copied into a file, a diff or a patch is verbatim, comments included, since it must match
+  the file; literal output (errors, logs, command output) is quoted verbatim, then explained.
+- A-8: `maintainers/plans/README.md` stays in English, as a translated document of the public repository; the
+  product's `custom/plans/README.md` belongs to the person and follows their language.
 
 ## 5. Stages
 
 | Stage | Effort | Why |
 | --- | --- | --- |
-| 1. Rename `/draft-request` to `/new-request`, product and root, with every reference and the changelog; the language rule of section 3.5 | high | It touches a hook (`session-title.py`, docstring and test): `/caw-test-install` too |
+| 1. Rename `/draft-request` to `/new-request`, product and root, with every reference and the changelog; the two language rules of section 3.5 | high | It touches a hook (`session-title.py`, docstring and test): `/caw-test-install` too |
 | 2. `/draft-prompt` and `/caw-draft-prompt`: the plan, its three sections, the plans README with priority and criticality, the summary, their docs | medium | A new skill with a clear scope |
 | 3. `/new-request`: a plan as input with its "Final guidance", the accepted improvements, the summary instead of the full text (`request-writing.md` "Flow" and "Delivery") | medium | A change of a procedure people use every day, with a clear scope |

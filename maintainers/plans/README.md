@@ -18,6 +18,6 @@ says what must be true when it is done. Read the plan before running its request
 | `assisted-mode.md` | `/pilot assisted`: boxes that teach the workspace to a newcomer, the default per person, `/caw-pilot` | `requests/assisted-mode.md` |
 | `preferred-language.md` | The reply language as Claude Code's `language` setting: asked at install, asked by a root hook in the maintenance | `requests/qa/preferred-language.md` |
 | `request-in-progress.md` | The "doing" state of a request from the opening of its clone to its merge, so no list suggests a request already running | `requests/request-in-progress.md` |
-| `draft-prompt.md` | `/draft-prompt` turns a loose text into a plan in a priority order; `/draft-request` renamed `/new-request`, with a summary on screen; plans and requests in the language of their input | `requests/draft-prompt.md` |
+| `draft-prompt.md` | `/draft-prompt` turns a loose text into a plan in a priority order; `/draft-request` renamed `/new-request`, with a summary on screen; plans in the person's language, requests in English, the screen in the person's language | `requests/draft-prompt.md` |
 
 The order in which they run is in `maintainers/requests/README.md`.
