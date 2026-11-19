@@ -26,7 +26,9 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
   resumes from the state.
 - BR-3: every repository below the folder is brought into `projects/` with `bring`, outermost first, a nested one at
   its path inside its parent; the repository at the folder's root (the older workspace itself) is not, nor a clone of
-  it (a repository whose `origin` is the older workspace or one of its worktrees: its own work, listed, never asked).
+  it (a repository whose `origin` is the older workspace, one of its worktrees, or a place in its tree that holds no
+  repository now, such as a removed worktree; under an old root when the workspace was moved: its own work, listed,
+  never asked).
   A repository with missing objects (a ref to a missing object, an `objects/info/alternates` whose folder is gone) is
   brought with every branch and tag whose objects are complete; each other one is named; one with no complete branch
   is not brought, with the reason, and the import goes on.
@@ -50,11 +52,13 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
   hooks) are listed under "Not imported, for reference", never imported.
 - BR-9: the model decides only: whether a repository outside the projects folder is a project or data of the older
   workspace; whether a code folder with no git is a project or a tool of the older workspace; the destination in
-  `projects/` when the older path is not kebab-case; and, per backlog item, its project or "workspace" (its own
-  process: dropped) and its title.
+  `projects/` when the older path is not kebab-case; and, per backlog item, its project or "workspace" (about the
+  older workspace itself, its process or its tools, not a project of this import: dropped) and its title.
 - BR-10: each backlog item kept becomes `custom/requests/<yyyy-mm-dd>-<slug>.md`, state `idea`, with its
   `**Project:**` line and the original text under "Requested", unchanged, with its source path; an item with a secret
-  writes only its source path and a note.
+  writes only its source path and a note. Markdown in scratch of the older workspace (a dot folder, or a folder its
+  repository ignores, outside the projects folder) is no item: counted only. A repository outside the projects folder
+  gives backlog items only when it is answered "backlog"; answered "data", none of its files is asked.
 - BR-10a: the person chooses which projects are imported: the plan lists each project found with its size (working
   tree and `.git`) and status `import` (the default) or `skip`. A skipped project is not brought, none of its branches
   is fetched and it gets no pending-work request; its worktrees and work clones are listed with it under "Not
@@ -94,7 +98,11 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
   branches are brought and the broken ref is named in the pending-work request; the repository with nothing complete
   is not brought, with the reason, and the import goes on; the clone is listed as the older workspace's own work with
   no question; the project with no remote is said once to be unpushed work as a whole.
-- AC-9: AC-1 to AC-8b are scenario tests of `scripts/workspace-import.py` with invented data, run by the suite with no
+- AC-8c: Given a backlog file inside a dot folder of the older workspace, a repository outside the projects folder
+  with a `backlog/` folder answered `data`, and a clone whose `origin` is a removed worktree of the older workspace,
+  then no backlog question is asked for the first two (the first is counted as scratch), and the clone gets no
+  question and is listed once as the older workspace's own work.
+- AC-9: AC-1 to AC-8c are scenario tests of `scripts/workspace-import.py` with invented data, run by the suite with no
   model.
 - AC-10: Given a copy of a real older workspace in a test installation, its remotes made unpushable, when
   `/import-workspace` runs end to end, then every repository, worktree and work clone of its inventory is accounted for

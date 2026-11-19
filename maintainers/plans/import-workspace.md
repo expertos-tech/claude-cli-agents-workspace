@@ -31,7 +31,7 @@ Every `.git` below the folder, a folder (a repository) or a file (a worktree), i
 | Moved worktree | Its `.git` file and its entry in `<repository>/.git/worktrees/` name another root (the older workspace was copied from another machine) | Paired by the entry and counted once, with its branch; the person may repair the pointers with `git worktree repair` in the older workspace; the import never does |
 | Work clone | A repository whose `origin` is the same as a project's, outside the projects folder (for example a `tmp/work/` of the older workspace) | Its local branches are fetched into the imported project as local branches; its changes go to the pending-work request |
 | The older workspace itself | The repository at the folder's root | Not a project: skipped, listed |
-| A clone of the older workspace | A repository whose `origin` is the older workspace or one of its worktrees | Its own work: listed, never asked |
+| A clone of the older workspace | A repository whose `origin` is the older workspace, one of its worktrees, or a place in its tree with no repository now (a removed worktree); under an old root when it was moved | Its own work: listed, never asked |
 | Repository with missing objects | A ref to a missing object (a snapshot taken while git wrote), or an `objects/info/alternates` whose folder is gone | Its complete branches and tags are brought, the others named in its pending-work request; with nothing complete it is not brought, with the reason, and the import goes on |
 
 The pending-work request does not analyse the code. Per project, it lists each source with pending work: its path,
@@ -52,8 +52,10 @@ with its remote first; nothing is brought without git.
 
 Markdown files in a folder named like a backlog (`backlog/`, `ideas/`, `todo/`, `requests/`). Each item the person
 keeps becomes a request in `custom/requests/` in state `idea`, with its `**Project:**` line and the original text
-under "Requested", unchanged, with its source path. An item about the older workspace's own process (its sessions, its
-queue, its review flow) is dropped and listed.
+under "Requested", unchanged, with its source path. An item about the older workspace itself (its sessions, its
+queue, its review flow, its tools) is dropped and listed. Markdown in scratch of the older workspace (a dot folder such
+as an editor's local history, or a folder its repository ignores) is no item: counted only. A repository outside the
+projects folder gives items only when it is answered "backlog".
 
 ### 2.4 Rules
 
