@@ -507,7 +507,17 @@ move_problems() {
   else
     echo "the root has no developer branch"
   fi
-  [ "$(git -C "$root" cat-file -t "$dev:$src" 2>/dev/null)" = blob ] || echo "$src is not on origin/developer"
+  if [ "$(git -C "$root" cat-file -t "$dev:$src" 2>/dev/null)" != blob ]; then
+    if [ "$from" != pending ]; then
+      echo "$src is not on origin/developer"
+    elif [ -e "$root/$src" ] && [ -n "$(git -C "$root" status --porcelain -- "$src")" ]; then
+      echo "$src is not on origin/developer, and not committed: a request starts only from origin/developer. Commit it (/caw-commit) on the branch that wrote it, take that branch into developer with /caw-merge, then run start again"
+    elif git -C "$root" cat-file -e "HEAD:$src" 2>/dev/null; then
+      echo "$src is not on origin/developer: committed here only; a request starts only from origin/developer. Take its commit there with /caw-merge, then run start again"
+    else
+      echo "$src is not on origin/developer: a request starts only from there. Written in a work clone: commit it there and take that branch into developer with /caw-merge, then run start again"
+    fi
+  fi
   if git -C "$root" cat-file -e "$dev:$dst" 2>/dev/null; then
     if [ "$from" = pending ]; then
       echo "$dst is on origin/developer already: the request is in progress (/caw-request $name resumes it or starts over)"

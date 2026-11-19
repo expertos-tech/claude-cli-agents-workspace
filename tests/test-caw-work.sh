@@ -1727,13 +1727,20 @@ test_start_refuses_a_request_not_on_origin() {
   head="$(git -C "$R" rev-parse HEAD)"
   run start missing.md
   refused_unchanged "maintainers/requests/missing.md is not on origin/developer" "$dev" "$head"
+  has "take that branch into developer with /caw-merge, then run start again"
   has 'no row of `missing.md`'
+  printf '# Loose\n' >"$R/maintainers/requests/loose.md"
+  run start loose.md
+  refused_unchanged "maintainers/requests/loose.md is not on origin/developer, and not committed" "$dev" "$head"
+  has "Commit it (/caw-commit) on the branch that wrote it"
+  rm "$R/maintainers/requests/loose.md"
   printf '# New\n' >"$R/maintainers/requests/new.md"
   git -C "$R" add maintainers/requests/new.md
   git -C "$R" commit -q -m "new request"
   head="$(git -C "$R" rev-parse HEAD)"
   run start new.md
-  refused_unchanged "maintainers/requests/new.md is not on origin/developer" "$dev" "$head"
+  refused_unchanged "maintainers/requests/new.md is not on origin/developer: committed here only" "$dev" "$head"
+  has "Take its commit there with /caw-merge, then run start again"
 }
 
 # AC-2: anything in the commit besides the rename and the Status cell is rolled back, and nothing is pushed.
