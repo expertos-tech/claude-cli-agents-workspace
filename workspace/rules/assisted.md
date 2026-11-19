@@ -20,6 +20,9 @@ the language of the conversation.
 ╰─ /pilot auto turns these boxes off ──────────────
 ```
 
+- Exactly these lines: `What` one line, `Why` one or two, `How` one (several commands on it, separated by ` · `). No
+  other line, list or blank line inside the box; the details go after the selection, in the reply.
+- The selection goes through the question tool, never as a numbered list in the text.
 - At most one box per reply. Two situations at once: the one listed first below.
 - Never inside the closing board or the warnings board, never in a subagent: a brief carries `VERIFICATION: auto` and
   nothing about boxes (`rules/models.md` "Brief").
