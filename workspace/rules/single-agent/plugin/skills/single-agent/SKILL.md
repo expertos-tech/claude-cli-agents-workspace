@@ -6,7 +6,7 @@ disable-model-invocation: true
 effort: low
 ---
 
-Arguments: `$ARGUMENTS`. This command exists only in a session opened by `single-claude` (`scripts/single-claude.sh`), whose first instructions name the `Workspace:` and `Target:` folders and the `Tool:` script; below, `<tool>` is that exact path (the copy `single-claude` ran, which before a merge may be a worktree), NEVER a path built from `Workspace:`. It may show as `/single-agent:single-agent`, the plugin's namespace: the same command. It authorizes only what the matching step says. Reply in the language the human writes in.
+Arguments: `$ARGUMENTS`. This command exists only in a session opened by `single-claude` (`scripts/single-claude.sh`), whose first instructions name the `Workspace:` and `Target:` folders and the `Tool:` script; below, `<tool>` is that exact path (the copy `single-claude` ran, which before a merge may be a worktree), NEVER a path built from `Workspace:`. It may show as `/single-agent:single-agent`, the plugin's namespace: the same command. It authorizes only what the matching step says. Reply in the human's preferred language (the Claude Code setting `language`), else in the language the human writes in.
 
 1. `--help` (alone or with anything else): reply with this help and stop, changing nothing:
 

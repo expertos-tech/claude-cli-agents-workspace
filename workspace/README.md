@@ -62,7 +62,7 @@ aiwp
 
 `aiwp` checks for a new release (it never updates), runs `scripts/setup-claude.sh` and starts `claude`; arguments for `claude` go after `--`.
 
-Always at the workspace root, even to work on a project: that is where the rules and hooks apply. Recommended: Claude Code's auto mode. The workspace leaves to it the judgment of what is destructive and keeps in hooks only what must never happen. Claude replies in the language you write in.
+Always at the workspace root, even to work on a project: that is where the rules and hooks apply. Recommended: Claude Code's auto mode. The workspace leaves to it the judgment of what is destructive and keeps in hooks only what must never happen. Claude replies in your preferred language, asked when the workspace is created (the Claude Code setting `language`), or else in the language you write in.
 
 ### 5. Ask
 
