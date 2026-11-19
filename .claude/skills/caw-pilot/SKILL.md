@@ -42,5 +42,6 @@ Read that file in full and follow it as the procedure, with the sections below o
   rendered pages.
 - `manual`: one item per acceptance criterion of the request, with the command ready to copy and the expected result.
 - The file is always the root's, never a work clone's: in a session started in a clone
-  (`tmp/work/<work>/claude-cli-agents-workspace`), read and write `../../../.claude/pilot-mode.local.md` (`CLAUDE.md`
+  (`tmp/work/<work>/claude-cli-agents-workspace`), read and write `../../../../.claude/pilot-mode.local.md`, four
+  levels up, in the root that holds `tmp/work/`: the same file `tests/caw-session-index.py` reads (`CLAUDE.md`
   "Pilot mode").
