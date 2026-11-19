@@ -62,6 +62,7 @@ Small adjustments, effort low unless noted.
 | `clone-path-findings-loop.md` | Requests made of findings loop the clone path of `/caw-merge` |
 | `merge-project-name.md` | `<project>` for a plain folder of repos with no root repo |
 | `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
+| `merge-queue.md` | Two merges into one base at the same time: a queue, one merge at a time (effort high) |
 
 ### Ideas
 
