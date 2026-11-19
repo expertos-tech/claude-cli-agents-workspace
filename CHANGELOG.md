@@ -97,7 +97,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `tests/caw-language.py`, a second SessionStart hook at the root (start, resume, clear, compact): with no `language`
   setting in the root `.claude/settings.local.json` or the user settings, it has the session ask the preferred language
   of communication first and save it there; with one, it prints nothing; it never fails a session start. Its
-  scenarios run in `tests/check.sh` (`caw-language`).
+  scenarios run in `tests/check.sh` (`caw-language`). `bash tests/caw-work.sh open` copies that `language` into the
+  clone's own `.claude/settings.local.json`, so a session inside a clone replies in it too.
 
 ### Changed
 

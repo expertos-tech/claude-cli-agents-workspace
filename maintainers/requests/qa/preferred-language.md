@@ -99,12 +99,17 @@ Decisions taken while running (the owner, 2026-11-18):
   declares `shellcheck source-path=SCRIPTDIR`.
 - W-5: the 8 translations that kept the single-agent mode are translated again in full now, not at the release.
 - W-6: `aiwp update` removes a dangling `~/.local/bin/single-claude` link to the updated workspace's script.
+- The merge review (APPROVED_WITH_WARNINGS), W-7: fixed in `ab90e79`: `bash tests/caw-work.sh open` copies the root's
+  `language` into the clone's git-ignored `.claude/settings.local.json` (other keys kept, its own language never
+  replaced), so a session inside a clone replies in it and the hook stays silent; 4 scenarios in `test-caw-work.sh`.
+- The merge review, W-8 (installed workspaces keep the generated `SINGLE-AGENT.md`, no longer denied): accepted by the
+  owner: no installation exists yet.
 
 Deviations from the request:
 
 - Beyond the listed files, the language rule was also aligned in `workspace/README.md`, `rules/rules.md`, and the
   statements "the one hook of the root" of `CLAUDE.md` and `docs/maintenance.md` (now two hooks).
-- W-3 to W-6 go beyond the request, each by the owner's answer above.
+- W-3 to W-7 go beyond the request, each by the owner's answer above.
 
 Acceptance criteria:
 
@@ -120,7 +125,7 @@ Acceptance criteria:
 - AC-5: proven: the suite below.
 
 Checks: `bash tests/check.sh --base origin/developer --i18n-pending` rc 0 (repo-terms skipped: no terms list found);
-aiwp 64, setup-claude 37, caw-language 14 scenarios; `/caw-test-install` PASS; ruff and shellcheck (the gate's pinned
+aiwp 64, setup-claude 37, caw-language 14, caw-work 36 scenarios; `/caw-test-install` PASS; ruff and shellcheck (the gate's pinned
 images) clean on the changed scripts.
 
 Left: nothing of this request. `merge-queue.md` is pending.
