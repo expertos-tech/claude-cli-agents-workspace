@@ -41,5 +41,6 @@ Read that file in full and follow it as the procedure, with the sections below o
   (`/caw-test-install`); a tool of `workspace/tools/` as a copy in its own `agent_` group; documentation alone, the
   rendered pages.
 - `manual`: one item per acceptance criterion of the request, with the command ready to copy and the expected result.
-- The file is written at the root the session started in, never in a work clone: a clone's sessions do not start
-  there.
+- The file is always the root's, never a work clone's: in a session started in a clone
+  (`tmp/work/<work>/claude-cli-agents-workspace`), read and write `../../../.claude/pilot-mode.local.md` (`CLAUDE.md`
+  "Pilot mode").

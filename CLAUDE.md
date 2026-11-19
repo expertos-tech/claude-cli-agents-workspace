@@ -29,7 +29,10 @@ The project is documented in `docs/` (install, contribute, maintain, release); t
 
 The mode of this session (`/caw-pilot`) is `assisted` unless the file below says otherwise. In `assisted`, read
 `.claude/assisted.md` in full before the first reply and follow it; in `auto`, nothing more. `/caw-pilot auto` and
-`/caw-pilot assisted` write that file (git-ignored, this clone only); `/caw-pilot manual` lasts this session only.
+`/caw-pilot assisted` write that file (git-ignored, this repository's root only); `/caw-pilot manual` lasts this
+session only. A session started in a work clone (`tmp/work/<work>/claude-cli-agents-workspace`) gets this file but
+not the import, which Claude Code skips outside the folder the session started in: there the start hook
+`tests/caw-session-index.py` reads the root's file and gives the mode in a line `Pilot mode: ...`, which wins.
 
 @.claude/pilot-mode.local.md
 

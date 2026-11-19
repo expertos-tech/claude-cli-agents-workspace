@@ -96,7 +96,10 @@ counterpart and are complete skills.
 
 A session at the root starts in `assisted` unless `.claude/pilot-mode.local.md` (git-ignored, this clone only) says
 otherwise: the root `CLAUDE.md` "Pilot mode" says so and imports that file, and a missing import is skipped silently,
-so the root needs no hook for it. In `assisted` the session reads `.claude/assisted.md`, a layer over the product's
+so the root needs no hook for it. A session started in a work clone loads the root `CLAUDE.md` but not that import
+(Claude Code skips an import outside the folder the session started in), so the session index hook
+`tests/caw-session-index.py` reads the root's file there and adds the line `Pilot mode: ...` to the start context;
+there is one mode per root, never per clone. In `assisted` the session reads `.claude/assisted.md`, a layer over the product's
 `workspace/rules/assisted.md` with the maintenance's situations: the first reply of a session, a change with no
 request, a commit or push on `developer` or `main`, something private in a file to commit, a new task after a closing
 board, a translation between releases. Each box waits for a choice: continue, don't show that group again in this
