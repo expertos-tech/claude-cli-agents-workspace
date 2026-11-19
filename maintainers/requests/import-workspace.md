@@ -46,6 +46,11 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
 - BR-10: each backlog item kept becomes `custom/requests/<yyyy-mm-dd>-<slug>.md`, state `idea`, with its
   `**Project:**` line and the original text under "Requested", unchanged, with its source path; an item with a secret
   writes only its source path and a note.
+- BR-10a: the person chooses which projects are imported: the plan lists each project found with its size (working
+  tree and `.git`) and status `import` (the default) or `skip`. A skipped project is not brought, none of its branches
+  is fetched and it gets no pending-work request; its worktrees and work clones are listed with it under "Not
+  imported", and a backlog item about it is dropped and listed. A nested repository of a skipped one is skipped too,
+  unless the person includes it on its own.
 - BR-11: before anything is written, the plan `custom/migrations/import-<yyyy-mm-dd>.md` shows what will be brought,
   the pending work, the backlog and what is not imported; the person changes rows or confirms. Then `apply` runs each
   step once, recording it; `custom/` is committed by path and never pushed.
@@ -69,7 +74,10 @@ and its backlog as requests in `custom/requests/`. Its rules are listed, never i
 - AC-7: Given a `.env` with a value in the older workspace, then no file of `custom/` or `projects/` holds that value,
   and the script never opened it.
 - AC-8: Given the older workspace after the import, then its files and git state are the same as before.
-- AC-9: AC-1 to AC-8 are scenario tests of `scripts/workspace-import.py` with invented data, run by the suite with no
+- AC-8a: Given a project with a worktree and a work clone, when the person marks it `skip`, then it is not in
+  `projects/`, none of its branches is anywhere in the workspace, it has no pending-work request, and the plan lists it
+  as skipped with its size.
+- AC-9: AC-1 to AC-8a are scenario tests of `scripts/workspace-import.py` with invented data, run by the suite with no
   model.
 - AC-10: Given a copy of a real older workspace in a test installation, its remotes made unpushable, when
   `/import-workspace` runs end to end, then every repository, worktree and work clone of its inventory is accounted for
