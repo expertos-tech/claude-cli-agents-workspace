@@ -1,7 +1,7 @@
 # The company-terms list of the maintainer's machine
 
-Status: draft, decisions D-1..D-4 open; optional, no request depends on it. Source: warning W-2 of the
-`import-workspace` stages (2026-11-19).
+Status: decided 2026-11-19: option A, as today (no list, no change); kept as the reference for a later setup. No
+request. Source: warning W-2 of the `import-workspace` stages (2026-11-19).
 
 ## 1. What happens today
 

@@ -18,7 +18,7 @@ says what must be true when it is done. Read the plan before running its request
 | `assisted-mode.md` | `/pilot assisted`: boxes that teach the workspace to a newcomer, the default per person, `/caw-pilot` | `requests/assisted-mode.md` |
 | `preferred-language.md` | The reply language as Claude Code's `language` setting: asked at install, asked by a root hook in the maintenance | `requests/qa/preferred-language.md` |
 | `request-in-progress.md` | The "doing" state of a request from the opening of its clone to its merge, so no list suggests a request already running | `requests/request-in-progress.md` |
-| `import-workspace-code-folders.md` | Every code folder of an older workspace found by extension, classified in rounds (POC, tool, project) and brought with a local repository | none yet: decisions open |
-| `terms-list.md` | The company-terms list of the maintainer machine, the commit e-mail, a visible SKIP when there is none | none yet: optional, decisions open |
+| `import-workspace-code-folders.md` | Every code folder of an older workspace found by extension, classified in rounds (POC, tool, project) and brought with a local repository | `requests/import-workspace-code-folders.md` |
+| `terms-list.md` | The company-terms list of the maintainer machine, the commit e-mail, a visible SKIP when there is none | none: option A (as today) decided |
 
 The order in which they run is in `maintainers/requests/README.md`.

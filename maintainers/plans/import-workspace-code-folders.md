@@ -1,6 +1,6 @@
 # `/import-workspace`: every code folder found, classified and brought with a repository
 
-Status: draft, decisions D-1..D-6 open. Source: warning W-1 of the AC-10 run of `requests/import-workspace.md`
+Status: decided 2026-11-19 (section 5); request: `maintainers/requests/import-workspace-code-folders.md`. Source: warning W-1 of the AC-10 run of `requests/import-workspace.md`
 (2026-11-19) and the owner's direction on it. Extends `import-workspace.md`; nothing of it is built yet.
 
 ## 1. What the AC-10 run showed
@@ -106,21 +106,22 @@ This workspace has three homes for code: `projects/<name>` (a repository of its 
 
 C is the owner's direction and closes W-1. B is the cheaper half: the person runs the listed commands.
 
-## 5. Decisions for the owner
+## 5. Decisions of the owner (2026-11-19)
 
-- **D-1, the extensions.** The closed lists of 3.1 (code, documents). Recommended: as written; a folder of documents
-  only is listed, never asked.
-- **D-2, what no round took.** Recommended: left behind, listed. Other: a fourth question "leave these?" before the
-  plan.
-- **D-3, the history of a project with no repository.** (a) One commit with its files, "import from the older
-  workspace". (b) Its history split from the older workspace's repository (`git subtree split --prefix`, in a
-  temporary clone), then one commit with what the files have beyond it (134 commits kept in the example).
-  Recommended: (b) when the older repository tracks the folder and its objects are whole, (a) otherwise.
-- **D-4, the history of a POC or tool.** Recommended: none (one commit in the custom layer). Other: as D-3, which
-  needs a repository of its own and breaks the custom layer's layout.
-- **D-5, where it runs.** Recommended: a new request after the `import-workspace` branch is merged, so that branch
-  closes as proved (W-1 answered `request`, this plan its source).
-- **D-6, the order of the rounds.** POCs, tools, projects, as the owner wrote. Recommended: keep it.
+- **D-1, the extensions.** The closed lists of 3.1 detect code deterministically. A folder of documents only is judged
+  by the model from its tree (paths and sizes, nothing opened): a project of documents or a guide becomes a candidate,
+  the rest is left behind.
+- **D-2, what is left out.** The plan shows everything left out, each with the reason of its analysis (D-1, the
+  rounds). At the end the person may adjust it in their own words; the model turns each adjustment into answers, the
+  plan is written again, and the import goes on with it once confirmed.
+- **D-3, the history of a project with no repository.** As recommended: split from the older workspace's repository
+  when it tracks the folder and its objects are whole, then one commit with what the files have beyond it; one commit
+  otherwise.
+- **D-4, the history of a POC or tool.** No repository of its own in the custom layer. One whose source is a git
+  repository: its `.git` is not brought, and its history enters the custom layer's repository under its folder
+  (`git subtree add`) when its objects are whole. Otherwise one commit.
+- **D-5, where it runs.** A new request, after `import-workspace` is merged; W-1 answered `request`.
+- **D-6, the order of the rounds.** POCs, tools, projects.
 
 ## 6. Stages and effort
 
