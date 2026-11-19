@@ -42,6 +42,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 | --- | --- | --- |
 | 0 | `assisted-mode.md` | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 0 | `request-in-progress.md` | The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
+| 0 | `draft-prompt.md` | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
 | 2 | `import-workspace.md` | Brings the work of an older workspace (repositories, worktrees, work clones, backlog), not its rules; replaces `normalize-rules`; design: `plans/import-workspace.md`; the owner needs it to migrate the final project |
 | 2 | `import-workspace-code-folders.md` | After `import-workspace`: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
 | 2 | `import-from-fork.md` | After `import-workspace`: the first release after the publication, the first real test of `aiwp update` |

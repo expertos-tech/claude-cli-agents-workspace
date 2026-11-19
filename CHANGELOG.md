@@ -93,6 +93,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The requests `warnings-board` (the numbered warnings board with risk levels before the closing board),
   `preferred-language` with its plan (the reply language as Claude Code's `language` setting) and
   `validators-follow-ups`.
+- The plan and request `draft-prompt`: `/draft-prompt` turns a loose text into a plan placed in a priority order with
+  a criticality, or prints it with `screen`; `/draft-request` renamed `/new-request`, taking a text or a plan and
+  showing a summary instead of the whole request; plans saved in the person's language, requests in English, and
+  the screen always in the person's language, but code and configuration.
 - Review fixtures (`tests/review-fixtures/`): one made-up change per hard rule, expected BLOCKER, and three expected
   WARNING only; `/caw-merge --main` reviews each once per release (`reviewer`, effort `medium`) and judges the reports
   with `tests/review-fixtures.sh`; a failing fixture is a warning of the release, read to tell a fixture's own defect
