@@ -17,9 +17,9 @@ Read that file in full and follow it as the procedure, with the sections below o
 
 - The product's checks of a project (`scripts/validate.sh`, coverage, a browser on the app): here the checks of this
   repository, below.
-- Its `allowed-tools` and `scripts/pilot-mode.sh`: the root has no such script; the file is read and written as in
-  "Mapping".
-- The start context line `Pilot mode: ...`: the root learns the mode from `CLAUDE.md` "Pilot mode".
+- `scripts/pilot-mode.sh`: the root has no such script; the file is read and written as in "Mapping".
+- The start context line `Pilot mode: ...` of the product: the root learns the mode from `CLAUDE.md` "Pilot mode", a
+  work clone from the line of `tests/caw-session-index.py`.
 
 ## Mapping
 
