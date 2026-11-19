@@ -143,7 +143,8 @@ A `reviewer` subagent with a clean context, which did not write the change (`.cl
   parts, each to its own reviewer, in parallel. There is no independent review of a stage.
 - **Findings:** a BLOCKER is only a hard rule, a correctness defect, a change outside the request's scope, a risk a
   mistake reaches or a proof the request requires now; it is fixed before the merge and the fix is reviewed. Everything
-  else is a WARNING: it never blocks, the owner decides what to do with each. The brief carries the owner's
+  else is a WARNING: it never sends the work back; it goes to the numbered warnings board, with its risk level, and the
+  merge goes on only after the owner answers `fix`, `request` or `accept` for each. The brief carries the owner's
   authorizations, and what they cover is no finding.
 - **Company terms:** a company term in what a work clone pushes is a warning, not a refusal: the push waits, and
   `bash tests/caw-work.sh push <work> --accept-terms` (a prompt: the owner's confirmation) records it privately next to

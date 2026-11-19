@@ -49,7 +49,8 @@ Both follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semant
    changelogs. Effort `high`; a range too large for one context is split in parts, reviewed in parallel. There is no separate
    general round.
 7. The findings, once, in one list: a BLOCKER is fixed in the release clone, or sent to a request, which stops the
-   release; a WARNING is the owner's to decide: fix now, a request or leave as is.
+   release; the WARNINGs go to the numbered warnings board, each with its risk level, and the release goes on only after the
+   owner answers `fix`, `request` or `accept` for each.
 8. The clone enters `developer`, at the commit the suite and the review judged.
 9. Each public step is confirmed by the owner, one by one: `main` (a fast-forward from `developer`, or a pull request
    when refused), the tag `vX.Y.Z` (never moved or deleted) and the GitHub release, with the product changelog section
