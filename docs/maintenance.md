@@ -90,6 +90,18 @@ counterpart and are complete skills.
 | `/caw-request` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `tmp/requests/`, then `tmp/`; no argument reads `tmp/request.md` |
 | `/caw-test-install` | `[--keep]` | Installs a disposable workspace from the current tree under `tmp/test-install/` and exercises hooks and scripts |
 | `/caw-merge` | `[<work>/<clone> \| --main [instructions]]` | Takes the work into `developer` through the gates and both changelogs, and moves the request to `qa/`; `--main` validates `qa/` and releases the product ([releases](releases.md)) |
+| `/caw-pilot` | `[assisted \| auto \| manual]` | Shows or changes the mode of the session: `assisted` (the default: the checks are the agent's, plus short boxes on the maintenance flow), `auto` (no boxes) or `manual` (the owner runs the detailed check, this session only) |
+
+### Pilot mode
+
+A session at the root starts in `assisted` unless `.claude/pilot-mode.local.md` (git-ignored, this clone only) says
+otherwise: the root `CLAUDE.md` "Pilot mode" says so and imports that file, and a missing import is skipped silently,
+so the root needs no hook for it. In `assisted` the session reads `.claude/assisted.md`, a layer over the product's
+`workspace/rules/assisted.md` with the maintenance's situations: the first reply of a session, a change with no
+request, a commit or push on `developer` or `main`, something private in a file to commit, a new task after a closing
+board, a translation between releases. Each box waits for a choice: continue, don't show that group again in this
+session, or the better way where there is one. `/caw-pilot auto` writes `auto` to the file and the boxes stop for good;
+`/caw-pilot assisted` brings them back. `tests/check.sh` checks `.claude/assisted.md` like the other layers.
 
 ## Subagents
 
