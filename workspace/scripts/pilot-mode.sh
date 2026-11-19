@@ -21,7 +21,7 @@ Commands:
                 default: assisted (.claude/pilot-mode holds a value it does not know)
                 default: auto (/pilot is turned off in custom/rules-config.json)
   set <mode>  write auto or assisted to .claude/pilot-mode (a temporary file renamed over it, so a link there is
-              replaced, never followed), then print "written: .claude/pilot-mode (<mode>)". /pilot auto and
+              replaced, never followed; a folder there is refused, exit 1), then print "written: .claude/pilot-mode (<mode>)". /pilot auto and
               /pilot assisted run it. manual, or anything else, is a usage error and writes nothing.
   context     print the line the SessionStart hook adds to the session context, exactly one of:
                 Pilot mode: assisted (the default of this installation). Read rules/assisted.md in full before your first reply and follow it.
@@ -136,6 +136,13 @@ case "$action" in
       *) echo "error: unknown mode: $mode; the default is auto or assisted" >&2; exit 2 ;;
     esac
     mkdir -p "$root/.claude" 2>/dev/null || { echo "error: cannot create $root/.claude" >&2; exit 1; }
+    # mv onto a link to a folder (or onto a folder) would move the file into it: drop a link, refuse a folder.
+    if [ -L "$file" ]; then
+      rm -f "$file" || { echo "error: cannot remove the link $FILE_REL" >&2; exit 1; }
+    elif [ -d "$file" ]; then
+      echo "error: $FILE_REL is a folder; nothing written" >&2
+      exit 1
+    fi
     tmp="$(mktemp "$root/.claude/.pilot-mode.XXXXXX" 2>/dev/null)" || { echo "error: cannot write in $root/.claude" >&2; exit 1; }
     if ! { printf '%s\n' "$mode" >"$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$file"; }; then
       rm -f "$tmp"

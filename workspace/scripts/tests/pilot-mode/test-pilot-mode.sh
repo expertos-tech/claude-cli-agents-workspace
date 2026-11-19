@@ -228,6 +228,31 @@ test_set_creates_the_folder_and_replaces_a_link() {
   content_is "$BASE/target-$CURRENT" keep
 }
 
+# Regression: mv -f onto a link to a folder moved the file into that folder and still printed "written".
+test_set_replaces_a_link_to_a_folder_and_refuses_a_folder() {
+  fixture
+  mkdir -p "$BASE/dir-$CURRENT" "$ROOT/.claude"
+  rm -f "$ROOT/.claude/pilot-mode"
+  ln -s "$BASE/dir-$CURRENT" "$ROOT/.claude/pilot-mode"
+  run set auto
+  rc_is 0
+  local status=0
+  [ ! -L "$ROOT/.claude/pilot-mode" ] || status=1
+  check "the link to a folder is replaced by a file" "$status"
+  content_is "$ROOT/.claude/pilot-mode" auto
+  status=0
+  [ -z "$(ls -A "$BASE/dir-$CURRENT")" ] || status=1
+  check "nothing is written inside the linked folder" "$status"
+  rm -f "$ROOT/.claude/pilot-mode"
+  mkdir "$ROOT/.claude/pilot-mode"
+  run set assisted
+  rc_is 1
+  has "is a folder; nothing written"
+  status=0
+  [ -z "$(ls -A "$ROOT/.claude/pilot-mode")" ] || status=1
+  check "nothing is written inside the folder" "$status"
+}
+
 test_set_with_pilot_turned_off_writes_and_says_so() {
   fixture
   pilot_off
