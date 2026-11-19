@@ -2,8 +2,9 @@
 # Work clones of the maintenance of this repository: each change is made in a local clone under tmp/work/, on its own
 # branch from origin/developer, and pushed at every commit by the clone's git hooks once the company-terms scan of
 # what leaves passes; a company term is a warning the owner confirms (push --accept-terms), never a refusal. Writes
-# only under tmp/work/, and the owner's accepted terms next to the terms list. Modeled on
-# workspace/scripts/aiwp-cmds.sh.
+# under tmp/work/, the owner's accepted terms next to the terms list, and one commit on developer at the root for the
+# move of a request to maintainers/requests/doing/ and back (start, close --discard), pushed only after the checks of
+# that one move. Modeled on workspace/scripts/aiwp-cmds.sh.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -14,10 +15,28 @@ Usage: bash tests/caw-work.sh <command> [args] [--help]
 
 The maintenance works in tmp/work/<work>/claude-cli-agents-workspace/: a local clone of this repository on the branch
 of the change, started from origin/developer. <work> is <yyyy-mm-dd>-<kebab-slug>: the day the work opened and the slug
-of its branch. The script writes only under tmp/work/.
+of its branch. The script writes under tmp/work/; start and close --discard also make one commit on developer at the
+root, a move of a request, pushed to origin/developer only within the checks of start (below).
 
 Commands:
-  open <type>/<slug>
+  start <name> [--branch <type>/<slug>]
+        A request starts: run at the root before open. <name> is a file of maintainers/requests/ (no folder, exactly
+        as given). Fetches origin, then refuses, listing every reason, committing and pushing nothing: the root not on
+        developer; a file not committed at the root (untracked included); developer with a commit not on
+        origin/developer, or behind it; maintainers/requests/<name> not on origin/developer, or
+        maintainers/requests/doing/<name> on it already (in progress: /caw-request <name> resumes it or starts
+        over); its row in the pending tables of maintainers/requests/README.md (the section "Pending": the one row
+        whose Request cell is `<name>`) missing, there more than once, or with a Status other than pending.
+        Otherwise one commit "chore(requests): start <name>" (git mv to maintainers/requests/doing/<name>, and the
+        Status cell of its row from pending to doing; --branch names the branch in its body), checked before the
+        push: one commit on origin/developer, a pure rename of that file (100% similar) and one line of the README
+        that differs only in that Status cell; anything else rolls the commit back (git reset --hard to the base,
+        the tree having been clean; a file something else wrote meanwhile stays, named) and refuses. Then a plain
+        push of developer (never forced, no suite, review or terms scan: its shape is the check). A push refused
+        because origin/developer moved meanwhile: the commit is rolled back, developer fast-forwarded to the new
+        origin/developer, and everything checked and made again, once; a second refusal rolls back and stops.
+        Prints "pushed: developer <sha> chore(requests): start <name>".
+  open <type>/<slug> [--request <name>] [--resume]
         <type>: feat fix docs refactor test chore perf build ci style; <slug>: kebab-case. Refuses developer, main
         (as the name or the slug) and the name of a tag, here or on the remote. Clones this repository
         (git clone --local) into tmp/work/<today>-<slug>/claude-cli-agents-workspace, points its origin at this
@@ -29,6 +48,12 @@ Commands:
         A new or reused clone gets the "language" of this repository's .claude/settings.local.json in its own (git
         ignores it there too), keeping its other keys and never replacing a language it has: "language: <it> (from
         the root .claude/settings.local.json)".
+        --request <name>: the work runs that request: maintainers/requests/doing/<name> must be on origin/developer
+        (start moved it there, so the new branch holds the move). Recorded in tmp/work/<work>/.request; refused,
+        creating nothing, when another work records it or this work records another request.
+        --resume: the branch already on the remote with no clone here is checked out from it (the work goes on
+        there, nothing pushed) instead of being refused; not on the remote: it starts from origin/developer, with an
+        attention: line.
   run <work>[/<clone>] -- <command>...
         Runs the command (no shell) with the clone as the current folder, only when it is on run's list; anything else
         is refused, running nothing, with "not on run's list: run it as a plain command (the permission mode
@@ -64,9 +89,12 @@ Commands:
         and tests/check.sh repo-terms, skip an accepted term, so it is not asked again; a new term warns again.
         Delete a line of that file to be warned about the term again.
   status [<work>]
-        Fetches origin (--prune), then one line per clone: branch, commits ahead of origin/developer, commits not on
-        the remote, files not committed, and whether the branch is in origin/developer; then one "copy:" line per
-        Docker copy group of the clone (state, host ports). Docker not reachable: one line "Docker: not reachable".
+        Per work that records a request: "tmp/work/<work>  request=maintainers/requests/doing/<name>" ("(missing)"
+        when the root has no such file). Fetches origin (--prune), then one line per clone: branch, commits ahead of
+        origin/developer, commits not on the remote, files not committed, and whether the branch is in
+        origin/developer; then one "copy:" line per Docker copy group of the clone (state, host ports). Docker not
+        reachable: one line "Docker: not reachable". Without <work>, last: one "stale: maintainers/requests/doing/
+        <name>" line per file of that folder at the root that no work of tmp/work/ records.
   publish <work>[/<clone>]
         Publishes what the clone changed against origin/developer (committed or not, new files included), so the
         owner can test it:
@@ -82,7 +110,7 @@ Commands:
           bash tests/test-install.sh in the clone (its output in tmp/work/<work>/agent-test-install.log).
         - anything else alone (documentation, translations, maintainers/, tests/check.sh): "nothing to publish".
         Prints each copy's ports and addresses and where the test installation is. Exit 1 when one failed.
-  close <work> [--discard]
+  close <work> [--discard [--start-over]]
         Fetches origin and refuses, listing what would be lost, when the work folder holds something that is not a
         clone made by open, or a clone with files not committed, a stash, commits not on the remote, or its branch
         not in origin/developer. Otherwise deletes tmp/work/<work>/ and then the remote work branch (git push
@@ -93,6 +121,15 @@ Commands:
         the folder goes, the work's Docker copy groups are destroyed: the groups of its agent-*.compose.yaml files
         and the agent_ projects whose compose folder lies in a clone, by the label com.docker.compose.project and only
         when the name matches ^agent_[0-9]{4}-[a-z0-9][a-z0-9-]*$; a refused close destroys nothing.
+        The request the work records (open --request): with --discard it goes back to pending first, before anything
+        is deleted: the reverse of start, "chore(requests): put back <name>" (maintainers/requests/doing/<name> to
+        maintainers/requests/<name>, Status cell doing to pending), with every check of start; refused: nothing is
+        deleted. A request no longer in doing/ on origin/developer: an attention: line, nothing moved. Without
+        --discard it never moves (/caw-merge moved it to qa/).
+        --start-over (with --discard: start the request again): the work branch of each clone is deleted on the
+        remote first (only a work branch, never developer or main; --force-with-lease with the sha the clone pushed
+        last, so a commit pushed there from elsewhere refuses the close and keeps the folder), then the folder goes;
+        the request stays in doing/ and nothing is committed. Then: open <type>/<slug> --request <name>.
 
 Git hooks of a clone (written by open into the clone's .git/hooks, with the clone's core.hooksPath set to it; never
 part of any repository). They call this script by the absolute path it had when it ran open.
@@ -128,7 +165,9 @@ replaces bash tests/test-install.sh in publish (tests; it gets the clone as its 
 Exit codes: 0 ok; 1 refused or failed; 2 usage error.
 
 Examples:
-  bash tests/caw-work.sh open feat/autonomous-work
+  bash tests/caw-work.sh start autonomous-work.md --branch feat/autonomous-work
+  bash tests/caw-work.sh open feat/autonomous-work --request autonomous-work.md
+  bash tests/caw-work.sh open feat/autonomous-work --request autonomous-work.md --resume
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- git status --short
   bash tests/caw-work.sh run 2026-11-18-autonomous-work -- bash tests/check.sh --base origin/developer --i18n-pending
   bash tests/caw-work.sh push 2026-11-18-autonomous-work
@@ -136,6 +175,8 @@ Examples:
   bash tests/caw-work.sh status
   bash tests/caw-work.sh publish 2026-11-18-autonomous-work
   bash tests/caw-work.sh close 2026-11-18-autonomous-work
+  bash tests/caw-work.sh close 2026-11-18-autonomous-work --discard                # the request back to pending
+  bash tests/caw-work.sh close 2026-11-18-autonomous-work --discard --start-over   # then open ... --request again
 USAGE
 }
 
@@ -146,6 +187,9 @@ clone_dir=claude-cli-agents-workspace
 work_re='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$'
 branch_re='^(feat|fix|docs|refactor|test|chore|perf|build|ci|style)/[a-z0-9]+(-[a-z0-9]+)*$'
 zero_re='^0+$'
+requests=maintainers/requests
+# The name of a request file of maintainers/requests/: one file, no folder.
+request_re='^[A-Za-z0-9][A-Za-z0-9._-]*$'
 
 # Prints an error and exits with the given code.
 die() {
@@ -298,26 +342,377 @@ main()
 PY
 }
 
-# open: the clone, its branch from origin/developer, its hooks and the first push.
+# Requests in progress (start, open --request, close --discard): a request moves from maintainers/requests/ to
+# maintainers/requests/doing/ (and back) in one commit on developer at the root, pushed only when it is that move and
+# nothing else (the one exception to "developer moved outside /caw-merge", .claude/rules/security.md).
+
+# Checks or edits the Status cell of the row of a request in the pending tables of maintainers/requests/README.md (the
+# tables of its section "## Pending", by their header cells Request and Status), or verifies that two versions of the
+# README differ only in that cell:
+#   check <readme> <name> <from>            exactly one row of `<name>`, with the Status <from>
+#   edit <readme> <name> <from> <to>        the same, then that cell to <to>, written in place
+#   verify <old> <new> <name> <from> <to>   <new> is <old> with only that cell changed from <from> to <to>
+# Prints the reason and returns 1 when it does not hold; 2 for a usage error.
+readme_status() {
+  python3 -I - "$@" <<'PY'
+import os
+import sys
+import tempfile
+
+README = "maintainers/requests/README.md"
+
+
+def fail(reason):
+    """Print why the check does not hold and exit 1."""
+    print(reason)
+    sys.exit(1)
+
+
+def read_lines(path):
+    """Return the lines of a file with their line ends, or exit 1 when it cannot be read."""
+    try:
+        with open(path, encoding="utf-8", newline="") as handle:
+            return handle.read().splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError):
+        fail(f"{README} cannot be read")
+
+
+def cells(line):
+    """Return the cells of a table row (the text between its outer pipes), or None for a line that is not one."""
+    text = line.rstrip("\r\n").strip()
+    if len(text) < 2 or not text.startswith("|") or not text.endswith("|"):
+        return None
+    return text[1:-1].split("|")
+
+
+def is_separator(row):
+    """Return True for the separator row of a table (---, :---: cells)."""
+    return all(cell.strip() and set(cell.strip()) <= set("-:") for cell in row)
+
+
+def rows_of(lines, name):
+    """Return (line index, Status cell index or -1) for each row of the pending tables whose Request cell is `name`."""
+    found = []
+    pending = False
+    header = None
+    for index, line in enumerate(lines):
+        if line.startswith("## "):
+            pending = line.rstrip("\r\n").rstrip() == "## Pending"
+            header = None
+            continue
+        row = cells(line)
+        if not pending or row is None:
+            header = None
+            continue
+        if header is None:
+            header = [cell.strip() for cell in row]
+            continue
+        if is_separator(row) or "Request" not in header:
+            continue
+        at = header.index("Request")
+        if at < len(row) and row[at].strip() == "`" + name + "`":
+            status = header.index("Status") if "Status" in header and len(row) == len(header) else -1
+            found.append((index, status))
+    return found
+
+
+def one_row(lines, name, want):
+    """Return (line index, Status cell index) of the one row of `name` whose Status is want, or exit 1 with why not."""
+    found = rows_of(lines, name)
+    if not found:
+        fail(f'no row of `{name}` in the pending tables of {README} (its section "Pending")')
+    if len(found) > 1:
+        fail(f"{len(found)} rows of `{name}` in the pending tables of {README}: keep one")
+    index, status = found[0]
+    if status < 0:
+        fail(f"the row of `{name}` in {README} has no Status cell (its table needs a Status column)")
+    value = cells(lines[index])[status].strip()
+    if value != want:
+        fail(f"the Status of `{name}` in {README} is {value or 'empty'}, not {want}")
+    return index, status
+
+
+def replaced(line, status, value):
+    """Return the table row with its cell number status set to value, the padding and the rest of the line kept."""
+    body = line.rstrip("\r\n")
+    end = line[len(body):]
+    lead = body[: len(body) - len(body.lstrip())]
+    trail = body[len(body.rstrip()):]
+    parts = body.strip()[1:-1].split("|")
+    cell = parts[status]
+    parts[status] = cell[: len(cell) - len(cell.lstrip())] + value + cell[len(cell.rstrip()):]
+    return lead + "|" + "|".join(parts) + "|" + trail + end
+
+
+def write_in_place(path, lines):
+    """Write the lines to path through a temp file of the same folder and a rename, keeping its mode."""
+    folder = os.path.dirname(os.path.abspath(path))
+    mode = os.stat(path).st_mode & 0o777
+    fd, temp = tempfile.mkstemp(dir=folder, prefix=".README.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write("".join(lines))
+        os.chmod(temp, mode)
+        os.replace(temp, path)
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+
+
+def main():
+    """Run the mode of sys.argv[1] on the arguments that follow it."""
+    args = sys.argv[1:]
+    if len(args) == 4 and args[0] == "check":
+        one_row(read_lines(args[1]), args[2], args[3])
+    elif len(args) == 5 and args[0] == "edit":
+        lines = read_lines(args[1])
+        index, status = one_row(lines, args[2], args[3])
+        lines[index] = replaced(lines[index], status, args[4])
+        write_in_place(args[1], lines)
+    elif len(args) == 6 and args[0] == "verify":
+        old, new = read_lines(args[1]), read_lines(args[2])
+        index, status = one_row(old, args[3], args[4])
+        changed = [i for i in range(max(len(old), len(new))) if i >= len(old) or i >= len(new) or old[i] != new[i]]
+        if changed != [index] or new[index] != replaced(old[index], status, args[5]):
+            fail(f"{README} changes more than the Status cell of `{args[3]}` ({args[4]} to {args[5]})")
+    else:
+        print("usage: check|edit|verify ...")
+        sys.exit(2)
+
+
+main()
+PY
+}
+
+# Fetches origin at the root. Returns non-zero when it cannot.
+fetch_root() {
+  with_timeout 120 git -C "$root" fetch -q origin 2>/dev/null
+}
+
+# Prints, one per line, why the root cannot move <src> to <dst> now (the checks of start, against what origin/developer
+# has after the fetch); prints nothing when it may. <from> is the Status the README row must have.
+move_problems() {
+  local src="$1" dst="$2" name="$3" from="$4" head dirty ahead behind reason dev=refs/remotes/origin/developer
+  head="$(git -C "$root" symbolic-ref -q --short HEAD || echo 'a detached HEAD')"
+  [ "$head" = developer ] || echo "the root is on $head, not developer"
+  dirty="$(git -C "$root" status --porcelain | grep -c . || true)"
+  [ "$dirty" -eq 0 ] || echo "$dirty file(s) not committed at the root (git status): commit or remove them first"
+  git -C "$root" rev-parse -q --verify "$dev" >/dev/null || { echo "origin has no developer"; return 0; }
+  if git -C "$root" rev-parse -q --verify refs/heads/developer >/dev/null; then
+    ahead="$(git -C "$root" rev-list --count "$dev..refs/heads/developer")"
+    behind="$(git -C "$root" rev-list --count "refs/heads/developer..$dev")"
+    [ "$ahead" -eq 0 ] || echo "developer has $ahead commit(s) not on origin/developer: /caw-merge takes them first"
+    [ "$behind" -eq 0 ] || echo "developer is $behind commit(s) behind origin/developer: bring them first (git merge --ff-only origin/developer)"
+  else
+    echo "the root has no developer branch"
+  fi
+  [ "$(git -C "$root" cat-file -t "$dev:$src" 2>/dev/null)" = blob ] || echo "$src is not on origin/developer"
+  if git -C "$root" cat-file -e "$dev:$dst" 2>/dev/null; then
+    if [ "$from" = pending ]; then
+      echo "$dst is on origin/developer already: the request is in progress (/caw-request $name resumes it or starts over)"
+    else
+      echo "$dst is on origin/developer already: rename one of the two first"
+    fi
+  fi
+  reason="$(readme_status check <(git -C "$root" show "$dev:$requests/README.md" 2>/dev/null) "$name" "$from")" ||
+    echo "$reason"
+}
+
+# Prints, one per line, why the commit HEAD of the root is not exactly the move of <src> to <dst> on <base> with the
+# Status cell of its README row from <from> to <to>; prints nothing when it is.
+moved_problems() {
+  local base="$1" src="$2" dst="$3" name="$4" from="$5" to="$6" parents changes expected reason
+  parents="$(git -C "$root" rev-list --parents -n 1 HEAD)"
+  [ "$parents" = "$(git -C "$root" rev-parse HEAD) $base" ] || echo "HEAD is not one commit on origin/developer"
+  changes="$(git -C "$root" diff --no-color --no-ext-diff --name-status -M100% "$base" HEAD | LC_ALL=C sort)"
+  expected="$(printf 'M\t%s\nR100\t%s\t%s\n' "$requests/README.md" "$src" "$dst" | LC_ALL=C sort)"
+  [ "$changes" = "$expected" ] ||
+    echo "the commit changes more than the rename of $src (100% similar) and the README: $(printf '%s' "$changes" | tr '\t\n' ' ;')"
+  reason="$(readme_status verify <(git -C "$root" show "$base:$requests/README.md" 2>/dev/null) \
+    <(git -C "$root" show "HEAD:$requests/README.md" 2>/dev/null) "$name" "$from" "$to")" || echo "$reason"
+}
+
+# Takes the root back to <base>: the commit of a move not pushed is undone (the tree was clean before it), and a
+# doing/ folder it left empty goes.
+rollback_move() {
+  git -C "$root" reset -q --hard "$1"
+  rmdir "${root:?}/${requests:?}/doing" 2>/dev/null || true
+}
+
+# Prints a refusal on stderr: its title, then each line of <problems>, indented.
+refuse_lines() {
+  echo "refused: $1:" >&2
+  printf '%s\n' "$2" | sed 's/^/  /' >&2
+}
+
+# Moves a request at the root in one commit on developer and pushes it: <name> <from: pending|doing> <title> [<body>].
+# The checks of start first (move_problems: refused with every reason, nothing changed); then the commit, checked
+# (moved_problems: rolled back and refused when it is anything but that move); then a plain push, never forced.
+# origin/developer moved meanwhile: rolled back, developer fast-forwarded to it, and everything made again, once.
+move_request() {
+  local name="$1" from="$2" title="$3" body="${4:-}" to=pending src dst problems base msg attempt
+  src="$requests/doing/$name"
+  dst="$requests/$name"
+  if [ "$from" = pending ]; then to=doing; src="$requests/$name"; dst="$requests/doing/$name"; fi
+  msg="$title"
+  [ -z "$body" ] || msg+=$'\n\n'"$body"
+  [ -z "${CLAUDECODE:-}" ] || msg+=$'\n\n[#automatic-agent-commit]'
+  for attempt in 1 2; do
+    fetch_root || die 1 "could not fetch origin at the root: nothing was committed or pushed"
+    problems="$(move_problems "$src" "$dst" "$name" "$from")"
+    if [ -n "$problems" ]; then
+      refuse_lines "$title: nothing was committed or pushed" "$problems"
+      exit 1
+    fi
+    base="$(git -C "$root" rev-parse HEAD)"
+    mkdir -p "$root/${dst%/*}"
+    if ! git -C "$root" mv -- "$src" "$dst" ||
+      ! readme_status edit "$root/$requests/README.md" "$name" "$from" "$to" >&2 ||
+      ! git -C "$root" add -- "$requests/README.md" ||
+      ! git -C "$root" commit -q -m "$msg" -- "$src" "$dst" "$requests/README.md"; then
+      rollback_move "$base"
+      die 1 "the commit of $title failed (above): rolled back; nothing was pushed"
+    fi
+    problems="$(moved_problems "$base" "$src" "$dst" "$name" "$from" "$to")"
+    if [ -n "$problems" ]; then
+      rollback_move "$base"
+      refuse_lines "the commit is not only the move of $src: rolled back, nothing was pushed" "$problems"
+      [ -z "$(git -C "$root" status --porcelain)" ] ||
+        echo "attention: the root holds files that were not there before (git status): something else wrote them during the commit (a git hook?); nothing deletes them" >&2
+      exit 1
+    fi
+    if with_timeout 120 git -C "$root" push -q origin refs/heads/developer:refs/heads/developer; then
+      echo "pushed: developer $(git -C "$root" rev-parse --short HEAD) $title"
+      return 0
+    fi
+    rollback_move "$base"
+    fetch_root || die 1 "the push of developer failed and origin cannot be fetched: rolled back; nothing was pushed"
+    [ "$(git -C "$root" rev-parse refs/remotes/origin/developer)" != "$base" ] ||
+      die 1 "the push of developer was refused (above): rolled back; nothing was pushed"
+    [ "$attempt" -eq 1 ] || die 1 "origin/developer moved again during the push: rolled back; nothing was pushed; run it again"
+    git -C "$root" merge-base --is-ancestor "$base" refs/remotes/origin/developer ||
+      die 1 "origin/developer moved and no longer holds developer: rolled back; nothing was pushed"
+    git -C "$root" merge -q --ff-only refs/remotes/origin/developer ||
+      die 1 "origin/developer moved and developer could not be fast-forwarded to it: rolled back; nothing was pushed"
+    echo "origin/developer moved during the push: developer fast-forwarded to it; checking and committing again, once"
+  done
+}
+
+# Refuses (exit 2) a <name> that is not one file of maintainers/requests/.
+check_request_name() {
+  [[ "$1" =~ $request_re ]] && [ "$1" != README.md ] ||
+    die 2 "<name> is one file of $requests/ (no folder, not README.md), exactly as given: $1"
+}
+
+# start: the move of a pending request to doing/, before its clone opens.
+cmd_start() {
+  local name="" branch="" body="" usage_line="usage: start <name> [--branch <type>/<slug>]"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --help | -h) usage; return 0 ;;
+      --branch) [ $# -ge 2 ] || die 2 "--branch needs a value"; branch="$2"; shift ;;
+      -*) die 2 "$usage_line" ;;
+      *) [ -z "$name" ] || die 2 "$usage_line"; name="$1" ;;
+    esac
+    shift
+  done
+  [ -n "$name" ] || die 2 "$usage_line"
+  check_request_name "$name"
+  if [ -n "$branch" ]; then
+    [[ "$branch" =~ $branch_re ]] || die 2 "--branch must be <type>/<kebab-slug>: $branch"
+    body="- in progress on the branch $branch"
+  fi
+  move_request "$name" pending "chore(requests): start $name" "$body"
+  echo "request: $requests/doing/$name (in progress); next: bash tests/caw-work.sh open ${branch:-<type>/<slug>} --request $name"
+}
+
+# Prints the request a work records (maintainers/requests/doing/<name>), or nothing.
+work_request() {
+  local f="$work_root/$1/.request" rel name
+  [ -f "$f" ] || return 0
+  rel="$(head -n 1 "$f")"
+  name="${rel#"$requests"/doing/}"
+  if [ "$name" != "$rel" ] && [[ "$name" =~ $request_re ]]; then echo "$rel"; fi
+  return 0
+}
+
+# Prints the works of tmp/work/ that record the request given (maintainers/requests/doing/<name>), one per line.
+works_recording() {
+  local f
+  for f in "$work_root"/*/.request; do
+    [ -f "$f" ] || continue
+    if [ "$(head -n 1 "$f")" = "$1" ]; then basename "$(dirname "$f")"; fi
+  done
+  return 0
+}
+
+# Refuses, creating nothing, a request another work records, or a work that records another request.
+check_request_record() {
+  local work="$1" rel="$requests/doing/$2" other
+  other="$(work_request "$work")"
+  [ -z "$other" ] || [ "$other" = "$rel" ] ||
+    die 1 "tmp/work/$work records another request ($other): use another branch; nothing was created"
+  while IFS= read -r other; do
+    [ -z "$other" ] || [ "$other" = "$work" ] ||
+      die 1 "$rel is in progress in tmp/work/$other: resume it there, or start over (bash tests/caw-work.sh close $other --discard --start-over); nothing was created"
+  done < <(works_recording "$rel")
+}
+
+# Records the request of a work (tmp/work/<work>/.request) and says so.
+record_request() {
+  printf '%s/doing/%s\n' "$requests" "$2" >"$work_root/$1/.request"
+  echo "request: $requests/doing/$2 (in progress in tmp/work/$1)"
+}
+
+# Prints one "stale:" line per file of maintainers/requests/doing/ at the root that no work of tmp/work/ records.
+stale_requests() {
+  local f rel
+  for f in "$root/$requests/doing"/*; do
+    [ -f "$f" ] || continue
+    rel="$requests/doing/${f##*/}"
+    [ -z "$(works_recording "$rel")" ] || continue
+    echo "stale: $rel (no work here records it: /caw-request ${f##*/} resumes it or starts over)"
+  done
+}
+
+# open: the clone, its branch from origin/developer (or, with --resume, from the remote branch), its hooks and the
+# first push; with --request, the request of the work recorded.
 cmd_open() {
-  [ $# -eq 1 ] || die 2 "usage: open <type>/<slug>"
-  local branch="$1" slug work clone url c found remote_refs
-  case "$branch" in --help | -h) usage; return 0 ;; developer | main) die 2 "refused: $branch is never a work branch" ;; esac
+  local branch="" request="" resume=0 resumed=0 slug work clone url c found remote_refs start
+  local usage_line="usage: open <type>/<slug> [--request <name>] [--resume]"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --help | -h) usage; return 0 ;;
+      --request) [ $# -ge 2 ] && [ -n "$2" ] || die 2 "--request needs a file name"; request="$2"; shift ;;
+      --resume) resume=1 ;;
+      -*) die 2 "$usage_line" ;;
+      *) [ -z "$branch" ] || die 2 "$usage_line"; branch="$1" ;;
+    esac
+    shift
+  done
+  [ -n "$branch" ] || die 2 "$usage_line"
+  case "$branch" in developer | main) die 2 "refused: $branch is never a work branch" ;; esac
   [[ "$branch" =~ $branch_re ]] || die 2 "<type>/<slug> must be one of feat fix docs refactor test chore perf build ci style, a / and a kebab-case slug: $branch"
   slug="${branch#*/}"
   case "$slug" in developer | main) die 2 "refused: $branch would read as the base $slug" ;; esac
+  [ -z "$request" ] || check_request_name "$request"
   ! git -C "$root" show-ref -q --verify "refs/tags/$branch" || die 1 "refused: $branch is the name of a tag"
   for c in "$work_root"/*/"$clone_dir"; do
     found="$(clone_branch "$c")" || continue
     if [ "$found" = "$branch" ]; then
+      work="$(basename "$(dirname "$c")")"
+      [ -z "$request" ] || check_request_record "$work" "$request"
       copy_language "$c"
       echo "path: ${c#"$root"/} (already open)"
+      [ -z "$request" ] || record_request "$work" "$request"
       return 0
     fi
   done
   work="$(date +%Y-%m-%d)-$slug"
   clone="$work_root/$work/$clone_dir"
   [ ! -e "$clone" ] || die 1 "tmp/work/$work/$clone_dir is open already for $(clone_branch "$clone" || echo 'something else'), not $branch: choose another slug"
+  [ -z "$request" ] || check_request_record "$work" "$request"
   url="$(git -C "$root" remote get-url origin 2>/dev/null)" || die 1 "this repository has no origin remote"
   mkdir -p "$work_root/$work"
   # Leaves nothing behind when open stops before the first push.
@@ -335,25 +730,41 @@ cmd_open() {
   done
   fetch_origin "$clone" || abandon "could not fetch origin ($url)"
   git -C "$clone" rev-parse -q --verify refs/remotes/origin/developer >/dev/null || abandon "origin has no developer"
+  if [ -n "$request" ] && ! git -C "$clone" cat-file -e "refs/remotes/origin/developer:$requests/doing/$request" 2>/dev/null; then
+    abandon "$requests/doing/$request is not on origin/developer: run bash tests/caw-work.sh start $request first"
+  fi
   remote_refs="$(with_timeout 60 git -C "$clone" ls-remote origin "refs/tags/$branch" "refs/heads/$branch")" ||
     abandon "could not read origin"
+  start=refs/remotes/origin/developer
   case "$remote_refs" in
     *refs/tags/*) abandon "refused: $branch is the name of a tag on origin" ;;
-    *refs/heads/*) abandon "$branch is on origin already with no clone here: choose another slug" ;;
+    *refs/heads/*)
+      [ "$resume" -eq 1 ] || abandon "$branch is on origin already with no clone here: choose another slug (or --resume to go on with it)"
+      git -C "$clone" rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null || abandon "could not fetch $branch from origin"
+      start="refs/remotes/origin/$branch"
+      resumed=1
+      ;;
+    *) [ "$resume" -eq 0 ] || echo "attention: $branch is not on origin: it starts from origin/developer" ;;
   esac
-  git -C "$clone" switch -q --no-track -c "$branch" refs/remotes/origin/developer
+  git -C "$clone" switch -q --no-track -c "$branch" "$start"
   git -C "$clone" for-each-ref --format='%(refname:short)' refs/heads | while IFS= read -r c; do
     [ "$c" = "$branch" ] || git -C "$clone" branch -q -D "$c"
   done
   git -C "$clone" config caw.branch "$branch"
   write_hooks "$clone"
   copy_language "$clone"
-  if with_timeout 120 git -C "$clone" push -q -u origin "HEAD:refs/heads/$branch"; then
+  if [ "$resumed" -eq 1 ]; then
+    git -C "$clone" branch -q --set-upstream-to="origin/$branch"
+    git -C "$clone" config caw.pushed "$(git -C "$clone" rev-parse HEAD)"
+    echo "resumed: $branch from origin ($(git -C "$clone" rev-parse --short HEAD))"
+  elif with_timeout 120 git -C "$clone" push -q -u origin "HEAD:refs/heads/$branch"; then
+    git -C "$clone" config caw.pushed "$(git -C "$clone" rev-parse HEAD)"
     echo "pushed: $branch"
   else
     echo "attention: the first push of $branch failed (above); the next commit pushes it again"
   fi
   echo "path: tmp/work/$work/$clone_dir"
+  [ -z "$request" ] || record_request "$work" "$request"
 }
 
 # Prints one line per reason run refuses a command; prints nothing when it may run. run is an allowlist: git with the
@@ -704,38 +1115,92 @@ cmd_publish() {
   return "$rc"
 }
 
-# status: every clone, or the clones of one work.
+# status: every work, or one, with the request it records and each clone; with no work given, the stale requests of
+# maintainers/requests/doing/ last.
 cmd_status() {
-  local clone found=0 clones=()
+  local work clone rel found=0 works=()
   case "${1:-}" in --help | -h) usage; return 0 ;; esac
   if [ $# -ge 1 ]; then
     [[ "$1" =~ $work_re ]] || die 2 "usage: status [<work>]"
-    clones=("$work_root/$1"/*/)
+    works=("$work_root/$1")
   else
-    clones=("$work_root"/*/*/)
+    works=("$work_root"/*)
   fi
-  for clone in "${clones[@]}"; do
-    [ -e "${clone}.git" ] || continue
-    found=1
-    clone_status "${clone%/}"
+  for work in "${works[@]}"; do
+    [ -d "$work" ] || continue
+    rel="$(work_request "${work##*/}")"
+    if [ -n "$rel" ]; then
+      if [ -f "$root/$rel" ]; then
+        echo "tmp/work/${work##*/}  request=$rel"
+      else
+        echo "tmp/work/${work##*/}  request=$rel (missing)"
+      fi
+    fi
+    for clone in "$work"/*/; do
+      [ -e "${clone}.git" ] || continue
+      found=1
+      clone_status "${clone%/}"
+    done
   done
   [ "$found" -eq 1 ] || echo "no clone under tmp/work/${1:-}"
+  [ $# -ge 1 ] || stale_requests
+}
+
+# Deletes the work branch of a clone on origin for a start over, from this repository: only a work branch, never
+# developer or main, with --force-with-lease against the sha the clone pushed last (caw.pushed, else its tracking ref),
+# so a commit pushed there from elsewhere is never deleted. Returns 1 when the branch stays.
+delete_for_start_over() {
+  local clone="$1" branch url remote pushed
+  branch="$(clone_branch "$clone")" || { echo "refused: ${clone#"$root"/} is not a clone made by open" >&2; return 1; }
+  if [[ ! "$branch" =~ $branch_re ]]; then
+    echo "refused: $branch is not a work branch: never deleted" >&2
+    return 1
+  fi
+  case "${branch#*/}" in developer | main) echo "refused: $branch reads as a base: never deleted" >&2; return 1 ;; esac
+  url="$(git -C "$clone" remote get-url origin 2>/dev/null)" || { echo "refused: ${clone#"$root"/} has no origin" >&2; return 1; }
+  remote="$(with_timeout 60 git -C "$root" ls-remote "$url" "refs/heads/$branch")" ||
+    { echo "refused: origin cannot be read: $branch stays" >&2; return 1; }
+  if [ -z "$remote" ]; then
+    echo "not on origin: $branch"
+    return 0
+  fi
+  pushed="$(git -C "$clone" config --get caw.pushed || git -C "$clone" rev-parse -q --verify "refs/remotes/origin/$branch" || true)"
+  if [ -z "$pushed" ]; then
+    echo "refused: no sha this clone pushed is known: $branch stays on origin" >&2
+    return 1
+  fi
+  if with_timeout 120 git -C "$root" push -q --force-with-lease="refs/heads/$branch:$pushed" "$url" ":refs/heads/$branch" 2>/dev/null; then
+    echo "deleted on origin: $branch (start over)"
+    return 0
+  fi
+  echo "refused: $branch could not be deleted on origin (a commit pushed there from elsewhere, or origin refused): it stays" >&2
+  return 1
 }
 
 # close: deletes a work folder when nothing in it would be lost, and the remote branch of each clone once it is in
-# developer; --discard deletes the folder anyway and leaves the remote branches.
+# developer; --discard deletes the folder anyway and leaves the remote branches, after putting the request the work
+# records back to pending; --start-over deletes the remote work branches first and keeps the request in doing/.
 cmd_close() {
-  local work="${1:-}" discard=0 entry name branch url i problems="" gone=() branches=() urls=()
-  case "$work" in --help | -h) usage; return 0 ;; esac
-  case "${2:-}" in "") ;; --discard) discard=1 ;; *) die 2 "usage: close <work> [--discard]" ;; esac
-  [ $# -le 2 ] || die 2 "usage: close <work> [--discard]"
-  [[ "$work" =~ $work_re ]] || die 2 "usage: close <work> [--discard]"
+  local work="" discard=0 start_over=0 entry name branch url i problems="" gone=() branches=() urls=() rel="" request=""
+  local failed=0 usage_line="usage: close <work> [--discard [--start-over]]"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --help | -h) usage; return 0 ;;
+      --discard) discard=1 ;;
+      --start-over) start_over=1 ;;
+      -*) die 2 "$usage_line" ;;
+      *) [ -z "$work" ] || die 2 "$usage_line"; work="$1" ;;
+    esac
+    shift
+  done
+  [[ "$work" =~ $work_re ]] || die 2 "$usage_line"
+  [ "$start_over" -eq 0 ] || [ "$discard" -eq 1 ] || die 2 "--start-over goes with --discard: close <work> --discard --start-over"
   [ -d "$work_root/$work" ] || die 1 "not found: tmp/work/$work"
   if [ "$discard" -eq 0 ]; then
     for entry in "$work_root/$work"/* "$work_root/$work"/.[!.]*; do
       [ -e "$entry" ] || continue
       name="${entry##*/}"
-      case "$name" in agent-*.compose.yaml | agent-*.ports.env | agent-test-install.log) continue ;; esac
+      case "$name" in agent-*.compose.yaml | agent-*.ports.env | agent-test-install.log | .request) continue ;; esac
       branch="$(clone_branch "$entry")" || { problems+="  $name: not a clone made by open"$'\n'; continue; }
       if ! fetch_origin "$entry"; then
         problems+="  $name: origin could not be fetched: what the remote has is unknown"$'\n'
@@ -763,22 +1228,55 @@ cmd_close() {
       urls+=("$url")
     done
   fi
+  rel="$(work_request "$work")"
+  request="${rel#"$requests"/doing/}"
+  if [ -n "$rel" ] && [ "$discard" -eq 1 ] && [ "$start_over" -eq 0 ]; then
+    # The request goes back to pending before anything is deleted: a refusal keeps the work as it is.
+    fetch_root || die 1 "could not fetch origin at the root: $rel was not put back; nothing was deleted"
+    if git -C "$root" cat-file -e "refs/remotes/origin/developer:$rel" 2>/dev/null; then
+      (move_request "$request" doing "chore(requests): put back $request" "- tmp/work/$work discarded: the request is pending again") ||
+        die 1 "tmp/work/$work was not deleted: fix what the lines above say and close again"
+      echo "request: $requests/$request (pending again)"
+    else
+      echo "attention: $rel is not on origin/developer (moved or put back already): no request to move"
+    fi
+  fi
+  if [ "$start_over" -eq 1 ]; then
+    # The remote work branches go first: one that stays keeps the folder, so the close can run again.
+    for entry in "$work_root/$work"/*/; do
+      [ -e "${entry}.git" ] || continue
+      branches+=("$(clone_branch "${entry%/}" || true)")
+      delete_for_start_over "${entry%/}" || failed=1
+    done
+    [ "$failed" -eq 0 ] || die 1 "refused: a remote work branch of tmp/work/$work stays (above); nothing else was deleted"
+  fi
   destroy_copies "$work_root/$work" || echo "attention: a Docker copy group of tmp/work/$work was not destroyed (above); the folder goes anyway"
   if ! remove_folder "$work_root/$work"; then
     echo "error: could not delete tmp/work/$work completely (above)" >&2
     find "$work_root/$work" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 5 | while IFS= read -r entry; do
       echo "left: ${entry#"$root"/}" >&2
     done
-    for branch in ${branches[@]+"${branches[@]}"}; do
-      echo "the remote branch stays: $branch (deleted only once the folder is gone)" >&2
-    done
+    if [ "$discard" -eq 0 ]; then
+      for branch in ${branches[@]+"${branches[@]}"}; do
+        echo "the remote branch stays: $branch (deleted only once the folder is gone)" >&2
+      done
+    fi
     echo "make what is left deletable and close again (--discard once it is no longer a clone)" >&2
     exit 1
+  fi
+  if [ "$start_over" -eq 1 ]; then
+    echo "discarded: tmp/work/$work (started over: its remote work branch is deleted)"
+    [ -z "$rel" ] || echo "request: $rel stays in doing/; next: bash tests/caw-work.sh open ${branches[0]:-<type>/<slug>} --request $request"
+    return 0
   fi
   if [ "$discard" -eq 1 ]; then echo "discarded: tmp/work/$work (the remote branch stays)"; else echo "closed: tmp/work/$work"; fi
   for i in ${branches[@]+"${!branches[@]}"}; do
     delete_remote_branch "${urls[$i]}" "${branches[$i]}"
   done
+  if [ -n "$rel" ] && [ "$discard" -eq 0 ] && [ -f "$root/$rel" ]; then
+    echo "attention: $rel is still in doing/ at the root: /caw-merge moves it to qa/; status lists it as stale until then"
+  fi
+  return 0
 }
 
 # Deletes a work folder: makes what it holds writable for the owner first (a test installation leaves its core 555 and
@@ -814,7 +1312,7 @@ force_refused() {
 # clone's pre-push hook; with <accept> 1 the company terms that match are accepted first (scan_leaving). Returns 0
 # when it is pushed, 1 when not, with the reason or the warning and what to do on stderr.
 push_branch() {
-  local clone="$1" accept="${2:-0}" branch current pushed rc=0
+  local clone="$1" accept="${2:-0}" branch current pushed sha rc=0
   branch="$(clone_branch "$clone")" || { echo "caw-work: not a clone made by open: $clone" >&2; return 1; }
   [[ "$branch" =~ $branch_re ]] || { echo "caw-work: refused: the recorded branch $branch is not a work branch" >&2; return 1; }
   current="$(git -C "$clone" symbolic-ref -q --short HEAD)" || current=""
@@ -843,9 +1341,12 @@ push_branch() {
       return 1
       ;;
   esac
+  sha="$(git -C "$clone" rev-parse HEAD)"
   if with_timeout 120 git -C "$clone" -c "core.hooksPath=$(git -C "$clone" rev-parse --absolute-git-dir)/hooks" \
     push -q origin "HEAD:refs/heads/$branch"; then
-    echo "caw-work: pushed $branch $(git -C "$clone" rev-parse --short HEAD)"
+    # The lease of a start over (close --discard --start-over): the sha this clone pushed last.
+    git -C "$clone" config caw.pushed "$sha"
+    echo "caw-work: pushed $branch $(git -C "$clone" rev-parse --short "$sha")"
     return 0
   fi
   echo "caw-work: NOT pushed: the commit stays only in this clone. Fix what the lines above say (an amend or a rebase of commits not on the remote is fine), then commit again, or push: bash tests/caw-work.sh push ${clone#"$work_root"/}" >&2
@@ -1078,6 +1579,7 @@ command="$1"
 shift
 case "$command" in
   --help | -h | help) usage ;;
+  start) cmd_start "$@" ;;
   open) cmd_open "$@" ;;
   run) cmd_run "$@" ;;
   status) cmd_status "$@" ;;
