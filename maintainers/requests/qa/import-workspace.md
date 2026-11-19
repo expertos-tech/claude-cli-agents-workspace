@@ -212,4 +212,10 @@ Warnings of the stages:
 - W-3 (apply matches the gate's "missing object" text), W-4 (`bring` walks every object first), W-5 (the aiwp-gate
   suite over its time budget): accept.
 
+Review of the merge (`reviewer`, effort `medium`): approved with warnings, no BLOCKER; every BR and AC done, nothing
+UNEXPLAINED, nothing lost but `/normalize-rules`, which the owner dropped. Its warnings:
+
+- W-1 (`rules/rules.md` named only `/normalize-projects --from` to bring a project in): fix in `35f9d77`.
+- W-2 (`bring-branch` missing from the command lists of the README and the usage guide): fix in `8eb9e7c`.
+
 Left: `import-workspace-code-folders`.
