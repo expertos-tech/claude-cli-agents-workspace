@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # Gate of the repository, run from its root by whoever maintains it: the product gate on workspace/, then the
 # company-terms scan of the whole repository (the files outside workspace/ included). It writes nothing in the
 # repository but the git-ignored check ledger of the product gate.

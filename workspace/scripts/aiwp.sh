@@ -235,108 +235,108 @@ import stat
 import subprocess
 import sys
 
-TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+TAG = re.compile(r'^v(\d+)\.(\d+)\.(\d+)$')
 # The root writable folders belong to the person: a file the repository tracks there is never installed.
-USER_FOLDERS = set(os.environ.get("AIWP_USER_FOLDERS", "").split())
+USER_FOLDERS = set(os.environ.get('AIWP_USER_FOLDERS', '').split())
 
 
 def fail(message):
     """Prints an error and exits 1."""
-    print(f"error: {message}", file=sys.stderr)
+    print(f'error: {message}', file=sys.stderr)
     sys.exit(1)
 
 
 def tree(data, commit, dest=None, wanted_file=None):
     """Prints mode, sha256 and path of every file under workspace/ at the commit; extracts the wanted ones to dest."""
     listing = subprocess.run(
-        ["git", "-C", data, "ls-tree", "-r", "-z", "--full-tree", commit, "--", "workspace/"],
+        ['git', '-C', data, 'ls-tree', '-r', '-z', '--full-tree', commit, '--', 'workspace/'],
         capture_output=True,
         check=False,
     )
     if listing.returncode:
-        fail(f"cannot list workspace/ at {commit}: {listing.stderr.decode(errors='replace').strip()}")
+        fail(f'cannot list workspace/ at {commit}: {listing.stderr.decode(errors="replace").strip()}')
     entries = []
-    for record in listing.stdout.split(b"\0"):
+    for record in listing.stdout.split(b'\0'):
         if not record:
             continue
-        meta, raw = record.split(b"\t", 1)
+        meta, raw = record.split(b'\t', 1)
         mode, kind, obj = meta.split()
-        path = raw.decode("utf-8")
-        rel = path[len("workspace/") :]
-        if kind != b"blob" or mode not in (b"100644", b"100755"):
-            fail(f"unsupported entry in the core (a link or a submodule): {path}")
-        if any(ch in rel for ch in "\t\n\r") or rel.split("/")[0] == ".aiwp":
-            fail(f"unsupported path in the core: {path!r}")
-        if rel.split("/")[0] in USER_FOLDERS:
+        path = raw.decode('utf-8')
+        rel = path[len('workspace/') :]
+        if kind != b'blob' or mode not in (b'100644', b'100755'):
+            fail(f'unsupported entry in the core (a link or a submodule): {path}')
+        if any(ch in rel for ch in '\t\n\r') or rel.split('/')[0] == '.aiwp':
+            fail(f'unsupported path in the core: {path!r}')
+        if rel.split('/')[0] in USER_FOLDERS:
             continue
-        entries.append((rel, obj.decode(), "555" if mode == b"100755" else "444"))
+        entries.append((rel, obj.decode(), '555' if mode == b'100755' else '444'))
     wanted = None
     if wanted_file:
-        with open(wanted_file, encoding="utf-8") as handle:
-            wanted = {line.rstrip("\n") for line in handle if line.strip()}
+        with open(wanted_file, encoding='utf-8') as handle:
+            wanted = {line.rstrip('\n') for line in handle if line.strip()}
     batch = subprocess.run(
-        ["git", "-C", data, "cat-file", "--batch"],
-        input="".join(f"{obj}\n" for _, obj, _ in entries).encode(),
+        ['git', '-C', data, 'cat-file', '--batch'],
+        input=''.join(f'{obj}\n' for _, obj, _ in entries).encode(),
         capture_output=True,
         check=False,
     )
     if batch.returncode:
-        fail("git cat-file failed in the data folder")
+        fail('git cat-file failed in the data folder')
     out = batch.stdout
     pos = 0
-    for rel, obj, mode in entries:
-        end = out.index(b"\n", pos)
+    for rel, _obj, mode in entries:
+        end = out.index(b'\n', pos)
         size = int(out[pos:end].split()[2])
         content = out[end + 1 : end + 1 + size]
         pos = end + 1 + size + 1
-        print(f"{mode}\t{hashlib.sha256(content).hexdigest()}\t{rel}")
+        print(f'{mode}\t{hashlib.sha256(content).hexdigest()}\t{rel}')
         if dest and (wanted is None or rel in wanted):
             target = os.path.join(dest, rel)
             os.makedirs(os.path.dirname(target), exist_ok=True)
-            with open(target, "wb") as handle:
+            with open(target, 'wb') as handle:
                 handle.write(content)
 
 
 def manifest_read(path):
     """Prints the header (#, version, tag, commit) and one line per file: mode, sha256, path."""
-    with open(path, encoding="utf-8") as handle:
+    with open(path, encoding='utf-8') as handle:
         data = json.load(handle)
-    print("\t".join(["#", data["version"], data.get("tag") or "-", data["commit"]]))
-    for item in data["files"]:
-        print("\t".join([item["mode"], item["sha256"], item["path"]]))
+    print('\t'.join(['#', data['version'], data.get('tag') or '-', data['commit']]))
+    for item in data['files']:
+        print('\t'.join([item['mode'], item['sha256'], item['path']]))
 
 
 def manifest_write(out, version, tag, commit, tsv):
     """Writes the manifest JSON from the tab-separated lines (mode, sha256, path) of the tsv file."""
     files = []
-    with open(tsv, encoding="utf-8") as handle:
+    with open(tsv, encoding='utf-8') as handle:
         for line in handle:
-            mode, sha, rel = line.rstrip("\n").split("\t", 2)
-            files.append({"path": rel, "sha256": sha, "mode": mode})
-    files.sort(key=lambda item: item["path"])
+            mode, sha, rel = line.rstrip('\n').split('\t', 2)
+            files.append({'path': rel, 'sha256': sha, 'mode': mode})
+    files.sort(key=lambda item: item['path'])
     data = {
-        "product": "claude-cli-agents-workspace",
-        "format": 1,
-        "version": version,
-        "tag": None if tag in ("", "-") else tag,
-        "commit": commit,
-        "files": files,
+        'product': 'claude-cli-agents-workspace',
+        'format': 1,
+        'version': version,
+        'tag': None if tag in ('', '-') else tag,
+        'commit': commit,
+        'files': files,
     }
-    with open(out, "w", encoding="utf-8") as handle:
+    with open(out, 'w', encoding='utf-8') as handle:
         json.dump(data, handle, indent=2)
-        handle.write("\n")
+        handle.write('\n')
 
 
 def verify(root, tsv, writable_file):
     """Prints each difference of the core from the tsv: missing, notfile, changed, mode, notdir and dirmode lines."""
-    with open(writable_file, encoding="utf-8") as handle:
-        writable = {line.rstrip("\n") for line in handle if line.strip()}
-    folders = {""}
-    with open(tsv, encoding="utf-8") as handle:
-        rows = [line.rstrip("\n").split("\t", 2) for line in handle if line.strip()]
-    for mode, sha, rel in rows:
-        parts = rel.split("/")
-        folders.update("/".join(parts[:i]) for i in range(1, len(parts)))
+    with open(writable_file, encoding='utf-8') as handle:
+        writable = {line.rstrip('\n') for line in handle if line.strip()}
+    folders = {''}
+    with open(tsv, encoding='utf-8') as handle:
+        rows = [line.rstrip('\n').split('\t', 2) for line in handle if line.strip()]
+    for _mode, _sha, rel in rows:
+        parts = rel.split('/')
+        folders.update('/'.join(parts[:i]) for i in range(1, len(parts)))
     # A folder of the core that is a link or a file: what is under it is never read or written through it.
     broken = set()
     for folder in sorted(folders):
@@ -346,28 +346,28 @@ def verify(root, tsv, writable_file):
         except FileNotFoundError:
             pass
     for mode, sha, rel in rows:
-        parts = rel.split("/")
-        if any("/".join(parts[:i]) in broken for i in range(1, len(parts))):
+        parts = rel.split('/')
+        if any('/'.join(parts[:i]) in broken for i in range(1, len(parts))):
             continue
         path = os.path.join(root, rel)
         try:
             info = os.lstat(path)
         except FileNotFoundError:
-            print(f"missing\t{rel}")
+            print(f'missing\t{rel}')
             continue
         if not stat.S_ISREG(info.st_mode):
-            print(f"notfile\t{rel}")
+            print(f'notfile\t{rel}')
             continue
-        actual = format(info.st_mode & 0o777, "o")
+        actual = format(info.st_mode & 0o777, 'o')
         try:
-            with open(path, "rb") as handle:
+            with open(path, 'rb') as handle:
                 digest = hashlib.sha256(handle.read()).hexdigest()
         except OSError:
-            digest = ""
+            digest = ''
         if digest != sha:
-            print(f"changed\t{rel}")
+            print(f'changed\t{rel}')
         if actual != mode:
-            print(f"mode\t{rel}\t{actual}\t{mode}")
+            print(f'mode\t{rel}\t{actual}\t{mode}')
     for folder in sorted(folders):
         path = os.path.join(root, folder) if folder else root
         try:
@@ -375,20 +375,20 @@ def verify(root, tsv, writable_file):
         except FileNotFoundError:
             continue
         if not stat.S_ISDIR(info.st_mode):
-            print(f"notdir\t{folder}")
+            print(f'notdir\t{folder}')
         elif folder in writable:
             continue
         elif info.st_mode & 0o777 != 0o555:
-            print(f"dirmode\t{folder or '.'}\t{format(info.st_mode & 0o777, 'o')}")
+            print(f'dirmode\t{folder or "."}\t{format(info.st_mode & 0o777, "o")}')
 
 
 def ls_remote(url, timeout):
     """Prints the newest release tag of the remote; exits 1 when it cannot be reached in time."""
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
-    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
+    env.setdefault('GIT_SSH_COMMAND', 'ssh -o BatchMode=yes')
     try:
         result = subprocess.run(
-            ["git", "ls-remote", "--tags", "--refs", url],
+            ['git', 'ls-remote', '--tags', '--refs', url],
             capture_output=True,
             text=True,
             timeout=float(timeout),
@@ -401,18 +401,18 @@ def ls_remote(url, timeout):
         sys.exit(1)
     best = None
     for line in result.stdout.splitlines():
-        name = line.rsplit("refs/tags/", 1)[-1]
+        name = line.rsplit('refs/tags/', 1)[-1]
         match = TAG.match(name)
         if match:
             key = tuple(int(part) for part in match.groups())
             if best is None or key > best[0]:
                 best = (key, name)
-    print(best[1] if best else "")
+    print(best[1] if best else '')
 
 
 def version_key(text):
     """Returns the comparable tuple of X.Y.Z, or None."""
-    match = re.match(r"^v?(\d+)\.(\d+)\.(\d+)$", text)
+    match = re.match(r'^v?(\d+)\.(\d+)\.(\d+)$', text)
     return tuple(int(part) for part in match.groups()) if match else None
 
 
@@ -420,13 +420,13 @@ def changelog(path, old, new):
     """Prints the CHANGELOG sections of the versions newer than old, up to new."""
     low, high = version_key(old), version_key(new)
     printing = False
-    with open(path, encoding="utf-8") as handle:
+    with open(path, encoding='utf-8') as handle:
         for line in handle:
-            heading = re.match(r"^## \[(\d+\.\d+\.\d+)\]", line)
+            heading = re.match(r'^## \[(\d+\.\d+\.\d+)\]', line)
             if heading:
                 key = version_key(heading.group(1))
                 printing = bool(low and high and low < key <= high)
-            elif line.startswith("## "):
+            elif line.startswith('## '):
                 printing = False
             if printing:
                 sys.stdout.write(line)
@@ -435,26 +435,29 @@ def changelog(path, old, new):
 def registry_load(path):
     """Returns the entries of the registry file (an empty list when it does not exist); exits 1 when it is invalid."""
     try:
-        with open(path, encoding="utf-8") as handle:
+        with open(path, encoding='utf-8') as handle:
             data = json.load(handle)
     except FileNotFoundError:
         return []
     except (OSError, ValueError) as error:
-        fail(f"the registry {path} cannot be read ({error}); fix it or move it away, then run aiwp in each workspace")
-    entries = data.get("workspaces") if isinstance(data, dict) else None
+        fail(f'the registry {path} cannot be read ({error}); fix it or move it away, then run aiwp in each workspace')
+    entries = data.get('workspaces') if isinstance(data, dict) else None
     if not isinstance(entries, list) or not all(
-        isinstance(item, dict) and isinstance(item.get("path"), str) and item["path"].startswith("/") for item in entries
+        isinstance(item, dict) and isinstance(item.get('path'), str) and item['path'].startswith('/')
+        for item in entries
     ):
-        fail(f"the registry {path} is not in the expected form; fix it or move it away, then run aiwp in each workspace")
+        fail(
+            f'the registry {path} is not in the expected form; fix it or move it away, then run aiwp in each workspace'
+        )
     return entries
 
 
 def registry_save(path, entries):
     """Writes the registry atomically: a temp file in the same folder, flushed, then renamed over the old one."""
-    tmp = f"{path}.tmp.{os.getpid()}"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump({"product": "claude-cli-agents-workspace", "format": 1, "workspaces": entries}, handle, indent=2)
-        handle.write("\n")
+    tmp = f'{path}.tmp.{os.getpid()}'
+    with open(tmp, 'w', encoding='utf-8') as handle:
+        json.dump({'product': 'claude-cli-agents-workspace', 'format': 1, 'workspaces': entries}, handle, indent=2)
+        handle.write('\n')
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(tmp, path)
@@ -466,9 +469,9 @@ def registry_locked(path, change):
     import fcntl
     import time
 
-    lock_path = os.path.join(os.path.dirname(path), ".git", "aiwp", "workspaces.lock")
+    lock_path = os.path.join(os.path.dirname(path), '.git', 'aiwp', 'workspaces.lock')
     os.makedirs(os.path.dirname(lock_path), exist_ok=True)
-    with open(lock_path, "a", encoding="utf-8") as lock:
+    with open(lock_path, 'a', encoding='utf-8') as lock:
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -476,7 +479,7 @@ def registry_locked(path, change):
                 break
             except OSError:
                 if time.monotonic() > deadline:
-                    fail(f"another aiwp run holds the registry lock {lock_path}")
+                    fail(f'another aiwp run holds the registry lock {lock_path}')
                 time.sleep(0.1)
         entries = change(registry_load(path))
         if entries is not None:
@@ -487,32 +490,32 @@ def now_utc():
     """Returns the current UTC time as YYYY-MM-DDTHH:MM:SSZ."""
     import datetime
 
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def reg_list(path):
     """Prints one line per registered workspace: path, version, created, updated."""
     for item in registry_load(path):
-        fields = [item["path"], str(item.get("version") or "-"), str(item.get("created") or "-")]
-        fields.append(str(item.get("updated") or "-"))
-        if not any(ch in "".join(fields) for ch in "\t\n\r"):
-            print("\t".join(fields))
+        fields = [item['path'], str(item.get('version') or '-'), str(item.get('created') or '-')]
+        fields.append(str(item.get('updated') or '-'))
+        if not any(ch in ''.join(fields) for ch in '\t\n\r'):
+            print('\t'.join(fields))
 
 
 def reg_set(path, folder, version):
     """Adds the workspace at folder to the registry, or updates its version and update time."""
-    if not folder.startswith("/") or any(ch in folder for ch in "\t\n\r"):
-        fail(f"unsupported workspace path: {folder!r}")
+    if not folder.startswith('/') or any(ch in folder for ch in '\t\n\r'):
+        fail(f'unsupported workspace path: {folder!r}')
 
     def change(entries):
         """Updates the entry of folder, or appends a new one."""
         stamp = now_utc()
         for item in entries:
-            if item["path"] == folder:
-                item["version"] = version
-                item["updated"] = stamp
+            if item['path'] == folder:
+                item['version'] = version
+                item['updated'] = stamp
                 return entries
-        entries.append({"path": folder, "version": version, "created": stamp, "updated": stamp})
+        entries.append({'path': folder, 'version': version, 'created': stamp, 'updated': stamp})
         return entries
 
     registry_locked(path, change)
@@ -525,20 +528,20 @@ def reg_del(path, folder):
 
     def change(entries):
         """Drops the matching entries; saves nothing when there is none."""
-        kept = [item for item in entries if item["path"] not in wanted]
-        found.extend(item["path"] for item in entries if item["path"] in wanted)
+        kept = [item for item in entries if item['path'] not in wanted]
+        found.extend(item['path'] for item in entries if item['path'] in wanted)
         return kept if found else None
 
     registry_locked(path, change)
     if not found:
-        fail(f"not in the registry: {folder} (aiwp list shows the registered workspaces)")
-    print("\n".join(found))
+        fail(f'not in the registry: {folder} (aiwp list shows the registered workspaces)')
+    print('\n'.join(found))
 
 
 def reg_has(path, folder):
     """Exits 0 when the workspace at folder (as given, absolute, or with its links resolved) is registered, else 1."""
     wanted = {folder, os.path.abspath(folder), os.path.realpath(folder)}
-    sys.exit(0 if any(item["path"] in wanted for item in registry_load(path)) else 1)
+    sys.exit(0 if any(item['path'] in wanted for item in registry_load(path)) else 1)
 
 
 def settings_language(path, value):
@@ -550,23 +553,23 @@ def settings_language(path, value):
         try:
             info = os.lstat(path)
             if not stat.S_ISREG(info.st_mode):
-                raise ValueError("not a regular file")
-            with open(path, encoding="utf-8") as handle:
+                raise ValueError('not a regular file')
+            with open(path, encoding='utf-8') as handle:
                 data = json.load(handle)
         except (OSError, ValueError) as error:
-            print(f"warning: {path} cannot be read ({error}); it was left as it is", file=sys.stderr)
+            print(f'warning: {path} cannot be read ({error}); it was left as it is', file=sys.stderr)
             sys.exit(1)
         if not isinstance(data, dict):
-            print(f"warning: {path} is not a JSON object; it was left as it is", file=sys.stderr)
+            print(f'warning: {path} is not a JSON object; it was left as it is', file=sys.stderr)
             sys.exit(1)
         mode = stat.S_IMODE(info.st_mode)
-    data["language"] = value
-    tmp = f"{path}.tmp.{os.getpid()}"
+    data['language'] = value
+    tmp = f'{path}.tmp.{os.getpid()}'
     try:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666 if mode is None else mode)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
             json.dump(data, handle, indent=2)
-            handle.write("\n")
+            handle.write('\n')
             handle.flush()
             os.fsync(handle.fileno())
         if mode is not None:
@@ -575,26 +578,26 @@ def settings_language(path, value):
     except OSError as error:
         if os.path.lexists(tmp):
             os.unlink(tmp)
-        print(f"warning: cannot write {path} ({error})", file=sys.stderr)
+        print(f'warning: cannot write {path} ({error})', file=sys.stderr)
         sys.exit(1)
 
 
 COMMANDS = {
-    "settings-language": settings_language,
-    "reg-list": reg_list,
-    "reg-set": reg_set,
-    "reg-del": reg_del,
-    "reg-has": reg_has,
-    "tree": tree,
-    "manifest-read": manifest_read,
-    "manifest-write": manifest_write,
-    "verify": verify,
-    "ls-remote": ls_remote,
-    "changelog": changelog,
+    'settings-language': settings_language,
+    'reg-list': reg_list,
+    'reg-set': reg_set,
+    'reg-del': reg_del,
+    'reg-has': reg_has,
+    'tree': tree,
+    'manifest-read': manifest_read,
+    'manifest-write': manifest_write,
+    'verify': verify,
+    'ls-remote': ls_remote,
+    'changelog': changelog,
 }
 
 if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
-    fail("unknown helper command")
+    fail('unknown helper command')
 try:
     COMMANDS[sys.argv[1]](*sys.argv[2:])
     sys.stdout.flush()
