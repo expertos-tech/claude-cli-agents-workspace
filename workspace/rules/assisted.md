@@ -30,7 +30,9 @@ the language of the conversation.
 
 ## The selection
 
-Right below every box, a selection with the session's question tool, and wait for it:
+Right below every box, a selection with the session's question tool, and wait for it. The options in this order, their
+labels in English as below, like the labels of the box (the extra option: as the table names it); a description in the
+language of the conversation may follow each:
 
 1. **Continue**: the work goes on as asked.
 2. **Don't show this again**: the work goes on as asked, and the boxes of that group stop for the rest of the session.
