@@ -53,6 +53,13 @@ after the company-terms scan: record `git rev-parse HEAD` after the run, and
 push only when HEAD still equals it. Anything written after that run (an Execution block, a request made of a
 finding, a fix, a translation) means running the suite again before the push.
 
+### The warnings board
+
+The product's warnings board (its step 6, `workspace/rules/git.md` "Waves") holds here, before phase 2, and the merge
+goes on only after the owner decided every warning; a stage closed with warnings still open: they come first. The
+decisions go into the Execution block, and a `request` answer is a `ready` request in `maintainers/requests/` with its
+row in the README, both written in the clone after the board; then the suite runs again (the push gate).
+
 ### Where the session is
 
 - `<work>/<clone>`, or no argument and this session opened a clone (`tmp/work/<work>/<clone>`, named in the
@@ -114,8 +121,9 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    with upstream.
 6. **Final review** (the product's step 4, `.claude/rules/review.md`) on `<last tag>..HEAD` of the
    clone, against every request of `maintainers/requests/qa/`.
-7. **The findings, once** (the product's step 5): per finding, (1) fix now in the release clone, (2) a request in
-   `maintainers/requests/`, or, for a warning only, (3) accept it; a BLOCKER sent to a request stops the release. Fixes or requests written in the clone: rerun step 5 (which
+7. **The findings, once** (the product's step 5): per BLOCKER, (1) fix now in the release clone or (2) a request in
+   `maintainers/requests/`, which stops the release; the warnings in the warnings board (`fix`, `request`, `accept`),
+   and the release goes on only after every decision. Fixes or requests written in the clone: rerun step 5 (which
    records and pushes again) and the return review of the fixes (`.claude/rules/review.md`). The sha is the one step 5 recorded last, equal to the pushed
    `fix/release-vX-Y-Z` and to HEAD.
 8. **Into `developer`:** phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone
@@ -161,8 +169,8 @@ names in `maintainers/requests/`, else the description.
    `git -C <clone> rev-list origin/main..origin/developer` is empty). Passed: record `git -C <clone> rev-parse HEAD`
    and push `fix/<slug>` with upstream.
 6. **Review against `main`** (the product's step 7, `.claude/rules/review.md`) on `<last tag>..<sha>`, widened as
-   needed, with the error described. A BLOCKER: fix in the clone, back to step 5, then the return review (`.claude/rules/review.md`). A WARNING: listed
-   in the owner's OK of step 7; one the owner sends to a request becomes a `ready` request in `maintainers/requests/`,
+   needed, with the error described. A BLOCKER: fix in the clone, back to step 5, then the return review (`.claude/rules/review.md`). A WARNING: in the
+   warnings board, in the reply of the owner's OK of step 7, answered `request` or `accept`; one the owner sends to a request becomes a `ready` request in `maintainers/requests/`,
    written in the down step (step 9), never on `main`.
 7. **Into `main`:** `main` here does not publish by itself (the installers take only tags), so: the owner's OK, with no
    BLOCKER open and HEAD still the recorded sha; then `git -C <clone> push origin <sha>:refs/heads/main` (a

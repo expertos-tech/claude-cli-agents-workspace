@@ -21,7 +21,7 @@ The sections below win where they differ; its `paths:` do not limit it here.
 | the requests of `custom/requests/qa/<project>/` | the requests of `maintainers/requests/qa/`, with their Execution blocks; at a release every one of them |
 | `rules/security.md` "Hard rules", `rules/models.md` | `.claude/rules/security.md` (the product's list with this repository's rows), `.claude/rules/models.md` |
 | a protection (a hook, a gate, a permission) | a hook, a deny rule, the gate, a file mode |
-| a warning the human chooses in the summary of `/merge` | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, adjustment size, source: the review |
+| a warning the human answers `request` in the warnings board of `/merge` | `maintainers/requests/<kebab-title>.md`, `**State:** ready`, adjustment size, source: the review |
 
 ## CAW rules
 
@@ -35,5 +35,6 @@ The sections below win where they differ; its `paths:` do not limit it here.
   entry with no change behind it, or a change a user would notice with no entry.
 - A BLOCKER: fix it, rerun the suite, then the return review.
 - A security BLOCKER counts only when a second clean-context review confirms it from the code.
-- The warnings: at a merge into `developer` the summary lists each one once, and the owner decides: fix, a `ready`
-  request, or accept. At the release the owner chooses per warning: fix now, a request, or accept.
+- The warnings: at a merge into `developer` and at the release, the warnings board of `workspace/rules/git.md` "Waves"
+  lists each one once, with its risk, and the merge goes on only after the owner decided every one: fix, a `ready`
+  request, or accept.

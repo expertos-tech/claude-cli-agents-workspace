@@ -41,8 +41,8 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - Hooks, the installer, security and risky actions: effort high. The agent is the developer of the stage: it
   implements, tests what it did, fixes and tests again; the stage closes with its own tests and the suite passing. No
   independent review runs during the stages, hooks and security included: the one review runs at `/caw-merge`
-  (`review.md`). A doubt that is not a hard rule (`security.md`) never stops a stage: it goes to the closing board as
-  a warning.
+  (`review.md`). A doubt that is not a hard rule (`security.md`) never stops a stage: it goes to the warnings board
+  as a warning (step 6).
 - A stage that cannot finish: write where it stopped and the next steps into the request, or into `tmp/request.md`.
 
 ## 5. Prove
@@ -63,9 +63,13 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - `/caw-merge` takes the work into `developer` and writes the root `CHANGELOG.md` and, for a product change,
   `workspace/CHANGELOG.md`. Other pushes only when the owner asks, each request covering that push only. Only the
   product is released, through `/caw-merge --main`; the root sections are dated by that release.
+- A stage that gathered warnings shows first the warnings board of `workspace/rules/git.md` "Waves" (step 2 there:
+  its format, the stop until the owner has decided every warning, the answers), the last thing of the reply, with no
+  closing board. `fix` is committed in the clone; `request` is a `ready` request in `maintainers/requests/` with its
+  row in the README, committed in the clone. No warnings: the closing board comes straight.
 - End with the closing board, the last thing of the reply: it is the delivery report. Its labels stay as below; the
   values are in the language of the conversation. A stage that cannot finish writes where it stopped into the request
-  first (step 4), and the board names it.
+  first (step 4), the decisions of the warnings board among them, and the board names it.
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -74,7 +78,7 @@ Done:       <what changed: commits (sha, title), branch pushed>
 Verified:   <command and result; each skip named>
 Left:       <next stages, with effort | /caw-merge | nothing>
 Pending:    <decisions for the owner, findings, refused push | none>
-Warnings:   <each one in the format of workspace/rules/security.md "Warnings", gathered during the stage | none>
+Warnings:   <the decision of each warning of the board: W-1 accept, W-2 fix in <sha>, W-3 request <file> | none>
 Request:    maintainers/requests/<file>.md | tmp/request.md | none
 ➜ Next: <the command to run, and where: /caw-merge from the clone, /caw-request <name>>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

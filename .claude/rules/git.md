@@ -14,7 +14,8 @@ The sections below win where they differ; its `paths:` do not limit it here.
 - Gate: all of it but "Never merge with a BLOCKER open or a failing check" and the blocked repo, which hold for
   `developer` and `main` here: the gate is `/caw-merge` (`.claude/skills/caw-merge/SKILL.md`), never a script run by
   hand.
-- Waves: replaced by the stages and the closing board of `process.md` steps 4 and 6.
+- Waves: replaced by the stages and the closing board of `process.md` steps 4 and 6; its warnings board (step 2 and
+  the board) holds here, through `process.md` step 6.
 - Commits: the hooks that refuse a secret (no product hook runs here); the workspace, custom layer and project scopes
   (CAW rules).
 - Return points: the checkpoint tags of a normalization, and "Deleting a whole project, POC or tool".

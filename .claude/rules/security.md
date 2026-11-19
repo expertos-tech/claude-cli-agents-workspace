@@ -20,7 +20,7 @@ The sections below win where they differ; its `paths:` do not limit it here.
 | the human | the owner |
 | the validators (the hooks, the gate, the reviews, the checks of the scripts) | the hooks of a work clone, `tests/caw-work.sh`, `tests/check.sh`, the reviews |
 | `/merge` typed by the human | the push of `developer` by `/caw-merge`, which the owner types; `main`, the tag and the GitHub release each confirmed |
-| the closing board of a wave, the summary of `/merge`, `/draft-request` | the closing board of a stage, the summary of `/caw-merge`, `/caw-draft-request` |
+| the warnings board of a wave or of `/merge`, `/draft-request` | the warnings board of a stage (`process.md` step 6) or of `/caw-merge`, `/caw-draft-request` |
 | the `deny` rules of `rules/agents/settings.json` | the `deny` rules of `.claude/settings.json`, which also cover the other secret files (`~/.ssh`, cloud credentials) |
 
 ## CAW rules
