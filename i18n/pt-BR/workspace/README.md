@@ -1,4 +1,4 @@
-<!-- source: workspace/README.md sha256:a94a75cee22b18f68a5915e52ffcf1c62210cd1f17ff7228405f2e4275d49216 -->
+<!-- source: workspace/README.md sha256:adeb8d96e6e07cacc2c0ed7f71b4ffca2b10f97d74c003c270ddec8b60af3765 -->
 
 # Claude CLI Agents Workspace
 
@@ -26,8 +26,8 @@ Do zero até o primeiro trabalho mesclado, em seis passos.
 
 - **Linux.** No Windows, só pelo **WSL2**: instale uma distribuição Linux (Ubuntu, por exemplo) e faça tudo de dentro dela, com a mesma estrutura do Linux. O workspace, os projetos, o Docker e o `claude` ficam no sistema de arquivos do WSL (`~/...`), nunca em `/mnt/c`. Não há versão nativa para Windows.
 - O Claude Code CLI instalado e com login feito: `claude` abre uma sessão.
-- `git`, Docker Engine, `bash` e `python3`.
-- **Opcional, mas muito importante: a stack de observabilidade** (`tools/observability/`, um Grafana local em <http://localhost:3000>). O workspace funciona sem ela, mas é ela que mostra o que cada sessão custa, em tokens, tempo e modelo, e `scripts/performance/measure.py` só mede com ela no ar. Sem medição, não há como saber se uma mudança nas regras melhorou ou piorou o trabalho. Suba uma vez e siga o README dela para ligar a telemetria do Claude Code.
+- `git`, Docker Engine (28 ou posterior para a cópia Docker de uma tarefa), `bash` e `python3`.
+- **Opcional, mas muito importante: a stack de observabilidade** (`tools/observability/`, um Grafana local em <http://localhost:3000>). O workspace funciona sem ela, mas é ela que mostra o que cada sessão custa, em tokens, tempo e modelo, e `scripts/performance/measure.py` só mede com ela no ar. Sem medição, não há como saber se uma mudança nas regras melhorou ou piorou o trabalho. Com a sua sessão aberta (passo 4), rode `/run-tools` e marque Observability, depois siga o README dela para ligar a telemetria do Claude Code.
 - **Recomendado: o [Claude in Chrome](https://claude.com/chrome)**, a extensão que deixa o Claude abrir páginas no seu Chrome, clicar, ler o console e tirar capturas de tela. Com ela, o Claude valida layouts e fluxos de tela sozinho, como uma pessoa faria à mão (`/pilot auto`). Instale a extensão no Chrome e conecte-a na sessão com `/chrome` ([como usar](https://code.claude.com/docs/en/chrome)). Ela não funciona no WSL: no Windows, esses testes ficam com você (`/pilot manual`).
 
 ### 1. Crie o seu workspace
@@ -45,7 +45,7 @@ Para remover um workspace, devolva antes a permissão de escrita, já que o core
 
 ### 2. Ligue a sua camada custom
 
-A camada custom é um **repositório privado e seu**, que guarda o que não é de mais ninguém: a sua empresa, a nuvem e o tenant, a identidade visual, a lista dos seus projetos, os pedidos escritos, as lições, o backlog, as suas próprias ferramentas (`custom/tools/`) e os arquivos `.env` preenchidos (`custom/env/`, nunca commitados). Crie um repositório vazio no seu servidor git: o `aiwp new` pede a URL dele (ou a recebe com `--custom <url>`) e o clona em `custom/`; um repositório vazio ganha um esqueleto e um primeiro commit.
+A camada custom é um **repositório privado e seu**, que guarda o que não é de mais ninguém: a sua empresa, a nuvem e o tenant, a identidade visual, a lista dos seus projetos, os pedidos (pendentes, em qa, lançados), as lições, as suas próprias ferramentas (`custom/tools/`) e os arquivos `.env` preenchidos (`custom/env/`, nunca commitados). Crie um repositório vazio no seu servidor git: o `aiwp new` pede a URL dele (ou a recebe com `--custom <url>`) e o clona em `custom/`; um repositório vazio ganha um esqueleto e um primeiro commit.
 
 Quer só experimentar? Deixe a URL vazia: o `aiwp new` cria um repositório local com o esqueleto, e você pode dar um remoto depois (`git -C custom remote add origin <url>`). O que vai na camada está em `rules/rules.md`, seção "Custom layer".
 
@@ -63,7 +63,7 @@ aiwp
 
 O `aiwp` confere se há release nova (nunca atualiza), roda o `scripts/setup-claude.sh` e inicia o `claude`; os argumentos para o `claude` vão depois de `--`.
 
-Sempre na raiz do workspace, mesmo para trabalhar num projeto: é ali que as regras e os hooks valem. Recomendado: o auto mode do Claude Code. O workspace deixa para ele o julgamento do que é destrutivo e guarda nos hooks só o que nunca pode acontecer. O Claude responde na língua em que você escreve.
+Sempre na raiz do workspace, mesmo para trabalhar num projeto: é ali que as regras e os hooks valem. Recomendado: o auto mode do Claude Code. O workspace deixa para ele o julgamento do que é destrutivo e guarda nos hooks só o que nunca pode acontecer. O Claude responde no seu idioma preferido, perguntado quando o workspace é criado (a configuração `language` do Claude Code), ou, na falta dele, no idioma em que você escreve.
 
 ### 5. Peça
 
@@ -81,21 +81,21 @@ O Claude pergunta só o que impede de começar e abre um clone em `tmp/work/<dat
 
 Sem argumento, `/merge` leva o clone desta sessão. O gate traz a `developer` atualizada, roda a suíte inteira e as validações, procura segredos, mostra o que sai da base e pede uma revisão contra o seu pedido. Você só é perguntado se aparecer algo que o pedido não explica. Depois, a `developer` avança exatamente para o commit que passou. O `/merge` também escreve a versão do `CHANGELOG.md` do projeto antes do gate.
 
-**Depois:** para pedidos maiores, monte o pedido com `/draft-prompt` e rode com `/prompt`; a sessão ganha o nome do projeto, numerado (`my-app-1`, `my-app-2`...). O guia completo está em [docs/usage.md](docs/usage.md).
+**Depois:** para pedidos maiores, monte o pedido com `/draft-request` e rode com `/request`; a sessão ganha o nome do projeto, numerado (`my-app-1`, `my-app-2`...). O guia completo está em [docs/usage.md](docs/usage.md).
 
 ## Como funciona
 
 1. **Pergunta ou leitura:** o Claude responde; nada é aberto.
-2. **Mudança num projeto ou numa POC:** um clone em `tmp/work/` (`bash scripts/aiwp-cmds.sh open`). Lá dentro, commit, rebase, reset e Docker são livres, e a branch está sempre no remoto: um hook não deixa a resposta terminar com commit só na máquina.
-3. **Base:** `/merge` passa pelo gate, em duas fases (verificação, revisão contra o pedido, merge do commit verificado).
-4. **Ondas:** num plano em etapas, cada etapa fecha com commit, um pedido de retomada em `custom/prompts/` e um quadro do que foi feito e do que falta. A próxima etapa começa numa sessão nova.
+2. **Mudança num projeto ou numa POC:** um clone em `tmp/work/` (`bash scripts/aiwp-cmds.sh open`). Lá dentro o Claude trabalha sem perguntar (commit, rebase, reset, a cópia Docker da própria tarefa), e a branch está sempre no remoto: um hook não deixa a resposta terminar com commit só na máquina.
+3. **Base:** `/merge`, digitado só por você, passa pelo gate, em duas fases (verificação, revisão contra o pedido, merge do commit verificado). Uma tarefa termina com a sua cópia Docker publicada e um quadro de fechamento: endereços, o que testar, e `/merge` ou `close --discard`.
+4. **Ondas:** num plano em etapas, cada etapa fecha com um commit, um pedido de retomada em `custom/requests/` e um quadro do que foi feito e do que falta. A próxima etapa começa numa sessão nova.
 
 ## O que nunca acontece sem você
 
 - **`projects/` fica na `developer` e só muda pelo gate.** Um hook recusa qualquer escrita git em `projects/` ou no core fora dele.
-- **`main` e nuvem só a seu pedido.** A `main` só anda por `/merge --main <repo>`, uma nova versão com tag, e o Terraform só aplica com `bash scripts/aiwp-cmds.sh apply`, a partir da `main` e com o plano confirmado.
+- **`main` e nuvem só a seu pedido.** A `main` só anda por `/merge --main <project>`, uma nova versão com tag, ou por `/merge --hotfix`, um patch corrigido a partir da `main`, e o Terraform só aplica com `bash scripts/aiwp-cmds.sh apply`, a partir da `main` e com o plano confirmado.
 - **Apagar banco de dados pede a sua confirmação**: volume do Docker, `DROP`, `dropdb` e afins.
-- **Publicar no Docker local é livre**, e `bash scripts/aiwp-cmds.sh up` sempre marca antes a publicação anterior; `rollback` volta para ela.
+- **A cópia Docker de uma tarefa é livre:** `bash scripts/aiwp-cmds.sh up <work>/<clone>` a publica no seu próprio grupo `agent_`, nas portas 61000-65535, nunca sobre a stack final. A stack final só muda por `/docker-deploy`, que antes marca as imagens substituídas; `rollback <repo>` volta para elas.
 - **Segredo não sai da máquina:** a varredura roda antes de cada push e de novo no gate.
 - **A sessão não altera o workspace:** regras, scripts, hooks e ferramentas são só leitura e só mudam com uma release nova. O `guard-bash` recusa um `chmod`, `chown` ou `git init` que alcance o core, e `aiwp update`, `rollback`, `repair`, `forget` e a abertura dentro de uma sessão.
 - **O resto segue o modo de permissão do Claude Code.**
@@ -107,32 +107,32 @@ Os hooks: `scripts/guard-bash.sh` (git, Terraform, banco, segredo, o core só de
 | Comando | Faz |
 | --- | --- |
 | `/merge [<work>/<clone>]` | Leva o trabalho de um clone (sem argumento: o desta sessão) para a `developer` do projeto, pelo gate, escrevendo o `CHANGELOG.md` |
-| `/merge --main <repo>` | A release: um clone de release, uma verificação completa em contexto limpo, o `CHANGELOG.md` datado, o gate para a `developer`, depois a `main` e a tag `vX.Y.Z` |
+| `/merge --main <project> [instructions]` | A release: um clone de release, a verificação completa, a revisão final (as três perguntas sobre tudo desde a última tag), o `CHANGELOG.md` datado, o gate para a `developer`, depois a `main` e a tag `vX.Y.Z` |
+| `/merge --hotfix <project> <description>` | Um erro em produção: a correção a partir da `main`, o gate e uma revisão contra a `main`, o seu OK, a versão de patch `vX.Y.(Z+1)` (com tag quando você mandar publicar), depois a `main` mesclada na `developer` |
+| `/docker-deploy [developer\|main] [<repo>]` | Atualiza a stack Docker local final a partir da `developer` ou da `main`, com tags de rollback e nenhum volume apagado; só a seu pedido |
 | `/commit [--all] [--repo <dir>]` | Um commit por mudança lógica, num clone ou no `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Envia o `custom/`, ou reenvia um clone cujo push automático falhou |
 | `/validate [folder] [--only <checks>] [--sonar]` | Roda as validações em Docker e, opcionalmente, o SonarQube |
-| `/draft-prompt [ideas \| file]` | Transforma as suas ideias num pedido do tamanho certo (ajuste, funcionalidade ou sistema), com o effort de cada etapa; pergunta só o que bloqueia e salva em `custom/prompts/` |
-| `/prompt [name \| path]` | Executa um pedido escrito, dá à sessão o nome do projeto, numerado, e arquiva o pedido quando ele é entregue |
+| `/draft-request [ideas \| file]` | Transforma as suas ideias num pedido do tamanho certo (ajuste, funcionalidade ou sistema), com o effort de cada etapa; pergunta só o que bloqueia e salva em `custom/requests/` |
+| `/request [name \| path]` | Executa um pedido escrito, dá à sessão o nome do projeto, numerado; `/merge` o move para qa, e a release para done |
+| `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Mostra as regras, skills e agentes que uma sessão carrega e de onde vem cada um; desliga ou liga os do core, substitui uma regra do core ou adiciona a sua, em `custom/rules-config.json` e `custom/my-rules/` (o core obrigatório sempre carrega); `lessons` propõe regras próprias a partir das lições marcadas |
 | `/pilot [auto\|manual]` | Mostra ou troca quem faz os testes que um humano faria à mão: o Claude (`auto`, o padrão) ou você (`manual`) |
 | `/local-env [folder]` | Cria ou completa o `.env` preenchido a partir do `.env.example`, sem mostrar valores: para `docker/`, `docker/sonar/` e uma ferramenta de `tools/`, em `custom/env/<name>.env` |
+| `/run-tools [--down [tool...]]` | Caixas de seleção com as ferramentas locais desta máquina (observabilidade, os simuladores, o console do Azurite, o console de contêineres desta máquina); inicia as que você marcar, num grupo compose só, depois de dizer o que falta a cada uma; `--down` para |
 | `/normalize-projects [<project>... \| --from <url \| folder> [--name <path>]]` | Lista o estado de cada projeto e POC; ou analisa um (quatro analistas, um plano que você aprova, o idioma da documentação dele) e o migra numa branch testada, com tags de checkpoint, para a `developer` e a `main` |
 
-A área de trabalho tem o seu próprio comando: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `rollback`, `gate`, `release`, `apply`, e `developer`, `checkpoint`, `bring` para a normalização). Os comandos do próprio Claude Code continuam valendo: `/rewind`, `/rename`, `/usage`.
-
-## Modo single-agent
-
-Para trabalhar num projeto, numa ferramenta sua em `custom/tools/` ou numa POC de `custom/pocs/` sem as instruções, os hooks e as skills do workspace: `single-claude [<path>] [--commit] [--merge] [--review]`, instalado uma vez com `ln -sf "<workspace>/scripts/single-claude.sh" ~/.local/bin/single-claude`. Guia: [docs/single-agent.md](docs/single-agent.md).
+A área de trabalho tem o seu próprio comando: `bash scripts/aiwp-cmds.sh --help` (`open`, `run`, `status`, `push`, `close`, `up`, `down`, `deploy`, `rollback`, `gate`, `release`, `apply`, e `developer`, `checkpoint`, `bring` para a normalização). Os comandos do próprio Claude Code continuam valendo: `/rewind`, `/rename`, `/usage`.
 
 ## Projeto de prompts
 
-Para escrever pedidos fora da sessão de desenvolvimento, crie um projeto no Claude só para isso: cole nas instruções dele tudo o que está abaixo do marcador `<!-- paste below -->` de `rules/prompt-project.md` e conecte a pasta do workspace como referência. O `/draft-prompt` segue o mesmo arquivo dentro do workspace.
+Para escrever pedidos fora da sessão de desenvolvimento, crie um projeto no Claude só para isso: cole nas instruções dele tudo o que está abaixo do marcador `<!-- paste below -->` de `rules/request-writing.md` e conecte a pasta do workspace como referência. O `/draft-request` segue o mesmo arquivo dentro do workspace.
 
 ## Ambiente local
 
 - Validação em Docker: `bash scripts/validate.sh --help`. SonarQube, opcional: `bash scripts/sonar.sh --help`.
 - Medição de desempenho do workspace: `python3 -I -B scripts/performance/measure.py --name <name>` (com a observabilidade no ar) grava `custom/performance/<date>-<name>.md`, comparando com a medição anterior e com as últimas cinco.
 - Tarefas pesadas de CPU ou GPU (gráficos, renderização 3D) passam por `bash scripts/heavy-run.sh`, que espera a máquina esfriar; testes e builds rodam direto.
-- Ferramentas em `tools/`: o Grafana local para a telemetria do Claude Code (`tools/observability/`, em <http://localhost:3000>), os consoles de contêineres, os simuladores de login e de Safe Browsing, o console do Azurite, o relatório de uso e o alerta de Fable. Cada uma tem o seu README ([tools/README.md](tools/README.md)); as que aceitam configurações leem `custom/env/<name>.env` (`/local-env tools/<name>`). As suas próprias ferramentas ficam em `custom/tools/` (`bash scripts/init-repo.sh --type tool`).
+- Ferramentas em `tools/`: o Grafana local para a telemetria do Claude Code (`tools/observability/`, em <http://localhost:3000>), os consoles de contêineres, os simuladores de login e de Safe Browsing, o console do Azurite, o relatório de uso e o alerta de Fable. Cada uma tem o seu README ([tools/README.md](tools/README.md)); o `/run-tools` as inicia, as de contêiner num projeto compose só, `claude-cli-agents-tools`. As que aceitam configurações leem `custom/env/<name>.env` (`/local-env tools/<name>`) e `custom/config/<name>/`. As suas próprias ferramentas ficam em `custom/tools/` (`bash scripts/init-repo.sh --type tool`).
 
 ## Estrutura
 
@@ -143,8 +143,8 @@ Para escrever pedidos fora da sessão de desenvolvimento, crie um projeto no Cla
 - `docs/`: guia de uso, visão geral e registros de decisão.
 - `assets/`: o logo do projeto (`logo.png`, `logo-white.png`) e o ícone recortado dele (`icon.png`).
 - `tools/`: as ferramentas locais do produto, parte do core.
-- `templates/`: os formulários que você copia e preenche: um pedido funcional (`templates/request.md`) e um item de backlog (`templates/backlog-item.md`).
+- `templates/`: os formulários que você copia e preenche: um pedido funcional (`templates/request.md`), cujo menor tamanho, um ajuste, também guarda uma ideia.
 - `VERSION` e `CHANGELOG.md`: a release instalada e o que cada release mudou.
 - `projects/`: um repositório git independente por projeto, nunca parte do core.
-- `custom/`: a sua camada custom, um repositório git próprio, com as suas ferramentas em `custom/tools/` e os arquivos `.env` preenchidos em `custom/env/` (ignorados pelo git). As medições de desempenho ficam em `custom/performance/`, o registro dos prompts, por projeto e por semana, em `custom/prompts/log/` (`scripts/prompt-log.py`), e o backlog em `custom/backlog/`.
+- `custom/`: a sua camada custom, um repositório git próprio, com as suas ferramentas em `custom/tools/` e os arquivos `.env` preenchidos em `custom/env/` (ignorados pelo git). As medições de desempenho ficam em `custom/performance/`. O registro dos prompts, por projeto e por semana, fica fora dela, em `logs/prompts/` na raiz do workspace, nunca versionado (`scripts/prompt-log.py`).
 - `tmp/work/`: os clones de trabalho, um por pedido, fora do git.
