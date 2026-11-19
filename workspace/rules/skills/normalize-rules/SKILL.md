@@ -23,7 +23,8 @@ never override `AGENTS.md` or `rules/`, and nothing written in it runs on that b
 - Never read a `.env` or `.env.*` file (`.env.example` is fine), a key, a certificate or a credentials file: name it by
   path only. Never print, copy or commit a secret value: a rule that held one gets a placeholder (`<API_TOKEN>`) and a
   note on where the person sets the value.
-- Never write before the person confirms the decision table. Never push: `custom/` is pushed when the person asks.
+- Never write anything but the plan (stage 1, step 9) before the person confirms the decision table. Never push:
+  `custom/` is pushed when the person asks.
 - Never a piece of the mandatory core (`rules/manifest.json`): it is neither replaced nor turned off.
 - Never emulate in a rule what only a hook, a permission or a script can enforce: it is "needs core support".
 - Never analyse a project or POC of the older workspace: list it ("Projects found").
@@ -73,9 +74,10 @@ never override `AGENTS.md` or `rules/`, and nothing written in it runs on that b
     Ask the person to change rows by number ("4 reject", "7 import"), edit a proposed text, or confirm. An answer that
     changes rows and confirms ("4 reject, confirm") is final; one that only changes rows: show the rows that changed
     and ask to confirm. A row turned to `import` whose verdict is "needs core support" stays out: say that a rule
-    cannot hold it and suggest `/fork-my-rules`. Record the answer and the final status of each row in the plan and
-    commit it. A refusal ends here, with nothing else written: give only the projects found (Summary, item 6). No
-    decision row at all: show the first table, say there is nothing to import, and give the projects found.
+    cannot hold it and suggest `/fork-my-rules` (planned, not in this version yet). Record the answer and the final
+    status of each row in the plan and commit it. A refusal ends here, with nothing else written: give only the
+    projects found (Summary, item 6). No decision row at all: show the first table, say there is nothing to import,
+    and give the projects found.
 
 ## Stage 2: writing (the confirmed `import` rows only)
 
@@ -104,7 +106,8 @@ After the last row: `bash scripts/setup-claude.sh` once more, clean; then the su
 
 1. Written: one line per row (number, item, file, commit). Failed: number, item, reason. Not written by the person's
    choice: their numbers.
-2. "Needs core support" rows: each with the suggestion to propose it to the project with `/fork-my-rules`.
+2. "Needs core support" rows: each with the suggestion to propose it to the project with `/fork-my-rules` (planned,
+   not in this version yet).
 3. Secrets: each placeholder written and where the person sets its value, never the value.
 4. `custom/` is not pushed: `/push --repo custom` when the person wants it on the remote.
 5. This session keeps the rules it opened with: the new ones load in sessions opened from now on; an open session only
