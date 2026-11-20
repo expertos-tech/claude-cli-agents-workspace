@@ -40,7 +40,7 @@ The base design and its reasons: [decision 0001](decisions/0001-base-design.md).
 
 - **`AGENTS.md`**: role, local environment, where the work happens, the Definition of Done, safety and what to do when a rule gets in the way.
 - **Path rules** (`quality`, `security`, `frontend`, `infra`, `docs`, `scripts`): they carry `paths:` at the top; `setup-claude.sh` copies them to `.claude/rules/`, and Claude Code loads them when a matching file is read or edited.
-- **Reference rules** (`git`, `review`, `models`, `rules`, `machine-load`): read when the task needs them.
+- **Reference rules** (`git`, `review`, `models`, `rules`, `machine-load`): read when the task needs them. `assisted` is read only in the `assisted` mode (`/pilot`), when the session start names it.
 - **`scripts/aiwp-cmds.sh`**: the work area (clones under `tmp/work/`, automatic push with a secret scan, a Docker copy per task, and the deploy of the final stack with a rollback) and the gate (`aiwp-gate.sh`: merge, release and Terraform apply).
 - **Hooks**: `guard-bash` (git in `projects/` and in the core, Terraform, databases, secrets in the commits of `custom/`), `guard-subagent-model` (the model of each subagent), the `Stop` hook (commits not on the remote) and the session start hook, which keeps `.claude/` up to date. `deny` rules keep the core and `projects/` read only.
 - **Validation**: `scripts/validate.sh` runs the tools of `docker/compose.yaml`; `scripts/check-workspace.sh` is the gate of the product repository.

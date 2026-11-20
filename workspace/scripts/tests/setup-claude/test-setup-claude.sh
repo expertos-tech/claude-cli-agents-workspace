@@ -328,7 +328,8 @@ test_claude_md_excludes_of_the_custom_layer_reach_the_settings() {
 core_allow() {
   printf '%s\n' 'Edit(/tmp/work/**)' 'Bash(bash scripts/aiwp-cmds.sh open *)' 'Bash(bash scripts/aiwp-cmds.sh status)' \
     'Bash(bash scripts/aiwp-cmds.sh status *)' 'Bash(bash scripts/aiwp-cmds.sh push *)' 'Bash(bash scripts/aiwp-cmds.sh up *)' \
-    'Bash(bash scripts/aiwp-cmds.sh down *)'
+    'Bash(bash scripts/aiwp-cmds.sh down *)' 'Bash(bash scripts/pilot-mode.sh show)' \
+    'Bash(bash scripts/pilot-mode.sh set auto)' 'Bash(bash scripts/pilot-mode.sh set assisted)'
 }
 # Checks that two texts are equal: got, want, description.
 same() { if [ "$1" = "$2" ]; then check "$3" 0; else check "$3: [$1]" 1; fi; }
@@ -629,6 +630,30 @@ test_config_excluded_skill_and_agent() {
   has 'warning: custom/rules-config.json: "merge" is mandatory'
   run --check
   rc_is 0
+}
+
+# The default pilot mode (.claude/pilot-mode, scripts/pilot-mode.sh) belongs to the person: no sync, check or removal
+# of a skill ever touches it, nor reports it.
+test_pilot_mode_file_survives_every_sync() {
+  fixture
+  skill pilot
+  printf 'auto\n' >"$BASE/root/.claude-pilot-mode.expected"
+  mkdir -p "$BASE/root/.claude"
+  printf 'auto\n' >"$BASE/root/.claude/pilot-mode"
+  run
+  rc_is 0
+  hasnt "pilot-mode"
+  run --check
+  rc_is 0
+  hasnt "pilot-mode"
+  config '{"core": {"skills": {"exclude": ["pilot"]}}}'
+  run --quiet
+  rc_is 0
+  absent "$BASE/root/.claude/skills/pilot" "excluded skill removed"
+  cmp -s "$BASE/root/.claude-pilot-mode.expected" "$BASE/root/.claude/pilot-mode"; check "pilot-mode kept, byte for byte" $?
+  run --check
+  rc_is 0
+  hasnt "pilot-mode"
 }
 
 # AC-6: invalid JSON loads the whole core with a warning, without an error.

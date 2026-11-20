@@ -16,7 +16,10 @@ docs and scripts rules with their layers and without the ignored files; the subs
 the triggers of a file named in several rows merge; "compact" adds the compaction line; a row added to the product's
 Reference appears with no change to .claude/session-index.md; an ignored file leaves a row that names others; a
 missing file or section, a malformed line or an index too long gives the fallback context with exit 0; empty and
-invalid stdin are fine; the context stays under 10,000 characters. Prints one FAIL line per failed assertion and
+invalid stdin are fine; the context stays under 10,000 characters. In a work clone
+(<main>/tmp/work/<work>/claude-cli-agents-workspace, the main root with a CLAUDE.md) the context ends with the pilot
+mode line from the main root's .claude/pilot-mode.local.md: none, auto, assisted, another value, a link; outside a
+clone there is none. Prints one FAIL line per failed assertion and
 "ok: <n> tests" at the end.
 
 Exit codes: 0 every test passed; 1 a test failed; 2 usage error.
@@ -299,6 +302,65 @@ test_stdin_variants() {
 test_context_size() {
   hook "" '{"source": "compact"}'
   [ "${#OUT}" -gt 0 ] && [ "${#OUT}" -lt 10000 ] || fail "context of ${#OUT} characters, not under 10,000"
+}
+
+# Creates the tree of a work clone for the current test, <base>/main/tmp/work/2026-01-01-x/claude-cli-agents-workspace,
+# with copies of the real index files, and a main root with a CLAUDE.md; sets M to the main root and R to the clone.
+clone_tree() {
+  M="$BASE/$CURRENT/main"
+  R="$M/tmp/work/2026-01-01-x/claude-cli-agents-workspace"
+  rm -rf "$BASE/$CURRENT"
+  mkdir -p "$R/workspace" "$R/.claude/rules" "$M/.claude"
+  cp "$REPO/workspace/AGENTS.md" "$R/workspace/AGENTS.md"
+  cp "$REPO/.claude/session-index.md" "$R/.claude/session-index.md"
+  cp "$REPO"/.claude/rules/*.md "$R/.claude/rules/"
+  printf '# Main\n' >"$M/CLAUDE.md"
+}
+
+test_pilot_clone_without_file() {
+  clone_tree
+  hook "$R" '{"source": "startup"}'
+  status_is 0
+  quiet
+  has '- `workspace/rules/git.md`'
+  has "Pilot mode: assisted (this session started in a work clone"
+  has 'Read `.claude/assisted.md` in full before your first reply'
+}
+
+test_pilot_clone_values() {
+  clone_tree
+  printf 'Pilot mode: `auto`.\n' >"$M/.claude/pilot-mode.local.md"
+  hook "$R" '{"source": "startup"}'
+  has "Pilot mode: auto (this session started in a work clone"
+  lacks ".claude/assisted.md"
+  printf 'Pilot mode: `assisted`.\n' >"$M/.claude/pilot-mode.local.md"
+  hook "$R" '{"source": "clear"}'
+  has "Pilot mode: assisted (this session started in a work clone"
+  printf 'Pilot mode: `manual`.\n' >"$M/.claude/pilot-mode.local.md"
+  hook "$R" '{"source": "compact"}'
+  has "The context was compacted"
+  has "Pilot mode: assisted (this session started in a work clone"
+}
+
+test_pilot_clone_link_is_not_followed() {
+  clone_tree
+  printf 'Pilot mode: `auto`.\n' >"$BASE/$CURRENT/elsewhere.md"
+  ln -s "$BASE/$CURRENT/elsewhere.md" "$M/.claude/pilot-mode.local.md"
+  hook "$R" '{"source": "startup"}'
+  status_is 0
+  has "Pilot mode: assisted (this session started in a work clone"
+}
+
+test_pilot_outside_a_clone() {
+  fresh
+  printf 'Pilot mode: `auto`.\n' >"$BASE/pilot-mode.local.md"
+  hook "$R" '{"source": "startup"}'
+  status_is 0
+  lacks "Pilot mode:"
+  clone_tree
+  rm "$M/CLAUDE.md"
+  hook "$R" '{"source": "startup"}'
+  lacks "Pilot mode:"
 }
 
 test_usage() {

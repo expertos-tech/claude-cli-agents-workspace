@@ -29,7 +29,7 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
-0. First, before round 2: `assisted-mode` (`validators-warn-not-block` is in qa).
+0. First, before round 2: `assisted-mode` and `validators-warn-not-block` are in qa.
 1. Round 1: `rules` and `run-tools` are in qa; the ideas of round 1 once the owner answers their decisions
    (except `measure-quality-indicators`, which waits for `import-from-fork`).
 2. Round 2: `import-workspace` first (the owner needs it to migrate the final project), then `fork-my-rules`,
@@ -45,8 +45,8 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 | Round | Request | Status | Notes |
 | --- | --- | --- | --- |
-| 0 | `assisted-mode.md` | pending | After `autonomous-work`; design: `plans/assisted-mode.md` |
 | 0 | `draft-prompt.md` | pending | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
+| 0 | `session-names.md` | pending | Session names that follow the life of a request (`ai-workspace-NN`, `rq-`, `rq-done-`, `rq-closed-`, the release session), `/rename-workspace`; after `draft-prompt` (same files); design: `plans/session-names.md` |
 | 2 | `import-workspace-code-folders.md` | pending | After `import-workspace`: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
 | 2 | `import-from-fork.md` | pending | After `import-workspace`: the first release after the publication, the first real test of `aiwp update` |
 | 2 | `fork-my-rules.md` | pending | Needs `rules`; design: `plans/fork-my-rules.md` |
@@ -65,7 +65,7 @@ Small adjustments, effort low unless noted.
 | `clone-path-findings-loop.md` | pending | Requests made of findings loop the clone path of `/caw-merge` |
 | `merge-project-name.md` | pending | `<project>` for a plain folder of repos with no root repo |
 | `release-per-project-proof.md` | pending | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
-| `merge-queue.md` | pending | Two merges into one base at the same time: a queue, one merge at a time (effort high) |
+| `merge-queue.md` | pending | One merge at a time per git repository (developer and main): a new hard rule, a BLOCKER with no override, the queue file, a log per merge, the unfinished merge, the check at each merge and `--sweep`, product and `caw-` (effort high) |
 
 ### Ideas
 
@@ -88,6 +88,7 @@ Small adjustments, effort low unless noted.
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
 | `qa/request-in-progress.md` | this merge | AC-1 to AC-3, AC-7, AC-8 proven by scenario tests; AC-4 to AC-6 by headless rehearsals |
+| `qa/assisted-mode.md` | this merge | All proven: AC-1, AC-5, AC-6 in interactive and headless sessions of a test installation, AC-2 and AC-9 headless (AC-9 at the root and in a work clone), AC-8 headless, AC-3, AC-4, AC-7, AC-10 by scenario tests |
 | `qa/import-workspace.md` | this merge | All proven: AC-1 to AC-9 by scenario tests, AC-10 by a headless run on a copy of a real older workspace |
 | `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |

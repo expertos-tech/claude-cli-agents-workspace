@@ -6,7 +6,10 @@ It builds the index from the product's own, the section "## Reference" of worksp
 trigger, and the tables of "## CAW index" add rows with paths relative to the repository root. Rows naming the same
 files merge their triggers. A product rule workspace/rules/<name>.md is named with its layer .claude/rules/<name>.md
 when that file exists. The text goes to the session as hookSpecificOutput.additionalContext; after a compaction
-(source "compact") it opens with a line saying the rules read before it are gone.
+(source "compact") it opens with a line saying the rules read before it are gone. In a work clone
+(<root>/tmp/work/<yyyy-mm-dd>-<slug>/claude-cli-agents-workspace) it ends with the pilot mode line, read from the main
+root's .claude/pilot-mode.local.md (missing, a link or another value: assisted): Claude Code skips the import of
+CLAUDE.md "Pilot mode" in a session started there.
 A hook must never break a session start: any failure (a missing file or section, a malformed line, an index too long)
 still exits 0 with a context that says why and points at both files. Only a usage error of the flags exits 2.
 Usage: python3 -I -B tests/caw-session-index.py [--root <dir>]   (hook JSON on stdin)
@@ -38,6 +41,18 @@ BACKTICKED = re.compile(r'`([^`]+)`')
 IGNORE_BULLET = re.compile(r'^-\s+((?:`[^`]+`\s*,\s*)*`[^`]+`)\s*:')
 MAPPING_BULLET = re.compile(r'^-\s+`([^`]+)`\s+→\s+(?:`([^`]*)`|nothing)\s*$')
 SEPARATOR_CELL = re.compile(r'^:?-+:?$')
+# The pilot mode of a session started in a work clone (CLAUDE.md "Pilot mode"): the main root's file, which
+# /caw-pilot writes, holding the line Pilot mode: `<mode>`.
+CLONE_NAME = 'claude-cli-agents-workspace'
+WORK_NAME = re.compile(r'^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$')
+PILOT_FILE = '.claude/pilot-mode.local.md'
+PILOT_VALUE = re.compile(r'^Pilot mode: `(auto|assisted)`\.?\s*$', re.MULTILINE)
+MAX_PILOT_READ = 4096
+PILOT_LINE = (
+    'Pilot mode: {mode} (this session started in a work clone, where Claude Code skips the import of `CLAUDE.md` '
+    '"Pilot mode"; read from `{path}` of the main root, which /caw-pilot writes). This line wins over that section.'
+)
+PILOT_ASSISTED = ' Read `.claude/assisted.md` in full before your first reply and follow it.'
 
 HEADER = (
     'Rules index of this session (tests/caw-session-index.py, from the section "Reference" of `workspace/AGENTS.md` '
@@ -259,8 +274,46 @@ def render(root, groups):
     return lines
 
 
+def main_root_of_clone(root):
+    """Returns the repository root that holds <root> when <root> is a work clone,
+    <main>/tmp/work/<yyyy-mm-dd>-<slug>/claude-cli-agents-workspace (tests/caw-work.sh), else None."""
+    work = os.path.dirname(root)
+    work_dir = os.path.dirname(work)
+    tmp = os.path.dirname(work_dir)
+    shaped = (
+        os.path.basename(root) == CLONE_NAME
+        and WORK_NAME.match(os.path.basename(work))
+        and os.path.basename(work_dir) == 'work'
+        and os.path.basename(tmp) == 'tmp'
+    )
+    main = os.path.dirname(tmp)
+    return main if shaped and os.path.isfile(os.path.join(main, 'CLAUDE.md')) else None
+
+
+def pilot_line(root):
+    """Returns the pilot mode line of a session started in a work clone, read from the main root's
+    .claude/pilot-mode.local.md (missing, a link, unreadable or another value: assisted), or None outside a clone.
+    At the root the mode comes from the import of CLAUDE.md "Pilot mode", which Claude Code skips in a clone."""
+    main = main_root_of_clone(root)
+    if main is None:
+        return None
+    path = os.path.join(main, PILOT_FILE)
+    mode = 'assisted'
+    try:
+        if os.path.isfile(path) and not os.path.islink(path):
+            with open(path, encoding='utf-8') as handle:
+                found = PILOT_VALUE.search(handle.read(MAX_PILOT_READ))
+            if found:
+                mode = found.group(1)
+    except (OSError, UnicodeDecodeError):
+        mode = 'assisted'
+    line = PILOT_LINE.format(mode=mode, path=PILOT_FILE)
+    return line + (PILOT_ASSISTED if mode == 'assisted' else '')
+
+
 def context(root, source):
-    """Returns the additionalContext for <source>: the index, or the fallback that says why it could not be built."""
+    """Returns the additionalContext for <source>: the index, or the fallback that says why it could not be built;
+    in a work clone, followed by the pilot mode line."""
     first = [COMPACTED] if source == 'compact' else []
     try:
         text = '\n'.join(first + [HEADER, ''] + render(root, build_groups(root)))
@@ -270,7 +323,11 @@ def context(root, source):
         text = '\n'.join(first + [FALLBACK.format(reason=error)])
     except Exception as error:  # A hook never breaks a session start.
         text = '\n'.join(first + [FALLBACK.format(reason=f'unexpected error ({type(error).__name__})')])
-    return text
+    try:
+        line = pilot_line(root)
+    except Exception:  # A hook never breaks a session start; the CLAUDE.md default (assisted) still holds.
+        line = None
+    return text if line is None else f'{text}\n\n{line}'
 
 
 def main(argv):

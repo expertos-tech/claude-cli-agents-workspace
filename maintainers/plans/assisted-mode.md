@@ -1,6 +1,6 @@
 # `/pilot assisted`: a guided mode for people new to the workspace
 
-Status: approved, D-3 by the owner, the rest assumed (2026-11-18). Request: `maintainers/requests/assisted-mode.md`.
+Status: approved, D-3 by the owner, the rest assumed (2026-11-18); built, in `qa/` (2026-11-19). Request: `maintainers/requests/qa/assisted-mode.md`.
 
 ## 1. Goal
 

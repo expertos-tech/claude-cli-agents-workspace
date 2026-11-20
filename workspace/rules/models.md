@@ -56,7 +56,7 @@ FILES: read=<paths> change=<paths> do-not-touch=<paths>
 CLONE: <absolute path of the clone in tmp/work/, when it changes files of a repo>
 DONE WHEN: <checks that can be verified>
 VERIFY: <the exact commands to run>
-VERIFICATION: <auto|manual: the session's mode (`rules/quality.md` "Verification mode"); left out of a `reviewer` brief>
+VERIFICATION: <auto|manual: the session's mode (`rules/quality.md` "Verification mode"), `assisted` passed as `auto`, never a box; left out of a `reviewer` brief>
 RETURN: <the format below, at most 30 lines>
 ```
 

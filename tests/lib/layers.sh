@@ -115,6 +115,31 @@ check_session_index() {
   return "$bad"
 }
 
+# Checks the boxes of the assisted mode at the root (CLAUDE.md "Pilot mode"): when the product has
+# workspace/rules/assisted.md, .claude/assisted.md must exist, the first line of its body must be
+# "@workspace/rules/assisted.md", and it must hold the sections "Ignore from the product rule", "Mapping" and
+# "CAW rules". A .claude/assisted.md with no product rule fails too: its pointer names a missing file.
+check_assisted_layer() {
+  local repo="$1" label=".claude/assisted.md" product="workspace/rules/assisted.md" body first bad=0
+  if [ ! -f "$repo/$label" ]; then
+    [ ! -f "$repo/$product" ] && return 0
+    echo "  $label: missing: the layer over $product (the boxes of /caw-pilot assisted)"
+    return 1
+  fi
+  if [ ! -f "$repo/$product" ]; then
+    echo "  $label: its product rule $product is missing"
+    bad=1
+  fi
+  body="$(layer_body "$repo/$label")"
+  first="$(printf '%s\n' "$body" | layer_first_line)"
+  if [ "$first" != "@$product" ]; then
+    echo "  $label: the first line of its body must be @$product: ${first:-<empty>}"
+    bad=1
+  fi
+  layer_sections "$label" "$body" "## Ignore from the product rule" "## Mapping" "## CAW rules" || bad=1
+  return "$bad"
+}
+
 # The command of the SessionStart hook that builds the session index, exactly as .claude/settings.json registers it.
 # shellcheck disable=SC2016
 CAW_SESSION_HOOK='python3 -I -B "$CLAUDE_PROJECT_DIR/tests/caw-session-index.py"'
@@ -158,12 +183,13 @@ sys.exit(1)
   return 1
 }
 
-# Checks every maintenance layer of <repo>: the skills, the rules, the session index and its hook. Returns 1 when
-# any has a problem.
+# Checks every maintenance layer of <repo>: the skills, the rules, the boxes, the session index and its hook.
+# Returns 1 when any has a problem.
 check_caw_layers() {
   local repo="$1" bad=0
   check_skill_layers "$repo" || bad=1
   check_rule_layers "$repo" || bad=1
+  check_assisted_layer "$repo" || bad=1
   check_session_index "$repo" || bad=1
   check_session_hook "$repo" || bad=1
   return "$bad"

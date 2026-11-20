@@ -70,9 +70,11 @@ paths:
 
 ## Verification mode
 
-Who runs a check a human could do by hand (running the app, a browser, a screenshot): the agent (`auto`) or the human (`manual`). `/pilot` sets it for the session.
+Who runs a check a human could do by hand (running the app, a browser, a screenshot): the agent (`assisted`, `auto`) or the human (`manual`). `/pilot` sets it.
 
-- Every session starts in `auto`. A skill or rule that routes a test to the human by name (e.g. `/normalize-projects`, which tests the branch with the human) wins over `auto`.
+- Every session starts in the installation's default, which the start context names in one line (`Pilot mode: ...`): `assisted` until the person runs `/pilot auto`, which makes `auto` the default; `/pilot assisted` makes it `assisted` again. `manual` is a choice of the session only, never a default. `/pilot` turned off in `custom/rules-config.json`: `auto`. After a `/clear` or a compaction the start line comes again with the default; a `/pilot` of this session (its last `Verification mode:` line) wins over it.
+- `assisted`: everything of `auto`, plus the boxes of `rules/assisted.md`, read in full at the session start. It changes only what the agent says; every rule, hook and gate stays as in `auto`. A subagent's brief carries `auto`.
+- A skill or rule that routes a test to the human by name (e.g. `/normalize-projects`, which tests the branch with the human) wins over `auto` and `assisted`.
 - Both modes: the agent runs unit tests, coverage, lint, format, `secrets` and `scripts/validate.sh`. Never hand them to the human.
 - `auto`: the agent runs every check the delivery needs, visual ones included, with the browser tool the session has, and asks the human nothing. Before the first visual check, open the app's local address and confirm the page loads.
 - `auto`, exception: what the agent must not or cannot do alone goes to the human as a `manual` item, with the reason: a login with a real credential, a physical device, a remote, a deletion, a tool that is not available.

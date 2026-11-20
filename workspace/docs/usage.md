@@ -177,7 +177,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/draft-request [ideas \| file]` | Builds a functional request from ideas |
 | `/request [name \| path]` | Runs the request written in a file |
 | `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows and changes the rules, skills and agents a session loads (below, "Changing the workspace itself") |
-| `/pilot [auto\|manual]` | Shows or changes who runs the manual tests |
+| `/pilot [assisted\|auto\|manual]` | Shows or changes the mode: who runs the manual tests, and whether Claude explains the flow in boxes (below, "Tests a human would run by hand") |
 | `/local-env [folder]` | Creates or completes a filled `.env` without showing values (`custom/env/<name>.env` for `docker/`, `docker/sonar/` and a tool) |
 | `/run-tools [--down [tool...]]` | Starts the local tools you tick (below, "Local tools"); `--down` stops |
 | `/normalize-projects [<project>... \| --from <url \| folder>]` | Lists the state of the projects, or brings one into the workspace or up to date (below, "Projects") |
@@ -204,14 +204,35 @@ Claude Code's own commands that help most here:
 
 ## Tests a human would run by hand
 
-The mode belongs to the session and changes with `/pilot`.
+Each session starts in the default of your workspace and changes with `/pilot`. The start of the session says which mode is in force.
 
-| Mode | Who tests | When to use |
-| --- | --- | --- |
-| `auto` (default) | Claude, visual checks included, with the browser the session has | almost always |
-| `manual` | you: Claude gives a numbered list with what changed, where to see it, the steps and what to report back, and waits | when the test needs your eye, a real login or a physical device |
+| Mode | Who tests | Boxes | Lasts |
+| --- | --- | --- | --- |
+| `assisted` | Claude, as in `auto` | yes | the default of a new workspace, until you choose `auto` |
+| `auto` | Claude, visual checks included, with the browser the session has | no | your default once you choose it |
+| `manual` | you: Claude gives a numbered list with what changed, where to see it, the steps and what to report back, and waits | no | this session only: for a test that needs your eye, a real login or a physical device |
 
-In both modes, unit tests, coverage, lint and the secret scan are Claude's.
+In every mode, unit tests, coverage, lint and the secret scan are Claude's.
+
+The default is kept in `.claude/pilot-mode`, in your workspace only: the custom layer is shared with your team, and a new teammate starts in `assisted` whatever you chose. A workspace updated from a version without this mode, with a project or a prompt log already, starts in `auto`. With `/pilot` turned off in `custom/rules-config.json`, every session is in `auto`.
+
+### The boxes of `assisted`
+
+At the moments a newcomer usually gets the flow wrong, Claude stops before acting with a choice that shows a box next to its options, and waits:
+
+```text
+╭─ ASSISTED · Branches · Push to main ─────────────
+│ What:  a push straight to main
+│ Why:   main moves only by a release; the hook refuses this push
+│ How:   work in a clone, then /merge into developer and /merge --main
+╰─ /pilot auto turns these boxes off ──────────────
+```
+
+- **Continue**: the work goes on as you asked. The rules still apply: the push above is still refused.
+- **Don't show this again**: the work goes on, and boxes of that kind stop until the session ends. A new session shows them again, until `/pilot auto`.
+- **The better way**, where there is one (here "Do it in a clone"): Claude does it that way.
+
+The moments: the first reply of a session; a new task in a session that already closed one (clear the context and start from the request); a commit, push or merge on `main`, `master` or `developer`; a change straight in `projects/`; a large or vague request typed in the prompt (`/draft-request` first); a change to the read-only core (your own rule in `custom/my-rules/` instead); a secret or a `.env` in the conversation; a refusal of a hook or the gate (in plain words, with the allowed way); and the closing board (what comes next). The boxes only explain: they never change what is allowed or refused, and a subagent never shows one.
 
 ## Projects
 
