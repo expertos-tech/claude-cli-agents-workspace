@@ -21,7 +21,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   report them as pending (`--i18n-pending`).
 - `/merge --main` ends with a final review of everything since the last tag, by the three questions of every merge
   review.
-- A request lifecycle (pending, `qa/`, `done/`) with an Execution block at each merge; the release per project with
+- A request lifecycle (pending, `qa/`, `done/`) with an Execution block at each merge, its `requests/` folder in a
+  new custom layer from the first commit; the release per project with
   the project's own changelog in its root repo; any project layout, nested repos included; `/prompt` becomes
   `/request`; the prompt log moves to `logs/`; no backlog.
 - `/merge --hotfix`: an error in production fixed from `main` as a patch version, then merged down into `developer`;
