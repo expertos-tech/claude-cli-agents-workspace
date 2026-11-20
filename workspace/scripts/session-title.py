@@ -5,7 +5,7 @@ date, or has a hotfix on main not merged into developer yet.
 The model cannot run /rename, so the title comes from here, with the same effect (hookSpecificOutput.sessionTitle).
 The request file is the one /request reads: tmp/request.md with no argument, custom/requests/<name> for a bare file name
 (custom/requests/doing/<name> when only that one exists: a request in progress), else a path relative to the root. The
-project is the "**Project:** <name>" line of that file (written by /draft-request); a file without it gives the repo
+project is the "**Project:** <name>" line of that file (written by /new-request); a file without it gives the repo
 that holds the first projects/<path> it names: the nearest folder of that path, itself included, that holds a .git (any
 folder at any depth of projects/ may be a repo, inside another one too), else the last folder of the path. <n> is one
 more than the highest <project>-<n> among the running sessions of the workspace (Claude Code's registry of running

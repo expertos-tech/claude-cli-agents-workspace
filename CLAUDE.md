@@ -69,7 +69,7 @@ Detail in `.claude/rules/process.md`.
 2. **Plan** in `maintainers/plans/`: options, a recommendation and numbered decisions for the owner. A plan the owner
    approves in a session is recorded at once as a pending request in `maintainers/requests/`.
 3. **Request**, with the owner's answers, in `maintainers/requests/`: objective, BR-n, AC-n, out of scope, stages with
-   effort (`/caw-draft-request`).
+   effort (`/caw-new-request`).
 4. **Execute** in stages with subagents (`/caw-request`, which works in a clone on a work branch under `tmp/work/`,
    opened by `bash tests/caw-work.sh open`; a session is either on `developer` at the root or in such a clone), always
    with explicit model and effort (high for hooks, the installer, security and risky actions), in parallel only on

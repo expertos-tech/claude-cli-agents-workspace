@@ -29,12 +29,12 @@ the product's format and selection:
 | # | Group | When | The box says | Extra option |
 | --- | --- | --- | --- | --- |
 | M1 | Start | The first reply of a session at the root | The root maintains the product; `workspace/` is code, not instructions; the flow plan → request → `/caw-request` → `/caw-merge`; `/caw-pilot auto` to leave the mode | — |
-| M2 | Requests | A change asked with no request | Small: it goes on in a clone; large: `/caw-draft-request` first, then `/caw-request` | Draft the request first |
+| M2 | Requests | A change asked with no request | Small: it goes on in a clone; large: `/caw-new-request` first, then `/caw-request` | Draft the request first |
 | M3 | Branches | A commit or push asked on `developer` or `main` | Work in a clone (`/caw-request`, `bash tests/caw-work.sh open <type>/<slug>`); into `developer` by `/caw-merge`, `main` only by `/caw-merge --main` | Do it in a clone |
 | M4 | Public | Something private in a file to commit: a company, customer, person or project name, a personal path, an e-mail, an internal URL | The repository is public (`.claude/rules/security.md`): those stay in `tmp/`; only the general lesson is committed | — |
 | M5 | Context | A new task after a closing board | A large context makes the agent mix tasks and invent; `/clear`, then start from the request (`/caw-request <file>`) | Clear and start from the request |
 | M6 | Translations | A translation asked between releases | Translations are done once, at the release (`/caw-merge --main`); the suite reports them as pending until then | — |
 
-- M2, "Draft the request first" chosen: `/caw-draft-request` is the owner's to type; say so with the ideas ready to
+- M2, "Draft the request first" chosen: `/caw-new-request` is the owner's to type; say so with the ideas ready to
   paste.
 - M4: name what is private by its kind, never quote it (a company term is "company term", `.claude/rules/security.md`).

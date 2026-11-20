@@ -83,7 +83,7 @@ The answer, at the next prompt, applies the name. (1) with that session still op
 - **The rename**: records the wanted name of the session; the hook applies it at its next firing. The `/request` and
   `/merge` skills run it, and `/rename-workspace` is the person's front over it. Run in the background, its end may
   fire the hook within seconds; otherwise the name applies at the person's next prompt.
-- **The request's session line**: `/new-request` (today `/draft-request`) writes two name suggestions into the
+- **The request's session line**: `/new-request` writes two name suggestions into the
   request, for when another session holds the first.
 
 ### `/rename-workspace`
@@ -171,6 +171,6 @@ All decided by the owner on 2026-11-19.
 - `session-title` is a hook of the mandatory core: this plan needs the owner's decision (`.claude/rules/product.md`),
   the stage runs with effort `high`, and `/caw-test-install` proves it in a real session, the `/clear` path and the
   background speed-up included.
-- It runs after `requests/draft-prompt.md`, which renames `/draft-request` to `/new-request` and changes
+- It runs after `requests/draft-prompt.md`, which renamed the request command to `/new-request` and changes
   `session-title.py`, its test and `templates/request.md`, the same files. `requests/merge-queue.md` also changes
   `/merge` and the same hook (the BLOCKER at the typed `/merge`): whichever runs second adapts to the first.

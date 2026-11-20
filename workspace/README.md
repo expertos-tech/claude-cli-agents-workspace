@@ -82,7 +82,7 @@ Claude asks only what keeps it from starting and opens a clone in `tmp/work/<dat
 
 Without an argument, `/merge` takes the clone of this session. The gate brings `developer` up to date, runs the whole suite and the validations, looks for secrets, shows what leaves the base and asks for a review against your request. You are asked only if something shows up that the request does not explain. Then `developer` moves to exactly the commit that passed. `/merge` also writes the version of the project's `CHANGELOG.md` before the gate.
 
-**Next:** for larger requests, build the request with `/draft-request` and run it with `/request`; the session gets the project's name, numbered (`my-app-1`, `my-app-2`...). The full guide is in [docs/usage.md](docs/usage.md).
+**Next:** for larger requests, build the request with `/new-request` and run it with `/request`; the session gets the project's name, numbered (`my-app-1`, `my-app-2`...). The full guide is in [docs/usage.md](docs/usage.md).
 
 ## How it works
 
@@ -114,7 +114,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |
-| `/draft-request [ideas \| file]` | Turns your ideas into a request of the right size (adjustment, feature or system), with the effort of each step; asks only what blocks and saves it in `custom/requests/` |
+| `/new-request [ideas \| file]` | Turns your ideas into a request of the right size (adjustment, feature or system), with the effort of each step; asks only what blocks and saves it in `custom/requests/` |
 | `/request [name \| path]` | Runs a written request, gives the session the project's name, numbered; `/merge` moves it to qa, and the release to done |
 | `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows the rules, skills and agents a session loads and where each comes from; turns core ones off or on, replaces a core rule or adds your own, in `custom/rules-config.json` and `custom/my-rules/` (the mandatory core always loads); `lessons` proposes own rules from the tagged lessons |
 | `/pilot [assisted\|auto\|manual]` | Shows or changes the mode: `assisted` (the default of a new workspace: Claude runs the tests a human would run by hand and explains the flow in short boxes), `auto` (the same, without the boxes) or `manual` (you run those tests, this session only); `assisted` and `auto` become your default |
@@ -127,7 +127,7 @@ The work area has its own command: `bash scripts/aiwp-cmds.sh --help` (`open`, `
 
 ## Prompt project
 
-To write requests outside the development session, create a project in Claude just for that: paste into its instructions everything below the `<!-- paste below -->` marker of `rules/request-writing.md` and connect the workspace folder as reference. `/draft-request` follows the same file inside the workspace.
+To write requests outside the development session, create a project in Claude just for that: paste into its instructions everything below the `<!-- paste below -->` marker of `rules/request-writing.md` and connect the workspace folder as reference. `/new-request` follows the same file inside the workspace.
 
 ## Local environment
 

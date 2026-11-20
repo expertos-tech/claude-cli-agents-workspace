@@ -26,7 +26,7 @@ How the project is maintained. Every change goes through these steps; a typo fix
   objective, business rules (BR-n), acceptance criteria (AC-n, verifiable), out of scope, and the stages with the
   effort of each.
 - Add the request to the table of `maintainers/requests/README.md`, in the order it runs, with the Status `pending`.
-- `/caw-draft-request` writes plans and requests; `requirements-analyst` finds the gaps of a long or ambiguous one.
+- `/caw-new-request` writes plans and requests; `requirements-analyst` finds the gaps of a long or ambiguous one.
 
 ## 4. Execute
 

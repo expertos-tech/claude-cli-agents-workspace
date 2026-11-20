@@ -74,7 +74,7 @@ rule, with the task before which to read it. A row the product index gains reach
 The maintenance skills carry the prefix `caw-`, so they do not collide with the product's skills of the same purpose
 (`/merge`, `/commit`, `/request`...). They live in `.claude/skills/`.
 
-`/caw-merge`, `/caw-request`, `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same
+`/caw-merge`, `/caw-request`, `/caw-commit` and `/caw-new-request` are layers over the product skill of the same
 purpose, so a change of flow in the product reaches them by itself: the first line of the body names the product skill
 (`@workspace/rules/skills/<name>/SKILL.md`, read in full as the procedure), then three sections win over it: "Ignore
 from the product skill", "Mapping" (the product's mechanics to this repository's: `aiwp-cmds.sh` to plain git, the gate
@@ -87,7 +87,7 @@ counterpart and are complete skills.
 | --- | --- | --- |
 | `/caw-check` | `[--base <ref>] [--floor] [extra check.sh options]` | Runs `tests/check.sh` on what changed (`--base origin/developer --i18n-pending`) and explains each failure |
 | `/caw-commit` | `[--all]` | One Conventional Commit per logical change of the session, by path; no push, no branch, no tag |
-| `/caw-draft-request` | `[plan \| request] [ideas \| path]` | Turns ideas into a plan or a request, asking only what has no best alternative |
+| `/caw-new-request` | `[plan \| request] [ideas \| path]` | Turns ideas into a plan or a request, asking only what has no best alternative |
 | `/caw-request` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `maintainers/requests/doing/` (in progress: resume or start over), `tmp/requests/`, then `tmp/`; no argument reads `tmp/request.md` |
 | `/caw-test-install` | `[--keep]` | Installs a disposable workspace from the current tree under `tmp/test-install/` and exercises hooks and scripts |
 | `/caw-merge` | `[<work>/<clone> \| --main [instructions]]` | Takes the work into `developer` through the gates and both changelogs, and moves the request to `qa/`; `--main` validates `qa/` and releases the product ([releases](releases.md)) |

@@ -86,17 +86,17 @@ fix the broken link in the README of my-project
 
 | Way | How |
 | --- | --- |
-| From loose ideas | `/draft-request I want a monthly report of...`; Claude asks only what blocks, marks the rest as "assumed decision" and saves it in `custom/requests/` |
+| From loose ideas | `/new-request I want a monthly report of...`; Claude asks only what blocks, marks the rest as "assumed decision" and saves it in `custom/requests/` |
 | Yourself | copy `templates/request.md` to `tmp/request.md` and fill it in |
 
 Then `/request <file>` reads `custom/requests/<file>` (else `custom/requests/doing/<file>`, a request in progress); `/request` alone reads `tmp/request.md`.
 
-- The requests of `/draft-request` live in `custom/requests/`, inside the custom layer, a git repository of its own: the history of the requests is versioned there.
+- The requests of `/new-request` live in `custom/requests/`, inside the custom layer, a git repository of its own: the history of the requests is versioned there.
 - A request goes through four folders: pending at the root of `custom/requests/` (state `idea` or `ready`); `custom/requests/doing/` from the moment `/request` opens its clone until `/merge` (no list or closing board offers it again, and running it again asks whether to resume it or start over; `bash scripts/aiwp-cmds.sh close <work> --discard` puts it back in pending, and `status` flags as `stale` one no open work records); `custom/requests/qa/<project>/` once `/merge` took it into `developer`, with an "Execution" block of what was done; `custom/requests/done/<project>/` once `/merge --main` released it, after validating it against the code. An idea is a request in state `idea`; there is no backlog.
-- `/draft-request` commits and pushes the request it created, at every version; `/request` commits and pushes the move to doing (through `bash scripts/aiwp-cmds.sh open --request`), `/merge` the moves to qa and done, and a wave its resume point ([Waves](#waves-checkpoint-merge-and-resume)).
+- `/new-request` commits and pushes the request it created, at every version; `/request` commits and pushes the move to doing (through `bash scripts/aiwp-cmds.sh open --request`), `/merge` the moves to qa and done, and a wave its resume point ([Waves](#waves-checkpoint-merge-and-resume)).
 - `aiwp new` sets up `custom/`: it clones the repository whose URL you give (an empty one gets a skeleton), or starts a local one. If the folder is missing later, the session says so at the start, and `bash scripts/setup-claude.sh --custom-repo <url>` in a terminal clones it.
 
-The written request is as large as what you asked for. `/draft-request` picks one of three sizes before writing, and says which one:
+The written request is as large as what you asked for. `/new-request` picks one of three sizes before writing, and says which one:
 
 | Size | When | What comes out | Ceiling |
 | --- | --- | --- | --- |
@@ -174,7 +174,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/docker-deploy [developer\|main] [<repo>]` | Updates the final local Docker stack of a repo from `developer` or `main`, tagging the replaced images for rollback and deleting no volume; only at your request |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
-| `/draft-request [ideas \| file]` | Builds a functional request from ideas |
+| `/new-request [ideas \| file]` | Builds a functional request from ideas |
 | `/request [name \| path]` | Runs the request written in a file |
 | `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows and changes the rules, skills and agents a session loads (below, "Changing the workspace itself") |
 | `/pilot [assisted\|auto\|manual]` | Shows or changes the mode: who runs the manual tests, and whether Claude explains the flow in boxes (below, "Tests a human would run by hand") |
@@ -232,7 +232,7 @@ At the moments a newcomer usually gets the flow wrong, Claude stops before actin
 - **Don't show this again**: the work goes on, and boxes of that kind stop until the session ends. A new session shows them again, until `/pilot auto`.
 - **The better way**, where there is one (here "Do it in a clone"): Claude does it that way.
 
-The moments: the first reply of a session; a new task in a session that already closed one (clear the context and start from the request); a commit, push or merge on `main`, `master` or `developer`; a change straight in `projects/`; a large or vague request typed in the prompt (`/draft-request` first); a change to the read-only core (your own rule in `custom/my-rules/` instead); a secret or a `.env` in the conversation; a refusal of a hook or the gate (in plain words, with the allowed way); and the closing board (what comes next). The boxes only explain: they never change what is allowed or refused, and a subagent never shows one.
+The moments: the first reply of a session; a new task in a session that already closed one (clear the context and start from the request); a commit, push or merge on `main`, `master` or `developer`; a change straight in `projects/`; a large or vague request typed in the prompt (`/new-request` first); a change to the read-only core (your own rule in `custom/my-rules/` instead); a secret or a `.env` in the conversation; a refusal of a hook or the gate (in plain words, with the allowed way); and the closing board (what comes next). The boxes only explain: they never change what is allowed or refused, and a subagent never shows one.
 
 ## Projects
 

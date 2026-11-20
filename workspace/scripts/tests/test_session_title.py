@@ -175,7 +175,9 @@ class SessionTitleTests(unittest.TestCase):
             'fix the readme',
             '/requestx a.md',
             '/request a.md and more',
-            '/draft-request ideas',
+            '/new-request ideas',
+            '/draft-prompt ideas',
+            '/draft-prompt screen ideas',
             '/prompt a.md',
             '/prompt',
         ):

@@ -1,5 +1,5 @@
 ---
-name: draft-request
+name: new-request
 description: "Turn the user's loose ideas into a functional request prompt (templates/request.md format), asking only the doubts with no best alternative and listing the rest as assumed decisions; shown on screen and saved to custom/requests/ for /request. Use only when the user asks."
 argument-hint: "[ideas | path]"
 disable-model-invocation: true

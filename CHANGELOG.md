@@ -39,7 +39,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   after fixes (decision record 0004).
 - Validators refuse only a closed list of hard rules; the rest is a warning shown once (a numbered warnings board
   with a risk level per warning, before the closing board of a wave and before the merge, waiting for a decision on
-  each; `/draft-request` with "Authorizations"); one review per merge, effort `medium` into `developer` and
+  each; `/new-request` with "Authorizations"); one review per merge, effort `medium` into `developer` and
   `high` into `main`; the gate's non-secret checks, four asks of `guard-bash` and the copy's unsafe services become
   warnings (decision record 0005).
 - `guard-bash`: a line refused with "Run it alone" shows the warnings of its other commands, as a question does.
@@ -161,7 +161,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `/caw-request` works in a clone on a work branch under `tmp/work/`, and finds a bare file name in
   `maintainers/requests/`, then `tmp/requests/`, then `tmp/`.
 - The maintenance skills carry the prefix `caw-`, apart from the product's; `/caw-merge`, `/caw-request` (was
-  `/caw-prompt`), `/caw-commit` and `/caw-draft-request` are layers over the product skill of the same purpose.
+  `/caw-prompt`), `/caw-commit` and `/caw-new-request` are layers over the product skill of the same purpose.
 - An approved plan is recorded as a pending request, no longer in `done/`.
 - Plans and requests are shown to the owner in their language and saved in English.
 - A merge into `developer` checks and reviews only the difference that enters, by the three questions, with effort

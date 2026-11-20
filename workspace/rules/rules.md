@@ -4,7 +4,7 @@
 
 - `AGENTS.md` holds what applies to every session and the list of these files.
 - `rules/agents/`: subagent definitions and the Claude Code settings. `rules/skills/`: commands, one `<name>/SKILL.md` each. Both are the source of `.claude/`.
-- `rules/request-writing.md`: instructions of the separate Claude project that only writes requests, and the procedure of `/draft-request`.
+- `rules/request-writing.md`: instructions of the separate Claude project that only writes requests, and the procedure of `/new-request`.
 - `docs/decisions/`: decision records of the workspace (`rules/docs.md`). Read the ones a rule change touches before proposing it.
 - `custom/docs/lessons.md`: lessons, not loaded in sessions (`AGENTS.md` "When a rule gets in the way").
 - A change to the workspace updates `docs/` and `README.md` in the same commit, and the translations of the documents it changed (`i18n/` of the product repository).

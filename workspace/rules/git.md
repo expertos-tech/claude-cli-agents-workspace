@@ -43,7 +43,7 @@ The base of a project receives only what the gate checked: `/merge [<work>/<clon
 
 ## Waves
 
-A wave is one step of a plan in steps ("Steps and effort" of a request); a request with one step or none is one wave, closed when it ends. A question or read-only work opens none, and neither does `/draft-request`: its own commit and push are its checkpoint.
+A wave is one step of a plan in steps ("Steps and effort" of a request); a request with one step or none is one wave, closed when it ends. A question or read-only work opens none, and neither does `/new-request`: its own commit and push are its checkpoint.
 
 - A part never goes through the gate on its own: the merge happens only when the human types `/merge` (the gate refuses phase 2 otherwise).
 - End of a task: the tests of what changed pass; publish the task's Docker copy (`bash scripts/aiwp-cmds.sh up <work>/<clone>`; a project with no compose stack: nothing to publish); the closing board gives the copy's addresses, what to test (one item per acceptance criterion) and the two ways out. `/pilot` decides who runs the detailed check of the copy (`rules/quality.md` "Verification mode").
@@ -100,7 +100,7 @@ A request goes through four folders of `custom/requests/`, one per state of its 
 
 | Folder | State | Moved by |
 | --- | --- | --- |
-| `custom/requests/` | Pending: `idea` (decisions open) or `ready` | `/draft-request`, the human, a review finding; `bash scripts/aiwp-cmds.sh close <work> --discard` puts one back |
+| `custom/requests/` | Pending: `idea` (decisions open) or `ready` | `/new-request`, the human, a review finding; `bash scripts/aiwp-cmds.sh close <work> --discard` puts one back |
 | `custom/requests/doing/` | In progress: its work is open in `tmp/work/<work>/`, from the open of its clone until `/merge` | `/request`, through `bash scripts/aiwp-cmds.sh open ... --request <file>`, right after the clones open |
 | `custom/requests/qa/<project>/` | On `developer`, not released; a hotfix: on `main`, marked `Merge into developer pending.` | `/merge`, after phase 2; `/merge --hotfix`, once `main` has the fix |
 | `custom/requests/done/<project>/` | Released | `/merge --main <project>`; `/merge --hotfix`, once `developer` holds `main` |

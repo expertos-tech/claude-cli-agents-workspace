@@ -24,7 +24,7 @@ A hard refusal (a `deny`, a refusal of a hook or of the gate, a BLOCKER that sto
 
 ## Warnings
 
-Everything else a validator finds is a warning, with a suggestion: a best practice, a hardening idea, a public IP in an `.env`, a company term in a public repository, an attack that needs someone writing code to escape the checks on purpose. The human decides; the work goes on. What would interrupt the work over and over (a question per command, a refusal per spelling, a review round per fix) is gathered and shown once: in the warnings board that closes a wave or a merge, before its closing board or summary (`rules/git.md` "Waves"), or when a request is written (`/draft-request`). One format everywhere, numbered `W-1`, `W-2`... in its board:
+Everything else a validator finds is a warning, with a suggestion: a best practice, a hardening idea, a public IP in an `.env`, a company term in a public repository, an attack that needs someone writing code to escape the checks on purpose. The human decides; the work goes on. What would interrupt the work over and over (a question per command, a refusal per spelling, a review round per fix) is gathered and shown once: in the warnings board that closes a wave or a merge, before its closing board or summary (`rules/git.md` "Waves"), or when a request is written (`/new-request`). One format everywhere, numbered `W-1`, `W-2`... in its board:
 
 ```text
 W-<n>  <what was seen>

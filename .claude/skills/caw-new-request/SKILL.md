@@ -1,5 +1,5 @@
 ---
-name: caw-draft-request
+name: caw-new-request
 description: "Turn the owner's ideas into a plan (maintainers/plans/) or a request (maintainers/requests/, in the format of workspace/templates/request.md), asking only the doubts with no best alternative. Use only when the owner asks."
 argument-hint: "[plan | request] [ideas | path]"
 disable-model-invocation: true
@@ -7,7 +7,7 @@ model: claude-opus-5-5
 effort: high
 ---
 
-@workspace/rules/skills/draft-request/SKILL.md
+@workspace/rules/skills/new-request/SKILL.md
 
 Read that file in full and follow it as the procedure, with the sections below over it: they win where they differ.
 

@@ -115,5 +115,5 @@ works only there, with tests. Each commit goes to the remote after a secret scan
 
 The gate brings the updated `developer`, runs the whole suite and the validations, scans for secrets, shows what leaves
 the base and asks for a review against your request. You are asked only if something shows up that the request does
-not explain. For larger requests, write the request with `/draft-request` and run it with `/request`. The full guide is
+not explain. For larger requests, write the request with `/new-request` and run it with `/request`. The full guide is
 [workspace/docs/usage.md](../workspace/docs/usage.md).
