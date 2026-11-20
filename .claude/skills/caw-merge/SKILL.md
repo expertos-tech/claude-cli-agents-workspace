@@ -123,7 +123,7 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
 2. **Release clone:** `git clone -q --local . tmp/work/<yyyy-mm-dd>-release-vX-Y-Z/claude-cli-agents-workspace`,
    origin set to the root's URL, `git -C <clone> fetch -q origin`, `git -C <clone> switch -c fix/release-vX-Y-Z
    origin/developer`; not pushed yet (the push gate: after step 5).
-3. **Translations**, once for the release: one `docs-writer` (claude-sonnet-5-5, effort `medium`) brings every pending
+3. **Translations**, once for the release (again only for what a merge of step 8 left pending): one `docs-writer` (claude-sonnet-5-5, effort `medium`) brings every pending
    translation up to date (the `pending:` lines of `bash <clone>/tests/check.sh --base <last tag> --i18n-pending`);
    commit (`docs(i18n): translations for X.Y.Z`); no push.
 4. **Version and dates**, today, so the checks below judge them: `workspace/VERSION` to `X.Y.Z`; `workspace/CHANGELOG.md`
@@ -154,16 +154,16 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    `accept`), and the release goes on only after every decision. Fixes or requests written in the clone: rerun step 5 (which
    records and pushes again) and the return review of the fixes (`.claude/rules/review.md`). The sha is the one step 5 recorded last, equal to the pushed
    `fix/release-vX-Y-Z` and to HEAD.
-8. **Into `developer`:** phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone
-   moved after the sha was recorded: back to step 5. `origin/developer` moved since step 2, another merge having
+8. **Into `developer`:** first, before phase 2, whether `origin/developer` moved since step 2, another merge having
    landed during the release (`git -C <clone> fetch -q origin`, then `git -C <clone> merge-base --is-ancestor
-   origin/developer <sha>` false): never the mapping's "back to step 1", which would take those commits to `main`
-   with neither the strict suite nor the final review. Merge it in the clone (`git -C <clone> merge --no-ff
-   origin/developer -m "Merge branch 'developer' into fix/release-vX-Y-Z"`), put the entries it brought into the
-   dated `X.Y.Z` sections of both changelogs (never an `Unreleased` section left above them), commit, and go back to
-   step 4 (the requests it brought to `qa/` move to `done/` there): steps 5 to 7 again, the review fixtures not
-   rerun, the final review of step 6 on what the merge brought (`<sha>..HEAD` of the clone, its resolution
-   included) against the requests it added.
+   origin/developer <sha>` false). Moved: merge it in the clone (`git -C <clone> merge --no-ff origin/developer -m
+   "Merge branch 'developer' into fix/release-vX-Y-Z"`), put the entries it brought into the dated `X.Y.Z` sections
+   of both changelogs (never an `Unreleased` section left above them), commit, and go back to step 3, for the
+   translations it left pending only, then step 4 (the requests it brought to `qa/` move to `done/` there) and steps
+   5 to 7 again: the review fixtures not rerun, the final review of step 6 on what the merge brought (from the sha
+   step 5 recorded before this merge to HEAD of the clone, its resolution included) against the requests it added.
+   Not moved: phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone moved after
+   the sha was recorded: back to step 5.
 9. Then, **asking the owner before each one** (each answer covers that step only): `main` (`git push origin
    developer:main`; refused: a pull request `developer` → `main`, and stop until it is merged); the tag
    (`git tag -a vX.Y.Z -m "vX.Y.Z" <sha of main>`, `git push origin vX.Y.Z`; never moved or deleted); the GitHub
