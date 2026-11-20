@@ -32,10 +32,10 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 Nothing runs now: `request-in-progress` and `assisted-mode` are in qa. A running request has the Status `doing`.
 
 0. **Round 0, before the first installation and the first release** (`/caw-merge --main`):
-   1. Two sessions at once, on disjoint paths: `draft-prompt`; and the four findings of `/caw-merge` in one session,
-      all in `.claude/skills/caw-merge/SKILL.md`: `release-developer-moved` and `release-main-sha-check` first
-      (without them the first `--main` runs with both known defects), then `execution-block-after-fixes` and
-      `clone-path-findings-loop`.
+   1. Two sessions at once, on disjoint paths: `draft-prompt`; and the three findings of `/caw-merge` left in one
+      session, all in `.claude/skills/caw-merge/SKILL.md`: `release-main-sha-check` first (without it the first
+      `--main` runs with a known defect), then `execution-block-after-fixes` and `clone-path-findings-loop`
+      (`release-developer-moved` is in qa).
    2. `session-names` after `draft-prompt` (same files).
    3. `final-review` last, once everything above is on `developer`, with `rules-size-budget` folded in when the owner
       has answered its decisions.
@@ -65,11 +65,10 @@ The ideas with no round wait for their design. `rules`, `run-tools`, `import-wor
 
 ### Ready: findings of the reviews
 
-Small adjustments, effort low unless noted. Round 0: the first four, in one session; round 1: the other three.
+Small adjustments, effort low unless noted. Round 0: the first three, in one session; round 1: the other three.
 
 | Request | Status | What it fixes |
 | --- | --- | --- |
-| `release-developer-moved.md` | pending | `/caw-merge --main` when `developer` moves during the release |
 | `release-main-sha-check.md` | pending | The push of `main` and the tag tied to the sha the suite judged |
 | `execution-block-after-fixes.md` | pending | The Execution block written before the results it records |
 | `clone-path-findings-loop.md` | pending | Requests made of findings loop the clone path of `/caw-merge` |
@@ -97,6 +96,8 @@ Small adjustments, effort low unless noted. Round 0: the first four, in one sess
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/custom-skeleton-requests-folder.md` | this merge | Met: by the scenarios of the `aiwp` suite and the test installation |
+| `qa/release-developer-moved.md` | this merge | Met: by the text of "Release" step 8; its first real run is a release where `developer` moves |
 | `qa/2026-11-19-requests-priorities.md` | this merge | Met |
 | `qa/2026-11-20-install-developer.md` | this merge | Met: by the scenarios of the `aiwp` suite and a run on the test installation's repository |
 | `qa/request-in-progress.md` | this merge | AC-1 to AC-3, AC-7, AC-8 proven by scenario tests; AC-4 to AC-6 by headless rehearsals |

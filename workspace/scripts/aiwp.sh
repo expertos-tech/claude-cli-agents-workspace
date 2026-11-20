@@ -1350,7 +1350,8 @@ It is a git repository of its own. Put here:
   with its own (`/rules`).
 - `core-terms.txt`: terms that must never reach a public repository (company and customer names).
 - `projects.md`: the list of your projects.
-- `requests/`: your requests: pending at its root, `qa/<project>/` once on `developer`, `done/<project>/` once released.
+- `requests/`: your requests: pending at its root, `doing/` while in progress, `qa/<project>/` once on `developer`,
+  `done/<project>/` once released.
 - `config/prompt-log/sources.json`: other folders whose sessions the prompt log reads (the log itself is in `logs/`).
 - `env/<tool>.env`: the filled `.env` files of the tools. Git ignores `env/`: they are never committed.
 EOF
@@ -1365,6 +1366,9 @@ env/
 *.env
 .env
 EOF
+  # requests/ exists from the start, as the README says; git keeps an empty folder only through a file.
+  mkdir -p "$dir/requests"
+  : >"$dir/requests/.gitkeep"
   git -C "$dir" add -A
   if [ -n "$(git -C "$dir" config user.name || true)" ]; then
     git -C "$dir" commit -q -m "chore: start the custom layer"

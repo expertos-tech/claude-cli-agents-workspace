@@ -22,7 +22,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   report them as pending (`--i18n-pending`).
 - `/merge --main` ends with a final review of everything since the last tag, by the three questions of every merge
   review.
-- A request lifecycle (pending, `qa/`, `done/`) with an Execution block at each merge; the release per project with
+- A request lifecycle (pending, `qa/`, `done/`) with an Execution block at each merge, its `requests/` folder in a
+  new custom layer from the first commit; the release per project with
   the project's own changelog in its root repo; any project layout, nested repos included; `/prompt` becomes
   `/request`; the prompt log moves to `logs/`; no backlog.
 - `/merge --hotfix`: an error in production fixed from `main` as a patch version, then merged down into `developer`;
@@ -61,8 +62,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - This changelog of the repository, next to the product's.
 - `/caw-merge`: the work of a session into `developer` through the suite and a clean-context review, writing both
-  changelogs; `/caw-merge --main` releases the product version. Every push it makes comes right after a passing suite
-  on that same commit, so nothing reaches this public repository without the company-terms scan.
+  changelogs; `/caw-merge --main` releases the product version, and a merge into `developer` during the release
+  enters its release clone and goes through the strict suite and the final review before `main`. Every push it makes
+  comes right after a passing suite on that same commit, so nothing reaches this public repository without the
+  company-terms scan.
 - Requests in `maintainers/requests/` for the features discussed and not built yet (among them a hotfix flow from
   `main`, and the findings of the reviews), in the order they run, and the
   `/rules` lessons and the local delivery of `/fork-my-rules` in the `rules` and `fork-my-rules` requests.
@@ -141,6 +144,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   session and after `/clear`, `rq-<words>` on `/request`, `rq-done-` with the closing board, `rq-closed-` at the
   merge, `fix-` in their place for a hotfix, `ai-workspace-release-<project>` for a release), `/rename-workspace`,
   and `/rename` left to Claude Code; checked against the Claude Code hooks documentation.
+- The request `custom-skeleton-requests-folder`, from a test installation: a new custom layer (`aiwp new`, an empty
+  remote too) starts with its `requests/` folder, kept by a `.gitkeep`, and its README names `doing/`.
 
 ### Changed
 
