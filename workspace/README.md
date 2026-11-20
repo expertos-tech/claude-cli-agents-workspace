@@ -114,6 +114,7 @@ The hooks: `scripts/guard-bash.sh` (git, Terraform, databases, secrets, the read
 | `/commit [--all] [--repo <dir>]` | One commit per logical change, in a clone or in `custom/` |
 | `/push [--repo custom \| <work>/<clone>]` | Pushes `custom/`, or pushes again a clone whose automatic push failed |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker and, optionally, SonarQube |
+| `/draft-prompt [screen] [text \| file]` | Organizes a loose text (dictated, transcribed, typed in a hurry) into a plan in your language, with the gaps as questions; saves it in `custom/plans/` in a priority order with a criticality, or only prints it with `screen` |
 | `/new-request [ideas \| file]` | Turns your ideas into a request of the right size (adjustment, feature or system), with the effort of each step; asks only what blocks and saves it in `custom/requests/` |
 | `/request [name \| path]` | Runs a written request, gives the session the project's name, numbered; `/merge` moves it to qa, and the release to done |
 | `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows the rules, skills and agents a session loads and where each comes from; turns core ones off or on, replaces a core rule or adds your own, in `custom/rules-config.json` and `custom/my-rules/` (the mandatory core always loads); `lessons` proposes own rules from the tagged lessons |

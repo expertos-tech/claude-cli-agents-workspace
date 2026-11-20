@@ -4,7 +4,7 @@
 
 - `AGENTS.md` holds what applies to every session and the list of these files.
 - `rules/agents/`: subagent definitions and the Claude Code settings. `rules/skills/`: commands, one `<name>/SKILL.md` each. Both are the source of `.claude/`.
-- `rules/request-writing.md`: instructions of the separate Claude project that only writes requests, and the procedure of `/new-request`.
+- `rules/request-writing.md`: instructions of the separate Claude project that only writes requests, and the procedure of `/new-request`; its section "Organize" is also the one of `/draft-prompt`.
 - `docs/decisions/`: decision records of the workspace (`rules/docs.md`). Read the ones a rule change touches before proposing it.
 - `custom/docs/lessons.md`: lessons, not loaded in sessions (`AGENTS.md` "When a rule gets in the way").
 - A change to the workspace updates `docs/` and `README.md` in the same commit, and the translations of the documents it changed (`i18n/` of the product repository).
@@ -39,7 +39,7 @@
 
 ## Custom layer
 
-- `custom/` is the custom layer: a git repo of its own at the workspace root, never part of the core. It holds what belongs to one company and its projects: company, cloud and tenant, visual identity and logos, the project index with the project ports (`custom/projects.md`), the requests (`custom/requests/`: pending, in state `idea` or `ready`; `qa/<project>/` once on `developer`; `done/<project>/` once released), the lessons (`custom/docs/lessons.md`), the performance reports (`custom/performance/`, written by `scripts/performance/measure.py`) and the data of workspace tools that are the company's.
+- `custom/` is the custom layer: a git repo of its own at the workspace root, never part of the core. It holds what belongs to one company and its projects: company, cloud and tenant, visual identity and logos, the project index with the project ports (`custom/projects.md`), the plans of `/draft-prompt` (`custom/plans/`, with their priority order in its README), the requests (`custom/requests/`: pending, in state `idea` or `ready`; `qa/<project>/` once on `developer`; `done/<project>/` once released), the lessons (`custom/docs/lessons.md`), the performance reports (`custom/performance/`, written by `scripts/performance/measure.py`) and the data of workspace tools that are the company's.
 - Text that changes with the company, a client or a project goes to `custom/`, never to `AGENTS.md`, `rules/`, `docs/`, `scripts/`, `docker/` or `tools/`. `bash scripts/check-workspace.sh` fails on a term of `custom/core-terms.txt` found here; a new company term (a project, a product) is added there.
 - The workspace's own rules, skills and agents live in `custom/my-rules/` (`*.md`, `skills/<name>/`, `agents/<name>.md`), and `custom/rules-config.json` turns core ones off or replaces a core rule with an own one; `scripts/setup-claude.sh` applies both at every session start, each own item as `custom-*` in `.claude/` (an own rule without `paths:` in every session, with it when a matching file is touched). The mandatory core (`rules/manifest.json`) always loads. They change through `/rules`, on the human's request, or by hand; a change reaches the next sessions.
 - No `custom/`: what it would name (cloud, identity, project folder) is asked in intake, never invented.

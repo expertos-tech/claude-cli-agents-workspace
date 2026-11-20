@@ -29,6 +29,18 @@ Instructions for the separate Claude project that only writes requests for this 
 
 - NEVER read `.env` files, credentials or `.claude/`.
 
+## Organize
+
+How a loose text (a dictated message, an audio transcript, notes typed in a hurry) is put in order before anything is written from it. `/draft-prompt` writes a plan from it, and a request starts from it too.
+
+- Remove fillers, hesitations and repetitions.
+- A self-correction ("rename A, no, sorry, rename B"): keep only the last version.
+- What was said twice, in other words, becomes one point.
+- Order by subject: each point once, beside the points of its subject, whatever the order it was said in.
+- Keep names, commands, paths, numbers and quoted texts verbatim.
+- List the gaps: what the text leaves open that would change what gets built, each as a question.
+- Add no requirement of your own: what the text does not say is a gap, never a point.
+
 ## Size
 
 The prompt is proportional to the request. Pick one size from what the ideas ask for, never from how much could be written about it. In doubt between two, take the smaller one: the workspace asks what is missing when it runs the prompt.

@@ -6,7 +6,7 @@ English · [Português (Brasil)](../i18n/pt-BR/docs/features.md) · [Español](.
 
 - **Rules** for the agent: one page that applies to every session (`AGENTS.md`) and rules per subject (git, security,
   quality, docs, frontend, infrastructure, models, review), read when the subject comes up.
-- **Skills**: slash commands for the daily flow (`/merge`, `/commit`, `/push`, `/validate`, `/new-request`,
+- **Skills**: slash commands for the daily flow (`/merge`, `/commit`, `/push`, `/validate`, `/draft-prompt`, `/new-request`,
   `/request`, `/pilot`, `/local-env`, `/run-tools`, `/normalize-projects`, `/import-workspace`).
 - **Agents**: subagents for requirements, architecture, implementation, tests, review, verification, infrastructure,
   scripts, documentation and research, each with its model and effort.

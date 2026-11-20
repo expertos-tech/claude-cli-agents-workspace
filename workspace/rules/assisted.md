@@ -60,7 +60,7 @@ The group is what "Don't show this again" mutes.
 | 2 | Context | A new task in a session that already closed one (a closing board shown, or a different subject) | A large context makes the agent mix tasks and invent; `/clear`, then start from the request (`/request <file>`) | Clear and start from the request |
 | 3 | Branches | A commit, push or merge asked on `main`, `master` or `developer` | Work goes in a clone; it enters `developer` only by `/merge`, `main` only by `/merge --main` (`rules/git.md` "Gate") | Do it in a clone |
 | 4 | Branches | A change asked straight in `projects/` | Changes happen in a clone under `tmp/work/` (`/request` opens it), so the project is never half changed | Do it in a clone |
-| 5 | Requests | A large or vague request typed in the prompt | `/new-request` turns it into a request with acceptance criteria, which `/request` runs | Draft the request first |
+| 5 | Requests | A large or vague request typed in the prompt | `/new-request` turns it into a request with acceptance criteria, which `/request` runs; a dictated or tangled text goes first to `/draft-prompt`, which organizes it into a plan | Draft the request first |
 | 6 | Core | A change asked to the core (`AGENTS.md`, `rules/`, `scripts/`, `docker/`, `templates/`) | The core is read-only; your own rules go to `custom/my-rules/` (`/rules add <subject>`); the core changes only by `aiwp update` | Write it as my own rule |
 | 7 | Secrets | A secret or a `.env` in the conversation | Where it goes: `custom/env/<tool>.env` (`/local-env`), never a repository or the chat | — |
 | 8 | Refusals | A refusal of a hook or the gate | The refusal in plain words and the allowed way to the same goal | The allowed way |

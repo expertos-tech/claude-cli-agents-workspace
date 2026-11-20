@@ -130,7 +130,7 @@ A request goes through four folders of `custom/requests/`, one per state of its 
 ```
 
 - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `build`, `ci`. Breaking change: `!` after the scope and a `BREAKING CHANGE:` footer.
-- Workspace scopes: `ai` (`AGENTS.md`, `rules/`), `agents`, `skills`, `scripts`, `docker`, `docs`, `decisions`, `projects`, or the item name under `tools/`. Custom layer scopes: `requests`, `docs`, `rules`, `projects`, or the POC name under `custom/pocs/`. Project scopes: the module name; `docs`, `infra`, `deps`.
+- Workspace scopes: `ai` (`AGENTS.md`, `rules/`), `agents`, `skills`, `scripts`, `docker`, `docs`, `decisions`, `projects`, or the item name under `tools/`. Custom layer scopes: `requests`, `plans`, `docs`, `rules`, `projects`, or the POC name under `custom/pocs/`. Project scopes: the module name; `docs`, `infra`, `deps`.
 
 ## Return points
 
