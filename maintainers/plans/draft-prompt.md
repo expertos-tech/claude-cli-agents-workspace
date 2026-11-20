@@ -1,6 +1,6 @@
 # Draft a prompt, then a request
 
-Status: approved (2026-11-19). Request: `maintainers/requests/draft-prompt.md`.
+Status: built (2026-11-20). Request: `maintainers/requests/qa/draft-prompt.md`.
 
 ## 1. Goal
 

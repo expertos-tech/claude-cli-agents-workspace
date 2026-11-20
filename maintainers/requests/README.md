@@ -29,17 +29,16 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
-Nothing runs now: `request-in-progress` and `assisted-mode` are in qa. A running request has the Status `doing`.
+Nothing runs now: `request-in-progress`, `assisted-mode` and `draft-prompt` are in qa. A running request has the Status `doing`.
 
 0. **Round 0, before the first installation and the first release** (`/caw-merge --main`):
-   1. Two sessions at once, on disjoint paths: `draft-prompt`; and the three findings of `/caw-merge` left in one
-      session, all in `.claude/skills/caw-merge/SKILL.md`: `release-main-sha-check` first (without it the first
-      `--main` runs with a known defect), then `execution-block-after-fixes` and `clone-path-findings-loop`
-      (`release-developer-moved` is in qa).
-   2. `session-names` after `draft-prompt` (same files).
-   3. `final-review` last, once everything above is on `developer`, with `rules-size-budget` folded in when the owner
+   1. Two sessions at once, on disjoint paths: `session-names` (`draft-prompt`, which changed the same files, is in
+      qa); and the three findings of `/caw-merge` left in one session, all in `.claude/skills/caw-merge/SKILL.md`:
+      `release-main-sha-check` first (without it the first `--main` runs with a known defect), then
+      `execution-block-after-fixes` and `clone-path-findings-loop` (`release-developer-moved` is in qa).
+   2. `final-review` last, once everything above is on `developer`, with `rules-size-budget` folded in when the owner
       has answered its decisions.
-   4. The first installation, then `/caw-merge --main`.
+   3. The first installation, then `/caw-merge --main`.
 1. **Round 1, the next release:** `import-workspace-code-folders` (the owner needs it to migrate a whole older
    workspace; its paths are disjoint from round 0, so it may also run now, in parallel); `import-from-fork`, the
    first real test of `aiwp update` from the first release, then `measure-quality-indicators` (both change
@@ -55,7 +54,6 @@ The ideas with no round wait for their design. `rules`, `run-tools`, `import-wor
 
 | Round | Request | Status | Notes |
 | --- | --- | --- | --- |
-| 0 | `draft-prompt.md` | doing | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; design: `plans/draft-prompt.md` |
 | 0 | `session-names.md` | pending | Session names that follow the life of a request (`ai-workspace-NN`, `rq-`, `rq-done-`, `rq-closed-`, the release session), `/rename-workspace`; after `draft-prompt` (same files); design: `plans/session-names.md` |
 | 0 | `final-review.md` | pending | Last of round 0, before the first release, with `rules-size-budget` folded in; a whole-product review in a new session; every release now also ends with a final review |
 | 1 | `import-workspace-code-folders.md` | pending | After `import-workspace`; may run now, in parallel with round 0: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
@@ -96,6 +94,7 @@ Small adjustments, effort low unless noted. Round 0: the first three, in one ses
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/draft-prompt.md` | this merge | Met: AC-1 and AC-2 by the suite and the session-title test; AC-3 to AC-9 by headless runs (AC-9 with `AGENTS.md` given to the session) |
 | `qa/custom-skeleton-requests-folder.md` | this merge | Met: by the scenarios of the `aiwp` suite and the test installation |
 | `qa/release-developer-moved.md` | this merge | Met: by the text of "Release" step 8; its first real run is a release where `developer` moves |
 | `qa/2026-11-19-requests-priorities.md` | this merge | Met |
