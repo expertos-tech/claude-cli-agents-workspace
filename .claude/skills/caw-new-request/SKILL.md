@@ -41,6 +41,6 @@ Read that file in full and follow it as the procedure, with the sections below o
 - **Request** (`maintainers/requests/<kebab-name>.md`, pending, `**State:** idea` or `ready`): the headings of
   `workspace/templates/request.md`, the effort of each stage by `.claude/rules/models.md`. Name the plan it builds.
   Add a row to `maintainers/requests/README.md` in the order it runs.
-- Public text: English, no company names, no personal paths (`.claude/rules/security.md`).
-- Show the result in the owner's language and save it in English, with one line saying so. End with the line to run
-  a request: `/caw-request <name>.md`.
+- Public text: no company names, no personal paths (`.claude/rules/security.md`). A request is saved in English, a
+  plan in the owner's language (`CLAUDE.md` "Language"); both are shown in the owner's language, with one line naming
+  the file and the language it is saved in. End with the line to run a request: `/caw-request <name>.md`.

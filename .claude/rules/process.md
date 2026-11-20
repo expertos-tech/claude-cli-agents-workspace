@@ -18,7 +18,8 @@ How the project is maintained. Every change goes through these steps; a typo fix
 - The plan stays the design reference after the request is written; update its status line when the request is built.
 - A plan the owner approves in a session (plan mode) is recorded at once, in English and in the request format, as a
   pending request `maintainers/requests/<kebab-name>.md` (`**State:** ready`), with its row in the README.
-- A plan or request is shown to the owner in the language they wrote in, and saved in English; say so in one line.
+- A plan is saved in the owner's language, a request in English (`CLAUDE.md` "Language"); both are shown in the
+  owner's language, with one line naming the file and the language it is saved in.
 
 ## 3. Request
 

@@ -16,7 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - `/merge` writes a versioned changelog at every merge, and `/merge --main` releases that version with a tag
   ([product changelog](workspace/CHANGELOG.md)).
-- Plans and requests are shown in the person's language and saved in English.
+- Requests are saved in English and plans in the person's language; whatever is shown is in the person's language,
+  but code and configuration, shown exactly as they are.
 - The i18n check of the product gate also requires the translations of every README and of the root `docs/`, and can
   report them as pending (`--i18n-pending`).
 - `/merge --main` ends with a final review of everything since the last tag, by the three questions of every merge
@@ -163,7 +164,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The maintenance skills carry the prefix `caw-`, apart from the product's; `/caw-merge`, `/caw-request` (was
   `/caw-prompt`), `/caw-commit` and `/caw-new-request` are layers over the product skill of the same purpose.
 - An approved plan is recorded as a pending request, no longer in `done/`.
-- Plans and requests are shown to the owner in their language and saved in English.
+- Plans are saved in the owner's language and requests in English; both are shown in the owner's language.
 - A merge into `developer` checks and reviews only the difference that enters, by the three questions, with effort
   `medium` (`high` into `main`), the owner's authorizations in the brief, and a return review after the fixes of its
   BLOCKERs; a WARNING never blocks and goes to the warnings board, where the owner decides each one before the merge goes on.

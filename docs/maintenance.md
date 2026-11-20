@@ -134,7 +134,8 @@ The default is no subagent. Subagents never commit or push: the main session doe
   only that move. A prompt shows one thing: what needs authorization runs alone, in its own call. The one prompt of a
   task is the push of `developer` by `/caw-merge`.
 - **Directly on `developer`:** a session at the root that opened no clone works on `developer`.
-- **Plans and requests** are shown to the owner in the owner's language and saved in English.
+- **Plans** are saved in the owner's language and **requests** in English; both, and everything else on screen, are
+  shown in the owner's language, but code and configuration, shown exactly as they are.
 
 ## `/caw-merge`
 

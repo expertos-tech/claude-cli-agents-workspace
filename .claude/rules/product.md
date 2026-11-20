@@ -17,7 +17,11 @@ What must stay true of the product in `workspace/`, whatever the change.
   tool refuses a layout, and `guard-bash` protects the whole tree of `projects/`.
 - **`.env`**: `.env.example` next to each tool and in `docker/`; the filled file in `custom/env/<tool>.env`, git-ignored,
   read by compose with `--env-file`.
-- **English** in every product file; Claude answers in the person's language; the preferred language of
-  communication is the Claude Code setting `language` in `.claude/settings.local.json`, asked at install (`aiwp new`).
+- **English** in every product file. In the person's custom layer, a request is in English and a plan
+  (`custom/plans/`) in the person's language. Claude answers in the person's language, whatever it shows (a plan, a
+  request, a document, a rule, a summary, a board): code and configuration are shown exactly as they are, comments and
+  docstrings shown for reading in the person's language, and a block to copy into a file, a diff, a patch and literal
+  output verbatim, explained around them. The preferred language of communication is the Claude Code setting
+  `language` in `.claude/settings.local.json`, asked at install (`aiwp new`).
 - **No company data** in the core: what belongs to one company lives in the custom layer.
 - A change to any of these needs a plan with the owner's decision, not only a request.

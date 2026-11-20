@@ -17,11 +17,18 @@ You own and maintain this project. A session opened at this root changes the pro
 
 ## Language
 
-English in every file: code, docs, plans, requests, messages, commits. Reply in the preferred language, the Claude
-Code setting `language` (`.claude/settings.local.json` here, or the user's `~/.claude/settings.json`), even when a
-request file is in English. With none set, the SessionStart hook `tests/caw-language.py` has the session ask for it
-first and write it; until then, reply in the language the person writes in. A plan, request or document is shown in the
-reply language and saved in English, with one line saying so.
+English in every file: code, docs, requests, messages, commits; the one exception is a plan of `maintainers/plans/`,
+saved in the owner's language (the setting below, else the language the owner writes in), but the labels of its status
+line (`Status:`, `Criticality:`), while `maintainers/plans/README.md` stays in English; plans written before stay as
+they are. Reply in the preferred language, the Claude Code setting `language` (`.claude/settings.local.json` here, or
+the user's `~/.claude/settings.json`), even when a request file is in English. With none set, the SessionStart hook
+`tests/caw-language.py` has the session ask for it first and write it; until then, reply in the language the person
+writes in. Whatever is shown to the owner is in that language, whatever the language of its source: a plan, a request,
+a document, a rule, a summary, a board. Source code and configuration are shown exactly as they are; comments and
+docstrings, shown for reading, in the owner's language; a block meant to be copied into a file, a diff or a patch is
+shown verbatim, because it must match the file, and explained around it; literal output (an error message, a log line,
+a command's output) is quoted verbatim and explained. A file written and shown is named once, with the language it is
+saved in.
 Translations live in `i18n/<locale>/`, only for documents and READMEs (`.claude/rules/docs.md`).
 The project is documented in `docs/` (install, contribute, maintain, release); the product in `workspace/docs/`.
 
