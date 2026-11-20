@@ -55,7 +55,7 @@ The ideas with no round wait for their design. `rules`, `run-tools`, `import-wor
 
 | Round | Request | Status | Notes |
 | --- | --- | --- | --- |
-| 0 | `draft-prompt.md` | pending | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; design: `plans/draft-prompt.md` |
+| 0 | `draft-prompt.md` | doing | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; design: `plans/draft-prompt.md` |
 | 0 | `session-names.md` | pending | Session names that follow the life of a request (`ai-workspace-NN`, `rq-`, `rq-done-`, `rq-closed-`, the release session), `/rename-workspace`; after `draft-prompt` (same files); design: `plans/session-names.md` |
 | 0 | `final-review.md` | pending | Last of round 0, before the first release, with `rules-size-budget` folded in; a whole-product review in a new session; every release now also ends with a final review |
 | 1 | `import-workspace-code-folders.md` | pending | After `import-workspace`; may run now, in parallel with round 0: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
