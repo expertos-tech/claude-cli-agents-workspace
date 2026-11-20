@@ -3,14 +3,14 @@ order the gate needs to merge), and warns when a message names a project that is
 date, or has a hotfix on main not merged into developer yet.
 
 The model cannot run /rename, so the title comes from here, with the same effect (hookSpecificOutput.sessionTitle).
-The request file is the one /request reads: tmp/request.md with no argument, custom/requests/<name> for a bare file
-name, else a path relative to the root. The project is the "**Project:** <name>" line of that file (written by
-/draft-request); a file without it gives the repo that holds the first projects/<path> it names: the nearest folder
-of that path, itself included, that holds a .git (any folder at any depth of projects/ may be a repo, inside another
-one too), else the last folder of the path. <n> is one more than the highest <project>-<n> among the running sessions
-of the workspace (Claude Code's registry of running sessions, plus the claims this hook keeps under the git-ignored
-.history/session-numbers/, for the names the registry does not show yet). A session already named <project>-<n> keeps
-its name.
+The request file is the one /request reads: tmp/request.md with no argument, custom/requests/<name> for a bare file name
+(custom/requests/doing/<name> when only that one exists: a request in progress), else a path relative to the root. The
+project is the "**Project:** <name>" line of that file (written by /draft-request); a file without it gives the repo
+that holds the first projects/<path> it names: the nearest folder of that path, itself included, that holds a .git (any
+folder at any depth of projects/ may be a repo, inside another one too), else the last folder of the path. <n> is one
+more than the highest <project>-<n> among the running sessions of the workspace (Claude Code's registry of running
+sessions, plus the claims this hook keeps under the git-ignored .history/session-numbers/, for the names the registry
+does not show yet). A session already named <project>-<n> keeps its name.
 The warning: a message (and, on /request, its request file) that names a repo of projects/ or a POC of custom/pocs/, by
 its folder name, by a path (projects/<path>, which names its nearest repo only; custom/pocs/<poc>;
 tmp/work/<work>/<clone>) or by the "**Project:**" line, gets the state of each (scripts/aiwp-project-state.sh) added
@@ -76,11 +76,14 @@ SESSION_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
 
 
 def request_file(root, argument):
-    """Returns the file /request reads: tmp/request.md, custom/requests/<name>, or a path relative to the root."""
+    """Returns the file /request reads: tmp/request.md, custom/requests/<name> (else custom/requests/doing/<name>, a
+    request in progress, when only that one exists), or a path relative to the root."""
     if not argument:
         return os.path.join(root, 'tmp', 'request.md')
     if '/' not in argument:
-        return os.path.join(root, 'custom', 'requests', argument)
+        pending = os.path.join(root, 'custom', 'requests', argument)
+        doing = os.path.join(root, 'custom', 'requests', 'doing', argument)
+        return doing if not os.path.lexists(pending) and os.path.isfile(doing) else pending
     return os.path.join(root, argument)
 
 

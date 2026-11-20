@@ -19,7 +19,8 @@ Runs the gate of the repository, from any cwd:
      work clone's push (bash tests/caw-work.sh push <work> --accept-terms, recorded in <terms list>.accepted) is
      skipped: PASS says how many matching lines it skipped, never the term.
   3. caw-layers: every maintenance skill (.claude/skills/caw-<name>) and rule (.claude/rules/<name>.md) with a
-     product counterpart is a layer over it, with its three sections (CLAUDE.md "Layout"; tests/lib/layers.sh);
+     product counterpart is a layer over it, with its three sections (CLAUDE.md "Layout"; tests/lib/layers.sh), and
+     so is .claude/assisted.md, the boxes of /caw-pilot assisted, over workspace/rules/assisted.md;
      the session index .claude/session-index.md is a layer over workspace/AGENTS.md with its three sections, and
      .claude/settings.json registers its SessionStart hook tests/caw-session-index.py;
      caw-layers-tests: tests/test-caw-layers.sh, the scenarios of that check on throwaway trees;

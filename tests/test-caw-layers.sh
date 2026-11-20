@@ -13,7 +13,8 @@ Usage: tests/test-caw-layers.sh [--only <test_name>] [--help]
 Runs the scenarios of tests/lib/layers.sh: valid skill and rule layers pass; a missing target, a removed section, a
 product counterpart with no pointer, a pointer naming another rule fail; a rule with no counterpart passes; a YAML
 frontmatter is skipped. The session index .claude/session-index.md must exist, point at @workspace/AGENTS.md and hold
-its three sections; .claude/settings.json must register the SessionStart hook tests/caw-session-index.py. Prints one FAIL line per failed assertion and "ok: <n> tests" at the end.
+its three sections; .claude/settings.json must register the SessionStart hook tests/caw-session-index.py. The boxes
+.claude/assisted.md must be a layer over @workspace/rules/assisted.md, with its three sections, whenever either exists. Prints one FAIL line per failed assertion and "ok: <n> tests" at the end.
 
 Exit codes: 0 every test passed; 1 a test failed; 2 usage error.
 
@@ -340,6 +341,71 @@ test_settings_missing_or_invalid() {
   run
   status_is 1
   has "  .claude/settings.json: not valid JSON"
+}
+
+# Writes .claude/assisted.md of R as a layer whose pointer is <target> (default @workspace/rules/assisted.md), with
+# the three sections, less the one named in <drop> if any.
+assisted_layer() {
+  local target="${1:-@workspace/rules/assisted.md}" drop="${2:-}" section
+  {
+    printf '%s\n\nThe boxes at the root.\n\n---\n\n' "$target"
+    for section in "## Ignore from the product rule" "## Mapping" "## CAW rules"; do
+      [ "$section" = "$drop" ] || printf '%s\n\n- a line\n\n' "$section"
+    done
+  } >"$R/.claude/assisted.md"
+}
+
+test_assisted_layer_valid() {
+  fresh
+  product_rule assisted
+  assisted_layer
+  run
+  status_is 0
+  silent
+}
+
+test_assisted_neither_passes() {
+  fresh
+  run
+  status_is 0
+  silent
+}
+
+test_assisted_layer_missing() {
+  fresh
+  product_rule assisted
+  run
+  status_is 1
+  has "  .claude/assisted.md: missing: the layer over workspace/rules/assisted.md"
+}
+
+test_assisted_layer_without_product_rule() {
+  fresh
+  assisted_layer
+  run
+  status_is 1
+  has "  .claude/assisted.md: its product rule workspace/rules/assisted.md is missing"
+}
+
+test_assisted_layer_wrong_pointer() {
+  fresh
+  product_rule assisted
+  assisted_layer "@workspace/rules/git.md"
+  run
+  status_is 1
+  has "  .claude/assisted.md: the first line of its body must be @workspace/rules/assisted.md: @workspace/rules/git.md"
+}
+
+test_assisted_layer_missing_each_section() {
+  local section
+  for section in "## Ignore from the product rule" "## Mapping" "## CAW rules"; do
+    fresh
+    product_rule assisted
+    assisted_layer "" "$section"
+    run
+    status_is 1
+    has "  .claude/assisted.md: missing section \"$section\""
+  done
 }
 
 test_usage() {

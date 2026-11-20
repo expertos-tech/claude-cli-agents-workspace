@@ -11,11 +11,16 @@ The design behind a large one is in `maintainers/plans/`.
 
 | Folder | State | Moved by |
 | --- | --- | --- |
-| `requests/` | Pending: `idea` (decisions open) or `ready` | An approved plan, an idea, or a finding of a review |
-| `requests/qa/` | On `developer`, not released; an "Execution" block records each merge | `/caw-merge` |
+| `requests/` | Pending: `idea` (decisions open) or `ready`; Status `pending` | An approved plan, an idea, or a finding of a review; `bash tests/caw-work.sh close <work> --discard` puts one back |
+| `requests/doing/` | In progress: its work is open in a clone of `tmp/work/`, from its start until `/caw-merge`; Status `doing` | `/caw-request`, through `bash tests/caw-work.sh start <name>`, before its clone opens |
+| `requests/qa/` | On `developer`, not released; an "Execution" block records each merge | `/caw-merge`, from `doing/` (or from `requests/`, for one that never went through `doing/`) |
 | `requests/done/` | Released; "Released in vX.Y.Z" added | `/caw-merge --main` |
 
-A request never moves while its stages run. There is no backlog: an idea is a pending request in state `idea`.
+A request moves once, to `doing/`, before its clone opens, and never again while its stages run:
+`bash tests/caw-work.sh start <name>` moves it and sets the Status of its row below to `doing`, in one commit pushed
+to `developer` (the one exception to `/caw-merge` moving it, `.claude/rules/security.md`); a stage that stops leaves
+it there, and `/caw-merge` takes it to `qa/`. A request with the Status `doing` is never offered to run: a closing
+board or a summary names it `in progress: <work>`. There is no backlog: an idea is a pending request in state `idea`.
 
 ## Pending
 
@@ -24,23 +29,22 @@ Each runs in its own session and clone under `tmp/work/` (`/caw-request <name>`)
 
 ### Recommended order
 
-Running now, each in its own clone: `request-in-progress` (at its merge) and `assisted-mode`.
+Nothing runs now: `request-in-progress` and `assisted-mode` are in qa. A running request has the Status `doing`.
 
 0. **Round 0, before the first installation and the first release** (`/caw-merge --main`):
-   1. `request-in-progress`, then `assisted-mode` (both running).
-   2. Once `request-in-progress` is on `developer` (it changes `/caw-merge` and the request rules), two sessions at
-      once, on disjoint paths: `draft-prompt`; and the four findings of `/caw-merge` in one session, all in
-      `.claude/skills/caw-merge/SKILL.md`: `release-developer-moved` and `release-main-sha-check` first (without them
-      the first `--main` runs with both known defects), then `execution-block-after-fixes` and
+   1. Two sessions at once, on disjoint paths: `draft-prompt`; and the four findings of `/caw-merge` in one session,
+      all in `.claude/skills/caw-merge/SKILL.md`: `release-developer-moved` and `release-main-sha-check` first
+      (without them the first `--main` runs with both known defects), then `execution-block-after-fixes` and
       `clone-path-findings-loop`.
+   2. `session-names` after `draft-prompt` (same files).
    3. `final-review` last, once everything above is on `developer`, with `rules-size-budget` folded in when the owner
       has answered its decisions.
    4. The first installation, then `/caw-merge --main`.
 1. **Round 1, the next release:** `import-workspace-code-folders` (the owner needs it to migrate a whole older
    workspace; its paths are disjoint from round 0, so it may also run now, in parallel); `import-from-fork`, the
    first real test of `aiwp update` from the first release, then `measure-quality-indicators` (both change
-   `measure.py`); `merge-project-name` and `release-per-project-proof` (both prove or change `/merge` after
-   `request-in-progress`); `merge-queue`.
+   `measure.py`); `merge-project-name` and `release-per-project-proof` (both prove or change `/merge`); `merge-queue`
+   (it also changes `/caw-merge`: never with the four findings of round 0).
 2. **Round 2:** `fork-my-rules` (needs `rules`), `tools-hub` (needs `run-tools`), `onboard`, and the ideas
    `prompt-log-results`, `gate-audit-gaps` and `aiwp-remove` once the owner answers their decisions.
 
@@ -49,52 +53,54 @@ The ideas with no round wait for their design. `rules`, `run-tools`, `import-wor
 
 ### Ready: the plan
 
-| Round | Request | Notes |
-| --- | --- | --- |
-| 0 | `request-in-progress.md` | Running, at its merge. The `doing` state of a request, so no board offers one already running; product and maintenance; design: `plans/request-in-progress.md` |
-| 0 | `assisted-mode.md` | Running. After `autonomous-work`; design: `plans/assisted-mode.md` |
-| 0 | `draft-prompt.md` | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; after `request-in-progress`; design: `plans/draft-prompt.md` |
-| 0 | `final-review.md` | Last of round 0, before the first release, with `rules-size-budget` folded in; a whole-product review in a new session; every release now also ends with a final review |
-| 1 | `import-workspace-code-folders.md` | After `import-workspace`; may run now, in parallel with round 0: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
-| 1 | `import-from-fork.md` | After the first release: the first real test of `aiwp update` |
-| 2 | `fork-my-rules.md` | Needs `rules`; design: `plans/fork-my-rules.md` |
-| 2 | `tools-hub.md` | Needs `run-tools`; design: `plans/tools-hub.md` |
+| Round | Request | Status | Notes |
+| --- | --- | --- | --- |
+| 0 | `draft-prompt.md` | pending | `/draft-prompt` (a loose text to a plan in a priority order), `/draft-request` renamed `/new-request` with a summary on screen, plans in the person's language and requests in English, the screen in the person's language; design: `plans/draft-prompt.md` |
+| 0 | `session-names.md` | pending | Session names that follow the life of a request (`ai-workspace-NN`, `rq-`, `rq-done-`, `rq-closed-`, the release session), `/rename-workspace`; after `draft-prompt` (same files); design: `plans/session-names.md` |
+| 0 | `final-review.md` | pending | Last of round 0, before the first release, with `rules-size-budget` folded in; a whole-product review in a new session; every release now also ends with a final review |
+| 1 | `import-workspace-code-folders.md` | pending | After `import-workspace`; may run now, in parallel with round 0: every code folder found by extension, POC, tool or project in rounds of checkboxes, a local repository with its history; source: its warning W-1; design: `plans/import-workspace-code-folders.md` |
+| 1 | `import-from-fork.md` | pending | After the first release: the first real test of `aiwp update` |
+| 2 | `fork-my-rules.md` | pending | Needs `rules`; design: `plans/fork-my-rules.md` |
+| 2 | `tools-hub.md` | pending | Needs `run-tools`; design: `plans/tools-hub.md` |
 
 ### Ready: findings of the reviews
 
 Small adjustments, effort low unless noted. Round 0: the first four, in one session; round 1: the other three.
 
-| Request | What it fixes |
-| --- | --- |
-| `release-developer-moved.md` | `/caw-merge --main` when `developer` moves during the release |
-| `release-main-sha-check.md` | The push of `main` and the tag tied to the sha the suite judged |
-| `execution-block-after-fixes.md` | The Execution block written before the results it records |
-| `clone-path-findings-loop.md` | Requests made of findings loop the clone path of `/caw-merge` |
-| `merge-project-name.md` | `<project>` for a plain folder of repos with no root repo |
-| `release-per-project-proof.md` | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
-| `merge-queue.md` | Two merges into one base at the same time: a queue, one merge at a time (effort high) |
+| Request | Status | What it fixes |
+| --- | --- | --- |
+| `release-developer-moved.md` | pending | `/caw-merge --main` when `developer` moves during the release |
+| `release-main-sha-check.md` | pending | The push of `main` and the tag tied to the sha the suite judged |
+| `execution-block-after-fixes.md` | pending | The Execution block written before the results it records |
+| `clone-path-findings-loop.md` | pending | Requests made of findings loop the clone path of `/caw-merge` |
+| `merge-project-name.md` | pending | `<project>` for a plain folder of repos with no root repo |
+| `release-per-project-proof.md` | pending | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
+| `merge-queue.md` | pending | One merge at a time per git repository (developer and main): a new hard rule, a BLOCKER with no override, the queue file, a log per merge, the unfinished merge, the check at each merge and `--sweep`, product and `caw-` (effort high) |
 
 ### Ideas
 
-| Round | Request | What is missing |
-| --- | --- | --- |
-| 0 | `rules-size-budget.md` | Two decisions; folded into `final-review` or right before it |
-| 1 | `measure-quality-indicators.md` | Three decisions; after `import-from-fork` (both change `measure.py`) |
-| 2 | `prompt-log-results.md` | Two decisions |
-| 2 | `gate-audit-gaps.md` | Three decisions |
-| 2 | `aiwp-remove.md` | Whether to build it |
-| 2 | `onboard.md` | Four decisions; needs `rules`; design: `plans/distribution.md` |
-| — | `qa-validation-on-developer.md` | The owner completes the design of `--qa` |
-| — | `release-tag-after-pull-request.md` | The design of the tag after a pull request into a protected `main` |
-| — | `repo-terms-skip-stops-merge.md` | Today no terms list exists here |
-| — | `workflow-agent-session-name.md` | The parent session name in the labels of Workflow agents |
-| — | `colima-console-test-on-linux.md` | Three decisions; a real Colima next to docker-ce on Linux to test the Colima console |
+| Round | Request | Status | What is missing |
+| --- | --- | --- | --- |
+| 0 | `rules-size-budget.md` | pending | Two decisions; folded into `final-review` or right before it |
+| 1 | `measure-quality-indicators.md` | pending | Three decisions; after `import-from-fork` (both change `measure.py`) |
+| 2 | `prompt-log-results.md` | pending | Two decisions |
+| 2 | `gate-audit-gaps.md` | pending | Three decisions |
+| 2 | `aiwp-remove.md` | pending | Whether to build it |
+| 2 | `onboard.md` | pending | Four decisions; needs `rules`; design: `plans/distribution.md` |
+| — | `qa-validation-on-developer.md` | pending | The owner completes the design of `--qa` |
+| — | `release-tag-after-pull-request.md` | pending | The design of the tag after a pull request into a protected `main` |
+| — | `repo-terms-skip-stops-merge.md` | pending | Today no terms list exists here |
+| — | `workflow-agent-session-name.md` | pending | The parent session name in the labels of Workflow agents |
+| — | `colima-console-test-on-linux.md` | pending | Three decisions; a real Colima next to docker-ce on Linux to test the Colima console |
 
 ## QA
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
 | `qa/2026-11-19-requests-priorities.md` | this merge | Met |
+| `qa/2026-11-20-install-developer.md` | this merge | Met: by the scenarios of the `aiwp` suite and a run on the test installation's repository |
+| `qa/request-in-progress.md` | this merge | AC-1 to AC-3, AC-7, AC-8 proven by scenario tests; AC-4 to AC-6 by headless rehearsals |
+| `qa/assisted-mode.md` | this merge | All proven: AC-1, AC-5, AC-6 in interactive and headless sessions of a test installation, AC-2 and AC-9 headless (AC-9 at the root and in a work clone), AC-8 headless, AC-3, AC-4, AC-7, AC-10 by scenario tests |
 | `qa/import-workspace.md` | this merge | All proven: AC-1 to AC-9 by scenario tests, AC-10 by a headless run on a copy of a real older workspace |
 | `qa/warnings-board.md` | 58ead34 | All proven: AC-3 and AC-4 by headless runs, in a clone or at the root and in a test installation |
 | `qa/2026-11-18-caw-work-close-readonly.md` | this merge | Met: by the scenarios of `test-caw-work.sh` |

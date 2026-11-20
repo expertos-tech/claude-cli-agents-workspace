@@ -1,7 +1,7 @@
 ---
 name: caw-pilot
-description: "Set or show this session's verification mode in the maintenance of this repository: auto (the agent runs every check of the delivery, the test installation and a tool's copy included) or manual (the owner gets a checklist and the agent waits). Use only when the owner asks."
-argument-hint: "[auto|manual]"
+description: "Set or show the mode of the maintenance of this repository: assisted (auto plus short boxes on the maintenance flow), auto (the agent runs every check of the delivery, the test installation and a tool's copy included) or manual (the owner gets a checklist and the agent waits; this session only). assisted and auto also become the default of this clone. Use only when the owner asks."
+argument-hint: "[assisted|auto|manual]"
 disable-model-invocation: true
 model: claude-opus-5-5
 effort: low
@@ -17,6 +17,9 @@ Read that file in full and follow it as the procedure, with the sections below o
 
 - The product's checks of a project (`scripts/validate.sh`, coverage, a browser on the app): here the checks of this
   repository, below.
+- `scripts/pilot-mode.sh`: the root has no such script; the file is read and written as in "Mapping".
+- The start context line `Pilot mode: ...` of the product: the root learns the mode from `CLAUDE.md` "Pilot mode", a
+  work clone from the line of `tests/caw-session-index.py`.
 
 ## Mapping
 
@@ -24,12 +27,21 @@ Read that file in full and follow it as the procedure, with the sections below o
 | --- | --- |
 | `rules/quality.md` "Verification mode" | the same rules, with the checks of "CAW rules" |
 | the task's Docker copy (`aiwp-cmds.sh up <work>/<clone>`) | `bash tests/caw-work.sh publish <work>`: by what changed |
+| `.claude/pilot-mode` of the installation | `.claude/pilot-mode.local.md` at the root, git-ignored, imported by `CLAUDE.md` "Pilot mode" |
+| `bash scripts/pilot-mode.sh show` | read `.claude/pilot-mode.local.md`: its line `` Pilot mode: `<mode>`. ``; missing, or another value: `assisted` |
+| `bash scripts/pilot-mode.sh set <mode>` | write `.claude/pilot-mode.local.md` with the Write tool, holding the one line `` Pilot mode: `<mode>`. `` |
+| `rules/assisted.md` | `.claude/assisted.md` (a layer over it) |
+| `/pilot`, `/pilot assisted`, `/pilot auto`, `/pilot manual` | `/caw-pilot`, `/caw-pilot assisted`, `/caw-pilot auto`, `/caw-pilot manual` |
 
 ## CAW rules
 
-- The checks of a maintenance delivery, in both modes run by the agent: the suite (`/caw-check`).
-- The detailed check, which the mode gives to the agent (`auto`) or to the owner (`manual`), runs on what
+- The checks of a maintenance delivery, in every mode run by the agent: the suite (`/caw-check`).
+- The detailed check, which the mode gives to the agent (`assisted`, `auto`) or to the owner (`manual`), runs on what
   `bash tests/caw-work.sh publish <work>` published: a test installation for the installer, a hook, a script or a rule
   (`/caw-test-install`); a tool of `workspace/tools/` as a copy in its own `agent_` group; documentation alone, the
   rendered pages.
 - `manual`: one item per acceptance criterion of the request, with the command ready to copy and the expected result.
+- The file is always the root's, never a work clone's: in a session started in a clone
+  (`tmp/work/<work>/claude-cli-agents-workspace`), read and write `../../../../.claude/pilot-mode.local.md`, four
+  levels up, in the root that holds `tmp/work/`: the same file `tests/caw-session-index.py` reads (`CLAUDE.md`
+  "Pilot mode").

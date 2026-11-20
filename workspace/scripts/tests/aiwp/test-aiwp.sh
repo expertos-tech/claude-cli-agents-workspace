@@ -1,206 +1,16 @@
 #!/usr/bin/env bash
-# Tests of install.sh and scripts/aiwp.sh, fully offline: a temp HOME and XDG_DATA_HOME, a local bare repository built
-# from fixture trees (v0.1.0, v0.2.0) through AIWP_REPO_URL, a stub claude. Never the real data folder or HOME.
+# Tests of install.sh, aiwp new, the opening, the release check and notice, a core changed by hand (update stops, repair
+# fixes), the registry, the refusals inside a session and the self-update of scripts/aiwp.sh. The shared fixture and
+# helpers: lib.sh (fully offline).
 # Run: bash scripts/tests/aiwp/test-aiwp.sh [--only <test_name>]
 # shellcheck disable=SC2319  # check reads the status of the test right before it, on purpose
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AIWP="$(cd "$HERE/../.." && pwd)/aiwp.sh"
 NOTICE="$(cd "$HERE/../.." && pwd)/release-notice.sh"
 SETTINGS="$(cd "$HERE/../../.." && pwd)/rules/agents/settings.json"
-INSTALLER="$(cd "$HERE/../../../.." && pwd)/install.sh"
-# shellcheck source=scripts/tests/aiwp/fixture.sh
-. "$HERE/fixture.sh"
-
-export LC_ALL=C GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-unset AIWP_REF AIWP_OS AIWP_TEST_DIE_AFTER_SWAPS AIWP_WORKSPACE CLAUDE_PROJECT_DIR GIT_DIR GIT_WORK_TREE
-# The suite may run inside a Claude Code session: aiwp would refuse most commands there. Each test that proves the
-# refusal sets the session back on purpose.
-unset CLAUDE_CODE_CHILD_SESSION CLAUDECODE
-export AIWP_TEST_NO_ANCESTOR_CHECK=1
-PY3="$(command -v python3)"
-
-BASE="$(mktemp -d "${TMPDIR:-/tmp}/aiwp-tests.XXXXXX")"
-# Installed workspaces are read-only: give write permission back before removing them.
-trap 'chmod -R u+w "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT
-REAL_PATH="$PATH"
-FAILED=0
-RUN=0
-OUT=""
-RC=0
-T=""
-CURRENT=""
-
-build_fixture "$BASE" "$AIWP" "$INSTALLER" >/dev/null
-
-# A fresh temp HOME, data folder, remote (v0.1.0 only) and stub bin folder for the current test.
-fixture() {
-  T="$BASE/t-$CURRENT"
-  chmod -R u+w "$T" 2>/dev/null
-  rm -rf "$T"
-  mkdir -p "$T/home" "$T/xdg" "$T/stub"
-  cp -R "$BASE/remote-v1.git" "$T/remote.git"
-  cat >"$T/stub/claude" <<'STUB'
-#!/usr/bin/env bash
-echo "claude-stub cwd=$PWD args=$*"
-STUB
-  cat >"$T/stub/sudo" <<STUB
-#!/usr/bin/env bash
-touch "$T/sudo-called"
-exit 1
-STUB
-  chmod 755 "$T/stub/claude" "$T/stub/sudo"
-  export HOME="$T/home" XDG_DATA_HOME="$T/xdg" AIWP_REPO_URL="$T/remote.git"
-  export PATH="$T/stub:$REAL_PATH"
-  DATA="$T/xdg/claude-cli-agents-workspace"
-  WS="$T/ws"
-}
-
-# Publishes v0.2.0 on the test's remote.
-publish_v2() {
-  git --git-dir="$T/remote.git" fetch -q "$BASE/remote-v2.git" "refs/tags/v0.2.0:refs/tags/v0.2.0" "+refs/heads/main:refs/heads/main"
-}
-
-# Makes the cached release check a day old, so the next check asks the remote.
-age_cache() {
-  local cache="$DATA/.git/aiwp/release-check"
-  [ -f "$cache" ] || return 0
-  sed 's/^checked=.*/checked=1/' "$cache" >"$cache.tmp" && mv "$cache.tmp" "$cache"
-}
-
-# Runs a command with no controlling terminal (a new session), so /dev/tty cannot be opened: the case of a pipe
-# with no person behind it, whatever terminal runs the suite.
-notty() {
-  "$PY3" -I -c 'import os, sys
-pid = os.fork()
-if pid == 0:
-    os.setsid()
-    os.execvp(sys.argv[1], sys.argv[1:])
-sys.exit(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]))' "$@"
-}
-
-# Runs a command in folder $1 on a new pseudo-terminal, as a person would: $2 is a file of lines "<text to wait
-# for><TAB><answer>", each answer typed once its text shows up. Sets OUT (everything the terminal showed) and RC.
-in_pty() {
-  local dir="$1" answers="$2"
-  shift 2
-  OUT="$("$PY3" -I - "$dir" "$answers" "$@" <<'PY' 2>&1
-import os, pty, select, sys, time
-
-cwd, script, cmd = sys.argv[1], sys.argv[2], sys.argv[3:]
-with open(script, encoding="utf-8") as handle:
-    pairs = [line.rstrip("\n").split("\t", 1) for line in handle if line.strip()]
-pid, fd = pty.fork()
-if pid == 0:
-    os.chdir(cwd)
-    os.execvp(cmd[0], cmd)
-out, pos, deadline, done = b"", 0, time.time() + 120, False
-
-
-def more():
-    """Reads what the terminal shows within a second; False at the end of the output."""
-    global out
-    ready = select.select([fd], [], [], 1)[0]
-    if not ready:
-        return True
-    try:
-        data = os.read(fd, 4096)
-    except OSError:
-        data = b""
-    out += data
-    return bool(data)
-
-
-for expect, answer in pairs:
-    while expect.encode() not in out[pos:]:
-        if done or time.time() > deadline:
-            sys.stdout.write(out.decode(errors="replace").replace("\r\n", "\n"))
-            print(f"\npty: never saw [{expect}]")
-            sys.exit(125)
-        done = not more()
-    pos = out.index(expect.encode(), pos) + len(expect)
-    os.write(fd, answer.encode() + b"\n")
-while not done and time.time() < deadline:
-    done = not more()
-status = os.waitpid(pid, 0)[1]
-sys.stdout.write(out.decode(errors="replace").replace("\r\n", "\n"))
-sys.exit(os.waitstatus_to_exitcode(status))
-PY
-)"
-  RC=$?
-}
-
-# Writes the answers file $1 for in_pty from the remaining arguments, in pairs: text to wait for, answer.
-answers() {
-  local file="$1"
-  shift
-  : >"$file"
-  while [ $# -ge 2 ]; do
-    printf '%s\t%s\n' "$1" "$2" >>"$file"
-    shift 2
-  done
-}
-
-# Runs install.sh with no terminal, with the arguments given.
-run_install() {
-  OUT="$(notty bash "$INSTALLER" "$@" 2>&1)"
-  RC=$?
-}
-
-# Runs the installed aiwp (the link in ~/.local/bin) from folder $1 with the remaining arguments.
-run_aiwp_in() {
-  local dir="$1"
-  shift
-  OUT="$(cd "$dir" && "$HOME/.local/bin/aiwp" "$@" 2>&1)"
-  RC=$?
-}
-
-# Installs and creates the workspace $WS at v0.1.0.
-setup_ws() {
-  run_install
-  [ "$RC" -eq 0 ] || { check "install" 1; return 1; }
-  run_aiwp_in "$T" new "$WS"
-  [ "$RC" -eq 0 ] || { check "aiwp new" 1; return 1; }
-}
-
-check() { # description, status (0 = ok)
-  if [ "$2" -ne 0 ]; then
-    FAILED=$((FAILED + 1))
-    echo "FAIL $CURRENT: $1 (rc=$RC out=[$OUT])"
-  fi
-}
-has() { case "$OUT" in *"$1"*) ;; *) check "missing [$1]" 1 ;; esac; }
-hasnt() { case "$OUT" in *"$1"*) check "unexpected [$1]" 1 ;; esac; }
-rc_is() { [ "$RC" -eq "$1" ]; check "rc $1" $?; }
-present() { [ -e "$1" ]; check "present: $1" $?; }
-absent() { [ ! -e "$1" ] && [ ! -L "$1" ]; check "absent: $1" $?; }
-mode_of() { python3 -I -c 'import os, sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "o"))' "$1"; }
-# The mode is read first: a command substitution in check's message would replace the status of the test.
-mode_is() {
-  local got
-  got="$(mode_of "$1" 2>/dev/null)"
-  [ "$got" = "$2" ]
-  check "mode $2 of $1 (got $got)" $?
-}
-content_is() { [ "$(cat "$1" 2>/dev/null)" = "$2" ]; check "content of $1 is [$2]" $?; }
-inode_mtime() { python3 -I -c 'import os, sys; s = os.stat(sys.argv[1]); print(s.st_ino, s.st_mtime_ns)' "$1"; }
-manifest_field() { python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$WS/.aiwp/manifest.json" "$1"; }
-version_of() { python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$1/.aiwp/manifest.json"; }
-data_tag() { git -C "$DATA" describe --tags --exact-match HEAD 2>/dev/null; }
-# Prints the registered paths, one per line.
-registry_paths() { python3 -I -c 'import json, sys; [print(w["path"]) for w in json.load(open(sys.argv[1]))["workspaces"]]' "$DATA/workspaces.json"; }
-manifest_paths() { python3 -I -c 'import json, sys; [print(f["path"]) for f in json.load(open(sys.argv[1]))["files"]]' "$WS/.aiwp/manifest.json"; }
-
-# Opens core folder $1 for a change by hand, as a person would with chmod.
-open_by_hand() { chmod u+w "$1"; }
-
-# Every file of the workspace outside the writable folders and .aiwp/, relative and sorted.
-core_files_on_disk() {
-  (cd "$WS" && find . \( -path ./custom -o -path ./projects -o -path ./tmp -o -path ./logs -o -path ./.claude -o -path ./.history \
-    -o -path ./.aiwp -o -path ./tools/observability/.data -o -path ./tools/container-console-colima/.data \
-    -o -path ./tools/container-console-colima/web \) -prune -o -type f -print | sed 's|^\./||' | sort)
-}
+# shellcheck source=scripts/tests/aiwp/lib.sh
+. "$HERE/lib.sh"
 
 # --- install.sh
 
@@ -252,6 +62,86 @@ test_install_ref_override() {
   AIWP_REF=v0.1.0 run_install
   rc_is 0
   [ "$(git -C "$DATA" describe --tags --exact-match HEAD)" = v0.1.0 ]; check "AIWP_REF wins over the newest tag" $?
+}
+
+# Pushes a commit to the branch developer of the test's remote, which the fixture lacks: the first on top of v0.1.0
+# (VERSION 0.1.0), each next one on top of the last; workspace/docs/dev.md holds $1. Sets DEV_SHA to the commit.
+publish_developer() {
+  local src="$T/dev-src"
+  if [ ! -d "$src" ]; then
+    git clone -q "$T/remote.git" "$src"
+    git -C "$src" checkout -q -b developer v0.1.0
+  fi
+  fx_write "$src" workspace/docs/dev.md "$1"
+  fx_commit "$src" "developer: $1"
+  git -C "$src" push -q origin HEAD:refs/heads/developer
+  DEV_SHA="$(git -C "$src" rev-parse HEAD)"
+}
+
+test_install_developer_checks_out_the_branch() {
+  fixture
+  publish_v2
+  publish_developer "dev one"
+  run_install --developer
+  rc_is 0
+  [ "$(git -C "$DATA" rev-parse HEAD)" = "$DEV_SHA" ]; check "--developer: the developer commit, not v0.2.0" $?
+  has "checked out: developer (0.1.0)"
+  has "note: developer is not a release: aiwp update moves this installation only to a release newer than 0.1.0, never to a newer commit of developer"
+  # After the folder, repeated, over AIWP_REF: the newest developer commit, and the workspace made from it.
+  publish_developer "dev two"
+  AIWP_REF=v0.1.0 run_install "$WS" --developer --developer
+  rc_is 0
+  [ "$(git -C "$DATA" rev-parse HEAD)" = "$DEV_SHA" ]; check "--developer wins over AIWP_REF and follows developer" $?
+  content_is "$WS/docs/dev.md" "dev two"
+  # Without it, the installer goes back to the newest release.
+  run_install
+  rc_is 0
+  [ "$(data_tag)" = v0.2.0 ]; check "no --developer: back to the newest release" $?
+  hasnt "not a release"
+}
+
+test_install_developer_and_aiwp_update() {
+  fixture
+  publish_developer "dev one"
+  local first="$DEV_SHA"
+  # The pipe form, the option before the folder.
+  OUT="$(notty bash -s -- --developer "$WS" <"$INSTALLER" 2>&1)"
+  RC=$?
+  rc_is 0
+  content_is "$WS/docs/dev.md" "dev one"
+  # aiwp update leaves the developer commit while no release is newer than its VERSION, even when developer moved.
+  publish_developer "dev two"
+  run_aiwp_in "$T" update --all
+  rc_is 0
+  [ "$(git -C "$DATA" rev-parse HEAD)" = "$first" ]; check "aiwp update never follows developer" $?
+  # A newer release: aiwp update moves the data folder and the workspace to it.
+  publish_v2
+  run_aiwp_in "$T" update --all
+  rc_is 0
+  [ "$(data_tag)" = v0.2.0 ]; check "aiwp update moves to a newer release" $?
+  content_is "$WS/docs/change.md" "change v2"
+}
+
+test_install_developer_usage_errors() {
+  fixture
+  run_install --developer a b
+  rc_is 2
+  has "one workspace folder only"
+  run_install a --developer b
+  rc_is 2
+  run_install --developer --bogus
+  rc_is 2
+  has "unknown option: --bogus"
+  absent "$DATA"
+  run_install --help
+  rc_is 0
+  has "Usage: bash install.sh [--developer] [<workspace folder>] [--help]"
+  has "developer/install.sh | bash -s -- --developer ~/my-workspace"
+  # A remote with no branch developer: refused, and nothing is linked.
+  run_install --developer
+  rc_is 1
+  has "has no branch developer"
+  absent "$HOME/.local/bin/aiwp"
 }
 
 test_install_macos_data_folder() {
@@ -368,92 +258,6 @@ test_install_again_can_only_update_the_installation() {
   rc_is 0
   run_aiwp_in "$T" update --all
   rc_is 0
-}
-
-# Holds the lock of file $1 from a background process, as an aiwp run would: sets HOLDER to its pid.
-hold_lock() {
-  mkdir -p "$(dirname "$1")"
-  "$PY3" -I -c 'import fcntl, os, sys, time
-handle = open(sys.argv[1], "a")
-fcntl.flock(handle, fcntl.LOCK_EX)
-with open(sys.argv[1], "w") as out:
-    out.write(f"{os.getpid()}\n")
-open(sys.argv[2], "w").close()
-time.sleep(60)' "$1" "$T/held" &
-  HOLDER=$!
-  while [ ! -e "$T/held" ]; do sleep 0.1; done
-  rm -f "$T/held"
-}
-
-test_git_children_never_hold_the_update_lock() {
-  fixture
-  run_install
-  setup_ws || return
-  publish_v2
-  # A hook git runs in the data folder at each checkout: it records whether descriptor 9 (the lock) reached it.
-  cat >"$DATA/.git/hooks/post-checkout" <<HOOK
-#!/usr/bin/env bash
-if { true >&9; } 2>/dev/null; then echo open >>"$T/fd9"; else echo closed >>"$T/fd9"; fi
-HOOK
-  chmod 755 "$DATA/.git/hooks/post-checkout"
-  run_aiwp_in "$T" update --all
-  rc_is 0
-  [ "$(version_of "$WS")" = 0.2.0 ]; check "updated" $?
-  AIWP_REF=v0.1.0 AIWP_WORKSPACE="$T/ws-again" run_install
-  rc_is 0
-  present "$T/fd9"
-  ! grep -q open "$T/fd9"; check "no git child got the lock descriptor" $?
-}
-
-test_update_keeps_the_data_lock_until_the_end() {
-  fixture
-  setup_ws || return
-  # A python3 that logs each flock of descriptor 9: taking it twice in one run means the lock was dropped between.
-  cat >"$T/stub/python3" <<STUB
-#!/usr/bin/env bash
-case "\$*" in *fcntl.flock*) [ "\${!#}" != 9 ] || echo flock9 >>"$T/flocks" ;; esac
-exec "$PY3" "\$@"
-STUB
-  chmod 755 "$T/stub/python3"
-  run_aiwp_in "$T" update --all
-  rc_is 0
-  [ "$(grep -c flock9 "$T/flocks" 2>/dev/null)" = 1 ]; check "one flock of the data lock in a run with no data move" $?
-  rm -f "$T/stub/python3"
-}
-
-test_a_busy_workspace_is_skipped_and_a_dead_run_leaves_no_lock() {
-  fixture
-  setup_ws || return
-  second_ws
-  publish_v2
-  hold_lock "$WS/.aiwp/aiwp.lock"
-  run_aiwp_in "$T" update --all
-  rc_is 1
-  has "another aiwp run is working on this workspace (pid $HOLDER)"
-  [ "$(version_of "$WS")" = 0.1.0 ]; check "the busy one is left alone" $?
-  [ "$(version_of "$WS2")" = 0.2.0 ]; check "the other one is updated" $?
-  run_aiwp_in "$WS"
-  rc_is 1
-  has "another aiwp run is working on this workspace"
-  kill -KILL "$HOLDER" 2>/dev/null
-  wait "$HOLDER" 2>/dev/null
-  run_aiwp_in "$T" update --all
-  rc_is 0
-  [ "$(version_of "$WS")" = 0.2.0 ]; check "updated once the holder died" $?
-}
-
-test_lock_folder_that_cannot_be_written_fails_fast() {
-  fixture
-  setup_ws || return
-  publish_v2
-  chmod 555 "$WS/.aiwp"
-  local start
-  start="$(date +%s)"
-  run_aiwp_in "$T" update "$WS"
-  chmod 755 "$WS/.aiwp"
-  [ $(($(date +%s) - start)) -lt 30 ]; check "no endless retry" $?
-  rc_is 1
-  has "cannot take the lock"
 }
 
 test_version_and_list_read_a_large_manifest() {
@@ -820,10 +624,20 @@ test_release_check_cached_a_day_and_offline() {
   [ "$(manifest_field version)" = 0.1.0 ]; check "offline keeps the version" $?
 }
 
-# Runs the release-notice hook of this repository for workspace $1, as Claude Code does (hook JSON on stdin).
+# Runs the release-notice hook of this repository for workspace $1, as Claude Code does (hook JSON on stdin), with
+# the source $2 (default startup).
 run_notice() {
-  OUT="$(echo '{"hook_event_name":"SessionStart","source":"startup"}' | CLAUDE_PROJECT_DIR="$1" bash "$NOTICE" 2>&1)"
+  OUT="$(printf '{"hook_event_name":"SessionStart","source":"%s"}' "${2:-startup}" | CLAUDE_PROJECT_DIR="$1" bash "$NOTICE" 2>&1)"
   RC=$?
+}
+
+# The pilot line of a workspace with no .claude/pilot-mode.
+PILOT_ASSISTED="Pilot mode: assisted (the default of this installation). Read rules/assisted.md in full before your first reply and follow it."
+
+# Succeeds when the hook said nothing about a release: no output, or only the pilot line.
+no_release_notice() {
+  [ -z "$OUT" ] && return 0
+  [ "$(notice_context)" = "$PILOT_ASSISTED" ]
 }
 
 # Prints the additionalContext of the hook output, or fails when it is not the SessionStart hook JSON.
@@ -839,7 +653,7 @@ test_release_notice_tells_the_session_and_never_updates() {
   setup_ws || return
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "nothing new: no output" $?
+  no_release_notice; check "nothing new: no release notice" $?
   publish_v2
   age_cache
   local before
@@ -849,6 +663,7 @@ test_release_notice_tells_the_session_and_never_updates() {
   OUT="$(notice_context)"; check "valid SessionStart JSON" $?
   has "A new workspace version 0.2.0 was detected (this workspace: 0.1.0). Tell the person to close this session and run \`aiwp update\` in a terminal."
   has "Never run aiwp update, rollback or repair yourself"
+  [ "$(printf '%s\n' "$OUT" | head -n 1)" = "$PILOT_ASSISTED" ]; check "the pilot line comes first, on its own line" $?
   [ "$(git -C "$DATA" describe --tags --exact-match HEAD)" = v0.1.0 ]; check "the hook never moves the data folder" $?
   [ "$(manifest_field version)" = 0.1.0 ]; check "the hook never updates the workspace" $?
   [ "$(core_files_on_disk | (cd "$WS" && xargs cat) | cksum)" = "$before" ]; check "the core is untouched" $?
@@ -861,7 +676,7 @@ test_release_notice_tells_the_session_and_never_updates() {
   echo v0.1.0 >"$WS/.aiwp/pin"
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "pinned: no output" $?
+  no_release_notice; check "pinned: no release notice" $?
   rm -f "$WS/.aiwp/pin"
   # An update that died halfway is told too.
   : >"$WS/.aiwp/journal"
@@ -879,7 +694,7 @@ test_release_notice_is_silent_offline_and_outside_a_workspace() {
   age_cache
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "offline: no output" $?
+  no_release_notice; check "offline: no release notice" $?
   # A folder without .aiwp/manifest.json (the product repository, any other folder): silent, even with a newer release.
   mv "$T/remote-away.git" "$T/remote.git"
   age_cache
@@ -887,12 +702,12 @@ test_release_notice_is_silent_offline_and_outside_a_workspace() {
   cp "$AIWP" "$T/plain/scripts/aiwp.sh"
   run_notice "$T/plain"
   rc_is 0
-  [ -z "$OUT" ]; check "not an installed workspace: no output" $?
+  no_release_notice; check "not an installed workspace: no release notice" $?
   # No installation in the data folder: silent.
   mv "$DATA" "$DATA.away"
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "not installed: no output" $?
+  no_release_notice; check "not installed: no release notice" $?
   mv "$DATA.away" "$DATA"
 }
 
@@ -911,7 +726,7 @@ STUB
   start="$(date +%s)"
   run_notice "$WS"
   rc_is 0
-  [ -z "$OUT" ]; check "a hanging remote: no output" $?
+  no_release_notice; check "a hanging remote: no release notice" $?
   [ $(($(date +%s) - start)) -lt 15 ]; check "a hanging remote: done within 15 s" $?
   rm -f "$T/stub/git"
   # An aiwp.sh that hangs (and leaves children holding its output): the hook stops waiting at its limit.
@@ -923,7 +738,7 @@ STUB
   OUT="$(echo '{}' | RELEASE_NOTICE_LIMIT_SECONDS=2 CLAUDE_PROJECT_DIR="$fake" bash "$NOTICE" 2>&1)"
   RC=$?
   rc_is 0
-  [ -z "$OUT" ]; check "a hanging aiwp.sh: no output" $?
+  [ "$(notice_context)" = "$PILOT_ASSISTED" ]; check "a hanging aiwp.sh: no release notice, the pilot line still told" $?
   [ $(($(date +%s) - start)) -lt 6 ]; check "a hanging aiwp.sh: the hook ends at its limit" $?
 }
 
@@ -934,11 +749,59 @@ hooks = json.load(open(sys.argv[1]))["hooks"]["SessionStart"]
 block = next(b for b in hooks if any("setup-claude.sh" in h["command"] for h in b["hooks"]))
 notice = [h for h in block["hooks"] if "scripts/release-notice.sh" in h["command"]]
 assert notice and notice[0].get("timeout", 600) <= 30, notice
-assert "startup" in block["matcher"]
+assert set(block["matcher"].split("|")) == {"startup", "resume", "clear", "compact"}, block["matcher"]
+assert sum("release-notice.sh" in h["command"] for b in hooks for h in b["hooks"]) == 1
 PY
-  check "SessionStart runs release-notice.sh next to setup-claude.sh, with a short timeout" $?
+  check "SessionStart runs release-notice.sh next to setup-claude.sh, with a short timeout, at every start source" $?
   OUT="$(bash "$NOTICE" --help)"
   has "never runs aiwp update"
+  has "Pilot mode: auto (/pilot is turned off in custom/rules-config.json)."
+}
+
+# The pilot line, by source: startup, clear and compact say it; resume does not (the transcript keeps it); clear and
+# compact never run the release check.
+test_release_notice_tells_the_pilot_mode_by_source() {
+  fixture
+  setup_ws || return
+  local src
+  for src in startup clear compact; do
+    run_notice "$WS" "$src"
+    rc_is 0
+    OUT="$(notice_context)"; check "$src: valid SessionStart JSON" $?
+    [ "$OUT" = "$PILOT_ASSISTED" ]; check "$src: the assisted line, exactly" $?
+  done
+  run_notice "$WS" resume
+  rc_is 0
+  [ -z "$OUT" ]; check "resume: no pilot line and nothing new: no output" $?
+  # No source on stdin (a run by hand): both parts.
+  OUT="$(CLAUDE_PROJECT_DIR="$WS" bash "$NOTICE" </dev/null 2>&1)"
+  OUT="$(notice_context)"; check "no source: valid JSON" $?
+  [ "$OUT" = "$PILOT_ASSISTED" ]; check "no source: the pilot line" $?
+  # The default of the installation.
+  printf 'auto\n' >"$WS/.claude/pilot-mode"
+  run_notice "$WS" clear
+  OUT="$(notice_context)"
+  [ "$OUT" = "Pilot mode: auto (the default of this installation)." ]; check "auto: the auto line" $?
+  # clear and compact never ask about a release, even with one published.
+  publish_v2
+  age_cache
+  for src in clear compact; do
+    run_notice "$WS" "$src"
+    OUT="$(notice_context)"
+    hasnt "new workspace version"
+  done
+  run_notice "$WS" resume
+  OUT="$(notice_context)"; check "resume: valid JSON" $?
+  has "A new workspace version 0.2.0 was detected"
+  hasnt "Pilot mode:"
+  # A copy of the hook with no scripts/pilot-mode.sh next to it: no pilot line, the hook still ends well.
+  local copy="$T/notice-alone"
+  mkdir -p "$copy"
+  cp "$NOTICE" "$copy/release-notice.sh"
+  OUT="$(printf '{"source":"clear"}' | CLAUDE_PROJECT_DIR="$WS" bash "$copy/release-notice.sh" 2>&1)"
+  RC=$?
+  rc_is 0
+  [ -z "$OUT" ]; check "no pilot-mode.sh: nothing to say" $?
 }
 
 test_open_never_updates() {
@@ -986,152 +849,7 @@ test_open_offline_after_a_cached_release_still_opens() {
   [ "$(data_tag)" = v0.1.0 ]; check "data folder still not moved" $?
 }
 
-# --- update
-
-test_update_swaps_only_what_changed() {
-  fixture
-  setup_ws || return
-  echo mine >"$WS/custom/mine.txt"
-  echo mine >"$WS/projects/mine.txt"
-  echo mine >"$WS/tmp/mine.txt"
-  echo mine >"$WS/logs/mine.txt"
-  local keep_before agents_before custom_before
-  keep_before="$(inode_mtime "$WS/docs/keep.md")"
-  agents_before="$(inode_mtime "$WS/AGENTS.md")"
-  custom_before="$(inode_mtime "$WS/custom/mine.txt")"
-  sleep 1
-  publish_v2
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "update: 0.1.0 -> 0.2.0"
-  has "Second release of the fixture"
-  hasnt "First release of the fixture"
-  has "updated: 0.1.0 -> 0.2.0 (4 changed, 2 added, 2 removed)"
-  [ "$(inode_mtime "$WS/docs/keep.md")" = "$keep_before" ]; check "unchanged file keeps inode and mtime" $?
-  [ "$(inode_mtime "$WS/AGENTS.md")" = "$agents_before" ]; check "unchanged AGENTS.md untouched" $?
-  [ "$(inode_mtime "$WS/custom/mine.txt")" = "$custom_before" ]; check "custom untouched" $?
-  content_is "$WS/projects/mine.txt" mine
-  content_is "$WS/tmp/mine.txt" mine
-  content_is "$WS/logs/mine.txt" mine
-  content_is "$WS/docs/change.md" "change v2"
-  mode_is "$WS/docs/change.md" 444
-  content_is "$WS/docs/new.md" "new in v0.2.0"
-  mode_is "$WS/docs/new.md" 444
-  mode_is "$WS/scripts/new-tool.sh" 555
-  absent "$WS/docs/old.md"
-  absent "$WS/docs/gone"
-  mode_is "$WS/docs" 555
-  mode_is "$WS" 555
-  absent "$WS/.aiwp/journal"
-  [ -z "$(find "$WS" -name '.aiwp-tmp.*')" ]; check "no temp file left" $?
-  [ "$(manifest_field version)" = 0.2.0 ]; check "manifest at 0.2.0" $?
-  [ "$(manifest_field tag)" = v0.2.0 ]; check "manifest tag v0.2.0" $?
-  content_is "$WS/.aiwp/backup/0.1.0/files/docs/change.md" "change v1"
-  present "$WS/.aiwp/backup/0.1.0/files/docs/old.md"
-  absent "$WS/.aiwp/backup/0.1.0/files/docs/keep.md"
-  absent "$WS/README.md.orig"
-  absent "$WS/maintainers"
-  run_aiwp_in "$WS" repair
-  rc_is 0
-  has "nothing to repair"
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "up to date: 0.2.0"
-}
-
-test_update_keeps_the_last_three_backups() {
-  fixture
-  setup_ws || return
-  local v
-  chmod u+w "$WS/.aiwp"
-  for v in 0.0.1 0.0.2 0.0.3; do
-    mkdir -p "$WS/.aiwp/backup/$v/files"
-    touch -t "20260101000${v##*.}" "$WS/.aiwp/backup/$v"
-  done
-  publish_v2
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  [ "$(find "$WS/.aiwp/backup" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 3 ]; check "three backups kept" $?
-  present "$WS/.aiwp/backup/0.1.0"
-  absent "$WS/.aiwp/backup/0.0.1"
-}
-
-# --- update: the link of the removed single-agent mode
-# The fixture never ships scripts/single-claude.sh, so a link to it in the workspace is the dangling link an update
-# leaves once the file is gone: the state the cleanup looks at, with no change to the fixture.
-
-SINGLE_LINE="removed ~/.local/bin/single-claude: the single-agent mode no longer exists"
-
-test_update_removes_the_single_claude_link_of_this_workspace() {
-  fixture
-  setup_ws || return
-  ln -s "$WS/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
-  publish_v2
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "updated: 0.1.0 -> 0.2.0"
-  has "$SINGLE_LINE"
-  absent "$HOME/.local/bin/single-claude"
-  [ -L "$HOME/.local/bin/aiwp" ]; check "the aiwp link is untouched" $?
-  # The same file through another spelling of the workspace path (a link to it), on a run that is up to date.
-  ln -s "$WS" "$T/alias"
-  ln -s "$T/alias/scripts/../scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "up to date: 0.2.0"
-  has "$SINGLE_LINE"
-  absent "$HOME/.local/bin/single-claude"
-}
-
-test_update_keeps_a_single_claude_link_to_another_folder() {
-  fixture
-  setup_ws || return
-  second_ws
-  ln -s "$WS2/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
-  publish_v2
-  run_aiwp_in "$T" update "$WS"
-  rc_is 0
-  has "updated: 0.1.0 -> 0.2.0"
-  hasnt "single-claude"
-  [ -L "$HOME/.local/bin/single-claude" ]; check "the link to another workspace stays" $?
-  [ "$(readlink "$HOME/.local/bin/single-claude")" = "$WS2/scripts/single-claude.sh" ]; check "its target unchanged" $?
-  # A link to a single-claude.sh that exists, in a folder outside every workspace, is left alone too.
-  rm -f "$HOME/.local/bin/single-claude"
-  mkdir -p "$T/elsewhere/scripts"
-  echo mine >"$T/elsewhere/scripts/single-claude.sh"
-  ln -s "$T/elsewhere/scripts/single-claude.sh" "$HOME/.local/bin/single-claude"
-  run_aiwp_in "$T" update "$WS"
-  rc_is 0
-  has "up to date: 0.2.0"
-  hasnt "single-claude"
-  [ -L "$HOME/.local/bin/single-claude" ]; check "the link to an existing file stays" $?
-}
-
-test_update_keeps_a_regular_file_named_single_claude() {
-  fixture
-  setup_ws || return
-  printf '#!/usr/bin/env bash\necho mine\n' >"$HOME/.local/bin/single-claude"
-  publish_v2
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "updated: 0.1.0 -> 0.2.0"
-  hasnt "single-claude"
-  [ -f "$HOME/.local/bin/single-claude" ] && [ ! -L "$HOME/.local/bin/single-claude" ]; check "the file stays" $?
-  content_is "$HOME/.local/bin/single-claude" "$(printf '#!/usr/bin/env bash\necho mine')"
-}
-
-test_update_with_no_single_claude_link_says_nothing() {
-  fixture
-  setup_ws || return
-  local before
-  before="$(ls -A "$HOME/.local/bin")"
-  publish_v2
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "updated: 0.1.0 -> 0.2.0"
-  hasnt "single-claude"
-  [ "$(ls -A "$HOME/.local/bin")" = "$before" ]; check "the bin folder unchanged" $?
-}
+# --- a core changed by hand: update stops, repair fixes
 
 test_edited_core_stops_update_and_repair_fixes() {
   fixture
@@ -1239,113 +957,6 @@ test_symlinked_output_folder_is_never_followed() {
   [ "$(cd "$T/ext" && find . | sort | tr '\n' ' ')" = ". ./sub " ]; check "the link target is unchanged" $?
 }
 
-test_crash_mid_update_is_undone_by_the_next_run() {
-  fixture
-  setup_ws || return
-  publish_v2
-  AIWP_TEST_DIE_AFTER_SWAPS=2 run_aiwp_in "$WS" update --all
-  [ "$RC" -ne 0 ]; check "the run was killed" $?
-  present "$WS/.aiwp/journal"
-  [ "$(manifest_field version)" = 0.1.0 ]; check "manifest still 0.1.0 after the crash" $?
-  run_aiwp_in "$WS" version
-  has "attention: an aiwp update or rollback stopped halfway"
-  present "$WS/.aiwp/journal"
-  # The opening never swaps a file: it refuses and names the way out.
-  run_aiwp_in "$WS"
-  rc_is 1
-  has "stopped halfway in this workspace; run aiwp repair"
-  hasnt "claude-stub"
-  present "$WS/.aiwp/journal"
-  run_aiwp_in "$WS" repair
-  rc_is 0
-  has "recovering: the last aiwp update stopped halfway; restoring version 0.1.0"
-  has "recovered: version 0.1.0 restored"
-  absent "$WS/.aiwp/journal"
-  absent "$WS/docs/new.md"
-  absent "$WS/scripts/new-tool.sh"
-  content_is "$WS/docs/change.md" "change v1"
-  content_is "$WS/docs/old.md" "removed in v0.2.0"
-  mode_is "$WS/docs" 555
-  mode_is "$WS/scripts" 555
-  mode_is "$WS" 555
-  [ -z "$(find "$WS" -name '.aiwp-tmp.*')" ]; check "no temp file left" $?
-  run_aiwp_in "$WS" repair
-  has "nothing to repair"
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "updated: 0.1.0 -> 0.2.0"
-}
-
-test_rollback_pins_and_update_clears_the_pin() {
-  fixture
-  setup_ws || return
-  run_aiwp_in "$WS" rollback
-  rc_is 1
-  has "nothing to roll back to"
-  publish_v2
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  echo mine >"$WS/projects/mine.txt"
-  run_aiwp_in "$WS" rollback
-  rc_is 0
-  has "rolled back: 0.2.0 -> 0.1.0; pinned at 0.1.0"
-  [ "$(manifest_field version)" = 0.1.0 ]; check "manifest back at 0.1.0" $?
-  content_is "$WS/.aiwp/pin" 0.1.0
-  content_is "$WS/docs/change.md" "change v1"
-  content_is "$WS/docs/old.md" "removed in v0.2.0"
-  content_is "$WS/docs/gone/only.md" "removed with its folder in v0.2.0"
-  absent "$WS/docs/new.md"
-  absent "$WS/scripts/new-tool.sh"
-  mode_is "$WS/docs/old.md" 444
-  mode_is "$WS/docs/gone" 555
-  mode_is "$WS" 555
-  content_is "$WS/projects/mine.txt" mine
-  run_aiwp_in "$WS" repair
-  has "nothing to repair"
-  run_aiwp_in "$WS"
-  rc_is 0
-  has "this workspace is pinned at 0.1.0"
-  has "claude-stub"
-  [ "$(manifest_field version)" = 0.1.0 ]; check "a pinned workspace does not update on open" $?
-  run_aiwp_in "$WS" version
-  has "pinned at: 0.1.0"
-  run_aiwp_in "$WS" list
-  has "pinned at 0.1.0"
-  # Update all leaves a pinned workspace alone; naming it updates it.
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  has "skipped: pinned"
-  [ "$(manifest_field version)" = 0.1.0 ]; check "update --all keeps the pin" $?
-  run_aiwp_in "$T" update "$WS"
-  rc_is 0
-  has "updated: 0.1.0 -> 0.2.0"
-  absent "$WS/.aiwp/pin"
-}
-
-test_crash_mid_rollback_is_undone_by_the_next_run() {
-  fixture
-  setup_ws || return
-  publish_v2
-  run_aiwp_in "$WS" update --all
-  rc_is 0
-  AIWP_TEST_DIE_AFTER_SWAPS=3 run_aiwp_in "$WS" rollback
-  [ "$RC" -ne 0 ]; check "the rollback was killed" $?
-  present "$WS/.aiwp/journal"
-  run_aiwp_in "$WS" repair
-  rc_is 0
-  has "recovering: the last aiwp rollback stopped halfway; restoring version 0.2.0"
-  absent "$WS/.aiwp/journal"
-  absent "$WS/.aiwp/pin"
-  content_is "$WS/docs/change.md" "change v2"
-  content_is "$WS/docs/new.md" "new in v0.2.0"
-  absent "$WS/docs/old.md"
-  absent "$WS/docs/gone"
-  mode_is "$WS/docs" 555
-  [ -z "$(find "$WS" -name '.aiwp-tmp.*' -o -name 'work.*' -path '*/.aiwp/*')" ]; check "no leftovers" $?
-  run_aiwp_in "$WS" repair
-  has "nothing to repair"
-}
-
 # --- registry
 
 test_registry_add_list_forget_and_missing_folder() {
@@ -1444,161 +1055,6 @@ test_registry_registers_an_existing_workspace() {
   absent "$DATA/workspaces.json"
 }
 
-# --- update: the list, the choice, the summary
-
-# Creates a second workspace, $WS2, at v0.1.0 (after setup_ws).
-second_ws() {
-  WS2="$T/ws2"
-  run_aiwp_in "$T" new "$WS2"
-  [ "$RC" -eq 0 ] || check "aiwp new ws2" 1
-}
-
-test_update_lists_and_updates_all_by_default() {
-  fixture
-  setup_ws || return
-  second_ws
-  publish_v2
-  answers "$T/answers" "Choose [1]:" ""
-  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" update
-  rc_is 0
-  has "1  0.1.0      update available (0.2.0)      $WS"
-  has "2  0.1.0      update available (0.2.0)      $WS2"
-  has "[1] Update all (default)"
-  has "[2] Choose which (numbers)"
-  has "[3] Cancel"
-  has "Summary (data folder at 0.2.0):"
-  [ "$(version_of "$WS")" = 0.2.0 ] && [ "$(version_of "$WS2")" = 0.2.0 ]; check "both updated" $?
-  [ "$(python3 -I -c 'import json, sys; print(" ".join(w["version"] for w in json.load(open(sys.argv[1]))["workspaces"]))' "$DATA/workspaces.json")" = "0.2.0 0.2.0" ]
-  check "the registry records the new versions" $?
-}
-
-test_update_choose_numbers() {
-  fixture
-  setup_ws || return
-  second_ws
-  publish_v2
-  answers "$T/answers" "Choose [1]:" 9 "Answer 1, 2 or 3." 2 "(for example: 1 3):" "5 x" "Not a number of the list: x" 2
-  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" update
-  rc_is 0
-  has "Not a number of the list: 5"
-  [ "$(version_of "$WS")" = 0.1.0 ]; check "the first one was not chosen" $?
-  [ "$(version_of "$WS2")" = 0.2.0 ]; check "the second one was updated" $?
-}
-
-test_update_cancel_changes_nothing() {
-  fixture
-  setup_ws || return
-  publish_v2
-  answers "$T/answers" "Choose [1]:" 3
-  in_pty "$WS" "$T/answers" "$HOME/.local/bin/aiwp" update
-  rc_is 0
-  has "cancelled: nothing was changed"
-  [ "$(version_of "$WS")" = 0.1.0 ]; check "not updated" $?
-  [ "$(data_tag)" = v0.1.0 ]; check "the data folder did not move" $?
-}
-
-test_update_needs_a_terminal_or_a_target() {
-  fixture
-  setup_ws || return
-  publish_v2
-  run_aiwp_in "$WS" update
-  rc_is 2
-  has "with no terminal, aiwp update needs --all or a workspace folder"
-  [ "$(data_tag)" = v0.1.0 ]; check "nothing moved" $?
-}
-
-test_update_one_folder_only() {
-  fixture
-  setup_ws || return
-  second_ws
-  publish_v2
-  run_aiwp_in "$T" update "$WS2"
-  rc_is 0
-  has "Summary (data folder at 0.2.0):"
-  [ "$(version_of "$WS")" = 0.1.0 ]; check "the other one stays" $?
-  [ "$(version_of "$WS2")" = 0.2.0 ]; check "the one named is updated" $?
-  # The other one, behind the data folder, is updated by a later run without moving the data folder again.
-  run_aiwp_in "$T" update --all
-  rc_is 0
-  [ "$(version_of "$WS")" = 0.2.0 ]; check "caught up with the data folder" $?
-  has "up to date (0.2.0)"
-}
-
-test_update_all_skips_a_changed_core_and_a_missing_folder_without_blocking() {
-  fixture
-  setup_ws || return
-  second_ws
-  run_aiwp_in "$T" new "$T/ws3"
-  chmod u+w "$WS/docs/change.md"
-  echo edited >"$WS/docs/change.md"
-  chmod -R u+w "$T/ws3"
-  rm -rf "$T/ws3"
-  publish_v2
-  run_aiwp_in "$T" update --all
-  rc_is 1
-  has "skipped: the core changed (aiwp repair in it, then aiwp update)"
-  has "skipped: folder missing (aiwp forget $T/ws3)"
-  has "updated 0.1.0 -> 0.2.0"
-  [ "$(version_of "$WS")" = 0.1.0 ]; check "the changed one is left as it is" $?
-  content_is "$WS/docs/change.md" edited
-  [ "$(version_of "$WS2")" = 0.2.0 ]; check "the other one is updated" $?
-}
-
-test_update_asks_or_skips_when_claude_runs_in_the_workspace() {
-  fixture
-  setup_ws || return
-  second_ws
-  publish_v2
-  # A process named claude whose current folder is inside the workspace.
-  (cd "$WS/docs" && exec -a claude sleep 120) &
-  local fake=$!
-  sleep 0.3
-  run_aiwp_in "$T" update --all
-  rc_is 1
-  has "claude is running in this workspace (pid $fake)"
-  has "skipped: claude is running (pid $fake)"
-  [ "$(version_of "$WS")" = 0.1.0 ]; check "not swapped under the running claude" $?
-  [ "$(version_of "$WS2")" = 0.2.0 ]; check "the other one is updated" $?
-  answers "$T/answers" "Update it anyway? [y/N]" n
-  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" update "$WS"
-  rc_is 1
-  [ "$(version_of "$WS")" = 0.1.0 ]; check "answered no" $?
-  answers "$T/answers" "Update it anyway? [y/N]" y
-  in_pty "$T" "$T/answers" "$HOME/.local/bin/aiwp" update "$WS"
-  rc_is 0
-  [ "$(version_of "$WS")" = 0.2.0 ]; check "answered yes" $?
-  kill "$fake" 2>/dev/null
-  wait "$fake" 2>/dev/null
-}
-
-test_update_up_to_date_with_claude_running_is_not_a_skip() {
-  fixture
-  setup_ws || return
-  (cd "$WS" && exec -a claude sleep 120) &
-  local fake=$!
-  sleep 0.3
-  run_aiwp_in "$T" update --all
-  rc_is 0
-  has "up to date (0.1.0)"
-  hasnt "claude is running"
-  kill "$fake" 2>/dev/null
-  wait "$fake" 2>/dev/null
-}
-
-test_update_force_goes_on_with_claude_running() {
-  fixture
-  setup_ws || return
-  publish_v2
-  (cd "$WS" && exec -a claude sleep 120) &
-  local fake=$!
-  sleep 0.3
-  run_aiwp_in "$T" update --all --force
-  rc_is 0
-  [ "$(version_of "$WS")" = 0.2.0 ]; check "--force updates anyway" $?
-  kill "$fake" 2>/dev/null
-  wait "$fake" 2>/dev/null
-}
-
 # --- inside a Claude Code session
 
 test_session_refuses_what_changes_state() {
@@ -1690,27 +1146,4 @@ STUB
   rm -f "$T/stub/git"
 }
 
-# Runs every test_* function (or the one given with --only) in a subshell.
-main() {
-  local only="" name
-  if [ "${1:-}" = "--only" ]; then only="${2:-}"; fi
-  [ -f "$INSTALLER" ] || echo "note: $INSTALLER not found: the fixture carries a stub installer, the install tests fail"
-  for name in $(declare -F | awk '{print $3}' | grep '^test_'); do
-    [ -z "$only" ] || [ "$name" = "$only" ] || continue
-    CURRENT="$name"
-    RUN=$((RUN + 1))
-    local before="$FAILED"
-    FAILED=0
-    (
-      "$name"
-      exit "$FAILED"
-    )
-    local rc=$?
-    FAILED=$((before + rc))
-    [ "$rc" -eq 0 ] && echo "ok $name" || echo "FAILED $name ($rc checks)"
-  done
-  echo "aiwp tests: $RUN run, $FAILED failed checks"
-  [ "$FAILED" -eq 0 ]
-}
-
-main "$@"
+main aiwp "$@"

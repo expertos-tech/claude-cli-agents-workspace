@@ -14,7 +14,7 @@ POCs), on the branch of the request. Everything is allowed inside a clone; proje
 the gate. <work> is <yyyy-mm-dd>-<kebab-slug>, one folder per request.
 
 Commands:
-  open <work> <repo>... [--branch <type>/<slug>] [--from-main]
+  open <work> <repo>... [--branch <type>/<slug>] [--from-main] [--request <file>] [--resume]
         <repo> is a repo folder relative to projects/, at any depth (e.g. billing-api, acme/billing-web), a repo
         inside another one included (billing/billing-api, where billing/ is a repo itself), or "custom" for a POC.
         For each: clones it to tmp/work/<work>/<clone>/, points the clone's origin at the real remote of the repo,
@@ -34,20 +34,47 @@ Commands:
         only by gate and hotfix (scripts/aiwp-gate.sh --help). A repo with no main (on its remote, when it has one)
         or with no developer (the normal flow already works from main: open without --from-main) is refused, and
         nothing is created for any repo of the call.
+        --request <file>: the request the work runs (/request): a bare name is custom/requests/<name>, else
+        custom/requests/doing/<name>; a path must be one of the two. A pending request written by hand may be
+        untracked or changed in custom/: before any clone it is scanned for secrets (scripts/validate.sh --only
+        secrets --path custom, the scan guard-bash runs on a commit in custom/). Checked before any clone, refused
+        with nothing created: a secret found; a scan that did not run (no Docker, a tool error: commit the file by
+        path in custom/ yourself, where guard-bash asks you to confirm, then open again); a pending file ignored by
+        git in custom/ or named local.settings.json; a request of doing/ not committed (untracked or changed); a
+        pending one whose doing/ copy exists; a request another work records; a work that records another request.
+        After every clone is open, a pending request written by hand is committed as it is on disk, by its path only
+        ("chore(requests): add <name>"; other changes of custom/, staged or not, stay out), then it moves to
+        custom/requests/doing/<name> (git mv), committed by path in custom/ ("chore(requests): start <name>", its
+        body naming the work, the branch and the repos) and pushed to the remote of custom/ (no remote, or a failed
+        push: the commits stay, with an attention: line). A request already in doing/ does not move. The work
+        records it in tmp/work/<work>/.request.
+        --resume: a branch that already exists on the remote is checked out from it (the work goes on there), instead
+        of being refused; a repo where it does not exist starts from the base, with an attention: line.
   run <work>/<clone> -- <command>...
         Runs the command with the clone as the current folder. Refuses a path outside tmp/work/.
   status [<work>]
-        Per clone: branch, base, commits ahead of the base, commits not on the remote, files changed not committed;
-        then one "copy:" line per Docker group of the clone (its agent_ group, by the compose folder label or its
-        override file): state, host ports and networks=<service>:edge|internal. Docker not reachable: one line
-        "Docker: not reachable", same exit code.
+        Per work that records a request: "tmp/work/<work>  request=custom/requests/doing/<name>" (with "(missing)"
+        when that file is not there). Per clone: branch, base, commits ahead of the base, commits not on the remote,
+        files changed not committed; then one "copy:" line per Docker group of the clone (its agent_ group, by the
+        compose folder label or its override file): state, host ports and networks=<service>:edge|internal. Docker
+        not reachable: one line "Docker: not reachable", same exit code. Without <work>, last: one
+        "stale: custom/requests/doing/<name>" line per file of custom/requests/doing/ that no work of tmp/work/ records.
   push <work>/<clone>
         Pushes the branch now (what a failed automatic push left behind), with the pre-push checks.
-  close <work> [--discard]
+  close <work> [--discard [--start-over]]
         Deletes tmp/work/<work>/ when every clone has nothing uncommitted, nothing off the remote, and its branch in
         the base of its source repo. Otherwise lists what would be lost and exits 1; --discard deletes anyway (the
         remote branches stay). Before the folder goes, the Docker copy groups of every clone of the work are
         destroyed (below); a refused close destroys nothing.
+        The request the work records (open --request): with --discard it moves back from custom/requests/doing/ to
+        custom/requests/, committed by path in custom/ ("chore(requests): put back <name>") and pushed like open's.
+        --start-over (with --discard: start the request again): the work branch of each clone is first deleted on its
+        remote (never developer, main or master; with the lease of the sha the clone pushed last, so a commit pushed
+        from elsewhere stays and the close is refused), then the folder goes; the request stays in doing/, and when it
+        has a "## Stopped" section the line "Discarded on <yyyy-mm-dd>: started over." is appended, committed and
+        pushed. Then open the new clone with the same --branch and --request. Refused, with nothing deleted: a request
+        file with changes not committed in custom/, or (--discard) a pending file of the same name. A branch that
+        cannot be deleted refuses the close (exit 1); the branches already deleted stay deleted.
   up <work>/<clone> [-- <docker compose options>...]
         Publishes the task's copy to the local Docker, never over the final stack: compose project agent_<MMDD>-<slug>
         (the date and slug of <work>: 2026-11-18-add-export -> agent_1118-add-export); when another clone of the same
@@ -131,6 +158,7 @@ is refused, even when named. The groups of a clone: the names in its override fi
 compose folder label lies in the clone. The work is in scripts/agent-copy.py.
 
 Environment: AIWP_SECRETS_CMD replaces the gitleaks run (tests); it gets the repo and the range as arguments.
+AIWP_DOCKER and AIWP_VALIDATE replace docker and scripts/validate.sh in the scan of a request open commits (tests).
 AIWP_CUSTOM_DIR (as in run-tools.sh): binds under custom/ of the workspace are read from that folder instead.
 Exit: 0 ok; 1 refused or failed; 2 usage error.
 USAGE
@@ -140,6 +168,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 work_root="$root/tmp/work"
 work_re='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$'
 protected_re='^(developer|main|master)$'
+custom_root="$root/custom"
+# The name of a request file of custom/requests/: one file, no subfolder.
+request_re='^[A-Za-z0-9][A-Za-z0-9._-]*$'
 
 # Prints an error and exits with the given code.
 die() {
@@ -372,13 +403,186 @@ require_hotfix_source() {
   [ "$dev" = 1 ] || die 1 "$repo has no developer: its base is main, and the normal flow already works from it (open without --from-main); nothing was created"
 }
 
+# Prints the works of tmp/work/ whose .request records the request given (custom/requests/doing/<name>), one per line.
+works_recording() {
+  local rel="$1" f
+  for f in "$work_root"/*/.request; do
+    [ -f "$f" ] || continue
+    if [ "$(head -n 1 "$f")" = "$rel" ]; then basename "$(dirname "$f")"; fi
+  done
+}
+
+# Prints the request a work records (custom/requests/doing/<name>), or nothing.
+work_request() {
+  local f="$work_root/$1/.request" rel
+  [ -f "$f" ] || return 0
+  rel="$(head -n 1 "$f")"
+  if [[ "${rel#custom/requests/doing/}" =~ $request_re ]] && [ "${rel#custom/requests/doing/}" != "$rel" ]; then
+    echo "$rel"
+  fi
+}
+
+# Fails, before anything changes, unless custom/ is a git repo and its request file (relative to custom/) is
+# committed there with no change: so a move of the scripts is a pure rename, and never commits text no person saw.
+require_committed_request() {
+  local rel="$1"
+  [ "$(git -C "$custom_root" rev-parse --show-toplevel 2>/dev/null)" = "$(physical "$custom_root" || true)" ] ||
+    die 1 "custom/ is not a git repo: the request cannot move (bash scripts/setup-claude.sh clones it); nothing was changed"
+  git -C "$custom_root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 ||
+    die 1 "custom/$rel is not committed in custom/: commit it by path first (git -C custom add, then commit); nothing was changed"
+  [ -z "$(git -C "$custom_root" status --porcelain -- "$rel")" ] ||
+    die 1 "custom/$rel has changes not committed: commit them by path in custom/ first; nothing was changed"
+}
+
+# Scans one file of custom/ (relative to custom/) for secrets the way guard-bash scans a commit in custom/:
+# scripts/validate.sh --only secrets --path custom --files <list>, once docker info answers. Its output goes to stderr.
+# Returns 0 when clean, 1 when a secret is found (exit 1 with a finding in the output), 2 when the scan did not run,
+# with the reason on stdout.
+scan_custom_file() {
+  local rel="$1" docker="${AIWP_DOCKER:-docker}" validate="${AIWP_VALIDATE:-$root/scripts/validate.sh}" list out rc=0
+  if ! command -v "$docker" >/dev/null 2>&1 || ! timeout 15 "$docker" info >/dev/null 2>&1; then
+    echo "Docker did not respond"
+    return 2
+  fi
+  list="$(mktemp "${TMPDIR:-/tmp}/aiwp-request-scan.XXXXXX")" || { echo "no temporary file for the list"; return 2; }
+  printf 'custom/%s\n' "$rel" >"$list"
+  out="$(cd "$root" && timeout 180 bash "$validate" --only secrets --path custom --files "$list" 2>&1 </dev/null)" || rc=$?
+  rm -f "$list"
+  out="$(printf '%s\n' "$out" | sed "s/$(printf '\033')\\[[0-9;]*[A-Za-z]//g")"
+  [ "$rc" -eq 0 ] && return 0
+  printf '%s\n' "$out" | tail -n 30 >&2
+  if [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -Eq 'leaks found|RuleID|Finding:|tracked by git'; then return 1; fi
+  echo "scripts/validate.sh exit $rc with no finding"
+  return 2
+}
+
+# Prints the git blob of a pending request (relative to custom/) that open must commit before it moves (untracked, or
+# changed in the index or on disk), or nothing when it is committed with no change. Exits 1, before anything changes,
+# when custom/ is no git repo, the file is ignored there or named like a local secret file, or its secret scan finds
+# a secret or does not run.
+request_to_commit() {
+  local rel="$1" why
+  [ "$(git -C "$custom_root" rev-parse --show-toplevel 2>/dev/null)" = "$(physical "$custom_root" || true)" ] ||
+    die 1 "custom/ is not a git repo: the request cannot move (bash scripts/setup-claude.sh clones it); nothing was changed"
+  if git -C "$custom_root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 &&
+    [ -z "$(git -C "$custom_root" status --porcelain -- "$rel")" ]; then
+    return 0
+  fi
+  [ "${rel##*/}" != local.settings.json ] ||
+    die 1 "custom/$rel is named like a local secret file, which never goes into git: rename it; nothing was created"
+  ! git -C "$custom_root" check-ignore -q --no-index -- "$rel" ||
+    die 1 "custom/$rel is ignored by git in custom/: open cannot commit it; change custom/.gitignore or rename it; nothing was created"
+  why="$(scan_custom_file "$rel")" || case "$?" in
+    1) die 1 "custom/$rel holds a secret (the scan above): take it out of the file, then open again; nothing was created" ;;
+    *) die 1 "the secret scan of custom/$rel did not run ($why): open commits a request only after the scan passes. Start Docker and open again, or commit it by path in custom/ yourself (guard-bash asks you to confirm), then open again; nothing was created" ;;
+  esac
+  git -C "$custom_root" hash-object -- "$rel"
+}
+
+# Pushes the branch of custom/ to its remote. Never fails: no remote, a detached HEAD or a refused push leave the commit
+# in custom/ with an attention: line.
+push_custom() {
+  local branch
+  git -C "$custom_root" remote get-url origin >/dev/null 2>&1 ||
+    { echo "attention: custom/ has no remote: the commit stays in custom/"; return 0; }
+  branch="$(git -C "$custom_root" symbolic-ref -q --short HEAD)" ||
+    { echo "attention: custom/ is not on a branch: the commit stays in custom/, not pushed"; return 0; }
+  if timeout 120 git -C "$custom_root" push -q origin "HEAD:refs/heads/$branch" 2>&1; then
+    echo "pushed: custom/ $branch"
+  else
+    echo "attention: the push of custom/ failed; the commit stays in custom/: git -C custom push origin $branch"
+  fi
+}
+
+# Commits the paths given (relative to custom/) by path in custom/, then pushes custom/. A commit made inside Claude
+# Code ends with [#automatic-agent-commit] (rules/git.md "Commits"). Returns 1 when the commit failed.
+commit_custom() {
+  local title="$1" body="$2" msg
+  shift 2
+  msg="$title"$'\n\n'"$body"
+  [ -z "${CLAUDECODE:-}" ] || msg+=$'\n\n[#automatic-agent-commit]'
+  git -C "$custom_root" commit -q -m "$msg" -- "$@" || return 1
+  echo "committed in custom/: $(git -C "$custom_root" rev-parse --short HEAD) $title"
+  push_custom
+}
+
+# Resolves the --request of open to "<state> <name> [<blob>]": pending (custom/requests/<name>, checked by
+# request_to_commit: <blob> when open must commit it first) or doing (custom/requests/doing/<name>, checked as
+# require_committed_request does); a pending one whose doing/ copy exists, or one another work records, is refused.
+# Exits 2 for a path elsewhere, 1 for the refusals.
+resolve_request() {
+  local given="$1" work="$2" rel name state other blob=""
+  case "$given" in
+    */*)
+      rel="$given"
+      case "$rel" in "$root"/*) rel="${rel#"$root"/}" ;; esac
+      rel="${rel#./}"
+      case "$rel" in
+        custom/requests/doing/*) state=doing; name="${rel#custom/requests/doing/}" ;;
+        custom/requests/*) state=pending; name="${rel#custom/requests/}" ;;
+        *) die 2 "--request is a file of custom/requests/ or custom/requests/doing/: $given" ;;
+      esac
+      ;;
+    *)
+      name="$given"
+      if [ -f "$custom_root/requests/$name" ]; then state=pending; else state=doing; fi
+      ;;
+  esac
+  [[ "$name" =~ $request_re ]] || die 2 "--request names one file of custom/requests/ or custom/requests/doing/: $given"
+  if [ "$state" = pending ]; then rel="requests/$name"; else rel="requests/doing/$name"; fi
+  if [ ! -f "$custom_root/$rel" ] || [ -L "$custom_root/$rel" ]; then
+    case "$given" in
+      */*) die 1 "request not found: custom/$rel; nothing was created" ;;
+      *) die 1 "request not found: custom/requests/$name nor custom/requests/doing/$name; nothing was created" ;;
+    esac
+  fi
+  [ "$state" = doing ] || [ ! -e "$custom_root/requests/doing/$name" ] ||
+    die 1 "custom/requests/doing/$name exists: that request is in progress (/request $name resumes it or starts over); nothing was created"
+  if [ "$state" = pending ]; then blob="$(request_to_commit "$rel")" || exit 1; else require_committed_request "$rel"; fi
+  other="$(work_request "$work")"
+  [ -z "$other" ] || [ "$other" = "custom/requests/doing/$name" ] ||
+    die 1 "tmp/work/$work records another request ($other): use another <work>; nothing was created"
+  while IFS= read -r other; do
+    [ -z "$other" ] || [ "$other" = "$work" ] ||
+      die 1 "custom/requests/doing/$name is in progress in tmp/work/$other: resume it there, or start over (bash scripts/aiwp-cmds.sh close $other --discard --start-over); nothing was created"
+  done < <(works_recording "custom/requests/doing/$name")
+  echo "$state $name${blob:+ $blob}"
+}
+
+# Moves a pending request to custom/requests/doing/, committed by path in custom/ and pushed; then the work records it.
+# With the blob its scan passed on (a request written by hand), the file is first committed as it is, by its path only,
+# when it still holds that text.
+request_to_doing() {
+  local name="$1" work="$2" branch="$3" repos="$4" blob="${5:-}" msg
+  if [ -n "$blob" ]; then
+    [ "$(git -C "$custom_root" hash-object -- "requests/$name" 2>/dev/null || true)" = "$blob" ] ||
+      die 1 "custom/requests/$name changed after its secret scan: nothing committed in custom/; the clones stay open: run the same open again (it scans it again), or close them with bash scripts/aiwp-cmds.sh close $work --discard"
+    msg="chore(requests): add $name"$'\n\n'"- written by hand, committed as it was by open --request for tmp/work/$work"
+    [ -z "${CLAUDECODE:-}" ] || msg+=$'\n\n[#automatic-agent-commit]'
+    if ! git -C "$custom_root" add -- "requests/$name" ||
+      ! git -C "$custom_root" commit -q -m "$msg" -- "requests/$name"; then
+      die 1 "the commit of custom/requests/$name failed: nothing moved; the clones stay open: commit it by path in custom/, then run the same open again"
+    fi
+    echo "committed in custom/: $(git -C "$custom_root" rev-parse --short HEAD) chore(requests): add $name"
+  fi
+  mkdir -p "$custom_root/requests/doing"
+  git -C "$custom_root" mv -- "requests/$name" "requests/doing/$name" ||
+    die 1 "custom/requests/$name could not move to doing/ (another session took it?): the clones stay open; close them with bash scripts/aiwp-cmds.sh close $work --discard"
+  commit_custom "chore(requests): start $name" "- in progress: tmp/work/$work, branch $branch, repos $repos" \
+    "requests/$name" "requests/doing/$name" ||
+    die 1 "the commit of custom/requests/doing/$name failed: the file moved but is not committed; commit both paths by path in custom/"
+}
+
 # open: one clone per repo, branch from the base, hooks, env files, first push.
 cmd_open() {
-  local work="" branch="" repos=() repo src name clone base url slug start from_main=0 kind
+  local work="" branch="" repos=() repo src name clone base url slug start from_main=0 kind request="" resume=0 \
+    resolved="" request_state="" request_name="" request_blob="" resumed=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --branch) [ $# -ge 2 ] || die 2 "--branch needs a value"; branch="$2"; shift ;;
       --from-main) from_main=1 ;;
+      --request) [ $# -ge 2 ] && [ -n "$2" ] || die 2 "--request needs a file"; request="$2"; shift ;;
+      --resume) resume=1 ;;
       -*) die 2 "unknown option: $1" ;;
       *) if [ -z "$work" ]; then work="$1"; else repos+=("$1"); fi ;;
     esac
@@ -398,6 +602,11 @@ cmd_open() {
   [ -n "$branch" ] || branch="feat/$slug"
   [[ "$branch" =~ ^[a-z]+/[a-z0-9]+(-[a-z0-9]+)*$ ]] || die 2 "--branch must be <type>/<kebab-slug>: $branch"
   [[ "${branch#*/}" =~ $protected_re ]] && die 2 "--branch cannot be a base: $branch"
+  if [ -n "$request" ]; then
+    # Checked before the first clone: a refusal leaves nothing behind.
+    resolved="$(resolve_request "$request" "$work")"
+    read -r request_state request_name request_blob <<<"$resolved"
+  fi
   if [ "$from_main" = 1 ]; then
     # Every repo is checked before the first clone: a refusal leaves nothing behind.
     for repo in "${repos[@]}"; do
@@ -459,12 +668,26 @@ cmd_open() {
       die 1 "$repo has no $base to start from, here or on the remote; nothing was created for $repo"
     fi
     [ "$from_main" = 0 ] || echo "hotfix: $branch starts from main ($(git -C "$clone" rev-parse --short "$start")); it reaches main only by the gate and bash scripts/aiwp-cmds.sh hotfix"
+    resumed=0
     if git -C "$clone" ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
-      rm -rf "${clone:?}"
-      rmdir "$work_root/$work" 2>/dev/null || true
-      die 1 "$branch already exists on the remote of $repo: choose another --branch"
+      if [ "$resume" = 0 ]; then
+        rm -rf "${clone:?}"
+        rmdir "$work_root/$work" 2>/dev/null || true
+        die 1 "$branch already exists on the remote of $repo: choose another --branch (or --resume to go on with it)"
+      fi
+      if ! timeout 120 git -C "$clone" fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null; then
+        rm -rf "${clone:?}"
+        rmdir "$work_root/$work" 2>/dev/null || true
+        die 1 "could not fetch $branch from the remote of $repo: nothing was created for $repo"
+      fi
+      start="origin/$branch"
+      resumed=1
+    elif [ "$resume" = 1 ]; then
+      echo "attention: $branch is not on the remote of $repo: it starts from $base"
     fi
     git -C "$clone" checkout -q -b "$branch" "$start"
+    # A resumed branch is already on the remote: the lease of the next push is its sha there.
+    [ "$resumed" = 0 ] || git -C "$clone" config aiwp.pushed "$(git -C "$clone" rev-parse HEAD)"
     git -C "$clone" branch -q --unset-upstream 2>/dev/null || true
     if [ "$from_main" = 1 ]; then
       # git clone --local made a local copy of the checked-out developer: a hotfix clone holds only its fix branch, so
@@ -475,13 +698,20 @@ cmd_open() {
     fi
     write_hooks "$clone"
     copy_env_files "$src" "$clone"
-    if push_branch "$clone" >/dev/null; then
+    if [ "$resumed" = 1 ]; then
+      echo "resumed: $branch from the remote ($(git -C "$clone" rev-parse --short HEAD))"
+    elif push_branch "$clone" >/dev/null; then
       echo "pushed: $branch"
     else
       echo "attention: the first push of $branch failed; run: bash scripts/aiwp-cmds.sh push $work/$name"
     fi
     echo "path: tmp/work/$work/$name"
   done
+  [ -n "$request" ] || return 0
+  # Only once every clone is open: a failed open leaves no request in doing/.
+  [ "$request_state" = doing ] || request_to_doing "$request_name" "$work" "$branch" "${repos[*]}" "$request_blob"
+  printf 'custom/requests/doing/%s\n' "$request_name" >"$work_root/$work/.request"
+  echo "request: custom/requests/doing/$request_name (in progress in tmp/work/$work)"
 }
 
 # run: the command in the clone.
@@ -571,17 +801,41 @@ copies_status() {
   done <<<"$out"
 }
 
-# status: every clone, or the clones of one work, each with its Docker copy groups.
+# Prints one "stale:" line per file of custom/requests/doing/ that no work of tmp/work/ records.
+stale_requests() {
+  local f rel
+  for f in "$custom_root/requests/doing"/*; do
+    [ -f "$f" ] || continue
+    rel="custom/requests/doing/${f##*/}"
+    [ -z "$(works_recording "$rel")" ] || continue
+    echo "stale: $rel (no open work records it: /request ${f##*/} resumes it or starts over)"
+  done
+}
+
+# status: every work, or one, with the request it records and each clone with its Docker copy groups; with no work
+# given, the stale requests of custom/requests/doing/ last.
 cmd_status() {
-  local pattern clone found=0
-  if [ $# -ge 1 ]; then pattern="$work_root/$1/*/"; else pattern="$work_root/*/*/"; fi
-  for clone in $pattern; do
-    [ -d "$clone/.git" ] || continue
-    found=1
-    clone_status "${clone%/}"
-    copies_status "${clone%/}"
+  local works=() work clone found=0 rel
+  if [ $# -ge 1 ]; then works=("$work_root/$1"); else works=("$work_root"/*); fi
+  for work in "${works[@]}"; do
+    [ -d "$work" ] || continue
+    rel="$(work_request "${work##*/}")"
+    if [ -n "$rel" ]; then
+      if [ -f "$root/$rel" ]; then
+        echo "tmp/work/${work##*/}  request=$rel"
+      else
+        echo "tmp/work/${work##*/}  request=$rel (missing)"
+      fi
+    fi
+    for clone in "$work"/*/; do
+      [ -d "$clone/.git" ] || continue
+      found=1
+      clone_status "${clone%/}"
+      copies_status "${clone%/}"
+    done
   done
   [ "$found" -eq 1 ] || echo "no clone under tmp/work/${1:-}"
+  [ $# -ge 1 ] || stale_requests
 }
 
 # Destroys the copy groups of the clones given (their override files' groups and the agent_ projects whose compose
@@ -599,16 +853,51 @@ destroy_copies() {
   agent_copy destroy "${args[@]}" 2>&1
 }
 
+# Deletes the work branch of a clone on its remote (close --start-over), with the lease of the sha this clone pushed
+# last: a commit pushed there from elsewhere is never deleted. Never a base. Returns 1 when the branch stays.
+delete_remote_branch() {
+  local clone="$1" branch pushed rc=0
+  branch="$(git -C "$clone" config --get aiwp.branch)" || { echo "refused: ${clone##*/} is not a clone made by open" >&2; return 1; }
+  if [[ "$branch" =~ $protected_re ]] || [[ "${branch#*/}" =~ $protected_re ]]; then
+    echo "refused: ${clone##*/}: $branch is a base and is never deleted" >&2
+    return 1
+  fi
+  timeout 60 git -C "$clone" ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) ;;
+    2) echo "not on the remote: $branch (${clone##*/})"; return 0 ;;
+    *) echo "refused: ${clone##*/}: the remote cannot be read; $branch stays" >&2; return 1 ;;
+  esac
+  pushed="$(git -C "$clone" config --get aiwp.pushed || true)"
+  if timeout 120 git -C "$clone" push -q --force-with-lease="refs/heads/$branch:$pushed" origin ":refs/heads/$branch" >/dev/null 2>&1; then
+    git -C "$clone" update-ref -d "refs/remotes/origin/$branch" 2>/dev/null || true
+    echo "deleted on the remote: $branch (${clone##*/})"
+  else
+    echo "refused: ${clone##*/}: $branch could not be deleted on the remote (a commit pushed there from elsewhere, or the remote refused); it stays" >&2
+    return 1
+  fi
+}
+
 # close: delete a work folder when nothing in it would be lost: no change, stash or local commit off the remote in any
-# clone, every work branch in the base of its source repo, and nothing in the folder but clones and gate files.
+# clone, every work branch in the base of its source repo, and nothing in the folder but clones and gate files. With
+# --discard the request the work records goes back to pending; with --start-over the remote work branches go first and
+# the request stays in doing/.
 cmd_close() {
-  local work="${1:-}" discard=0 entry clone src base branch problems="" clones
-  [ "${2:-}" = "--discard" ] && discard=1
-  [[ "$work" =~ $work_re ]] || die 2 "usage: close <work> [--discard]"
+  local work="" discard=0 start_over=0 entry clone src base branch problems="" clones rel="" name="" failed=0 file
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --discard) discard=1 ;;
+      --start-over) start_over=1 ;;
+      *) [ -z "$work" ] && [[ "$1" != -* ]] || die 2 "usage: close <work> [--discard [--start-over]]"; work="$1" ;;
+    esac
+    shift
+  done
+  [[ "$work" =~ $work_re ]] || die 2 "usage: close <work> [--discard [--start-over]]"
+  [ "$start_over" = 0 ] || [ "$discard" = 1 ] || die 2 "--start-over goes with --discard: close <work> --discard --start-over"
   [ -d "$work_root/$work" ] || die 1 "not found: tmp/work/$work"
   for entry in "$work_root/$work"/* "$work_root/$work"/.[!.]*; do
     [ -e "$entry" ] || continue
-    case "${entry##*/}" in gate-*.md | .gate-* | agent-*.compose.yaml | agent-*.ports.env) continue ;; esac
+    case "${entry##*/}" in gate-*.md | .gate-* | .request | agent-*.compose.yaml | agent-*.ports.env) continue ;; esac
     if [ ! -d "$entry/.git" ] || ! git -C "$entry" config --get aiwp.branch >/dev/null; then
       problems+="  ${entry##*/}: not a clone made by open"$'\n'
       continue
@@ -630,13 +919,53 @@ cmd_close() {
     echo "run the gate, push, or close with --discard to delete it anyway (remote branches stay)" >&2
     exit 1
   fi
+  # The request the work records: checked before anything is deleted.
+  rel="$(work_request "$work")"
+  name="${rel#custom/requests/doing/}"
+  if [ -n "$rel" ] && [ "$discard" -eq 1 ]; then
+    if [ -f "$root/$rel" ]; then
+      require_committed_request "requests/doing/$name"
+      [ "$start_over" -eq 1 ] || [ ! -e "$custom_root/requests/$name" ] ||
+        die 1 "refused: custom/requests/$name exists, so $rel cannot go back there: rename one of them in custom/ first; nothing was deleted"
+    else
+      echo "attention: $rel is not in doing/ (moved or deleted): no request to move"
+      rel=""
+    fi
+  fi
   clones=()
   for entry in "$work_root/$work"/*/; do
     [ -d "$entry.git" ] && clones+=("${entry%/}")
   done
+  if [ "$start_over" -eq 1 ]; then
+    # The remote work branches go first: one that stays keeps the folder, so the close can run again.
+    for clone in ${clones[@]+"${clones[@]}"}; do delete_remote_branch "$clone" || failed=1; done
+    [ "$failed" -eq 0 ] || die 1 "refused: a remote work branch of tmp/work/$work stays (above); the folder is kept"
+  fi
   [ "${#clones[@]}" -eq 0 ] || destroy_copies "${clones[@]}" || echo "attention: a copy group of tmp/work/$work was not destroyed (above); the folder goes anyway"
   rm -rf "${work_root:?}/$work"
   echo "closed: tmp/work/$work"
+  if [ -z "$rel" ]; then
+    return 0
+  elif [ "$discard" -eq 0 ]; then
+    [ ! -f "$root/$rel" ] || echo "attention: $rel is still in doing/: /merge moves it to qa/; status lists it as stale until then"
+  elif [ "$start_over" -eq 1 ]; then
+    file="$root/$rel"
+    # Only a "## Stopped" section no "Discarded on" line follows yet: the next reader must not resume from it.
+    if awk '/^## Stopped/ { s = NR } /^Discarded on [0-9-]+: started over\.$/ { d = NR } END { exit !(s > d) }' "$file"; then
+      printf '\nDiscarded on %s: started over.\n' "$(date +%Y-%m-%d)" >>"$file"
+      commit_custom "chore(requests): start over $name" \
+        "- tmp/work/$work discarded with its remote work branches; the request stays in doing/" "requests/doing/$name" ||
+        die 1 "the commit of $rel failed: commit it by path in custom/"
+    fi
+    echo "request: $rel stays in doing/: open the new clone with the same --branch and --request $name"
+  else
+    git -C "$custom_root" mv -- "requests/doing/$name" "requests/$name" ||
+      die 1 "$rel could not go back to custom/requests/: move it by hand (git -C custom mv), then commit by path"
+    commit_custom "chore(requests): put back $name" "- tmp/work/$work discarded: the request is pending again" \
+      "requests/doing/$name" "requests/$name" ||
+      die 1 "the commit of custom/requests/$name failed: the file moved but is not committed; commit both paths by path in custom/"
+    echo "request: custom/requests/$name (pending again)"
+  fi
 }
 
 # Succeeds when an argument names a clone of tmp/work/: <work>/<clone>, tmp/work/<work>/<clone> or its absolute path.

@@ -24,12 +24,14 @@ priorities reorganized where needed.
   `import-workspace`, which is in qa (the fix of W-2). Root `CHANGELOG.md` (6fc6cee).
 - **Decisions:** the four findings of `/caw-merge` enter round 0, though the owner named only three requests: they
   fix `/caw-merge --main` itself, which the first release runs. The owner can overturn it.
-- **Deviations:** none.
+- **Deviations:** at the merge, `developer` had taken in `request-in-progress` (the Status column of the tables),
+  `assisted-mode` and `session-names`: the README was rebuilt over it. Nothing runs now, `session-names` stays in
+  round 0 after `draft-prompt` (where its own session put it), and `merge-queue` goes to round 1, never with the four
+  findings of `/caw-merge` (both change it).
 - **Done when:** every pending request file has its row and a round or "no round"; checked against
   `git ls-tree origin/developer maintainers/requests/`.
 - **Checks:** `bash tests/check.sh --base origin/developer --i18n-pending` passed (repo-terms skipped: no terms list).
 - **Warnings:** the merge review: W-1 accept (`final-review.md` still says it runs after `fork-my-rules` and the hub,
   which the new order puts in round 2; the owner reviews that request before running it), W-2 fix (three requests
   still cited their old round).
-- **Left:** `request-in-progress` changes the same tables (a Status column): its merge resolves the conflict, with
-  `assisted-mode` as `doing`.
+- **Left:** nothing.

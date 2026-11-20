@@ -48,6 +48,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `/import-workspace`: the work of an older workspace (repositories, worktree and work-clone branches, pending work,
   backlog) brought into this one by `scripts/workspace-import.py`, never its rules; `aiwp-cmds.sh bring-branch`, and
   `bring` with a read-only source and partial bring of a folder with missing objects.
+- A request in progress: `/request` moves it to `custom/requests/doing/` when its clone opens, no board offers it
+  again, and running it again asks resume or start over; `/merge` takes it to `qa/`.
+- `/pilot assisted`, the default of a new workspace: `auto` plus short boxes that explain the flow at the moments a
+  newcomer gets it wrong, each waiting for Continue, Don't show this again or the better way; `/pilot auto` makes
+  `auto` the default, kept per workspace in `.claude/pilot-mode`; an existing workspace with history updates to
+  `auto`. The `aiwp` suite is split in three to stay under the time budget.
+- `install.sh --developer`: the unreleased product, from the newest commit of `developer`, for testers.
 
 ### Added
 
@@ -113,9 +120,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   request without names); the request `import-workspace-code-folders` with its plan (every code folder found by
   extension, POC, tool or project in rounds, a local repository with its history), from a warning of that run; the
   plan `terms-list` (the company-terms list of the maintainer machine), decided as is.
+- A request in progress: `bash tests/caw-work.sh start <name>` moves a ready request to `maintainers/requests/doing/`
+  and sets its row's new Status column to `doing`, in one commit pushed to `developer` before the clone opens: the
+  one exception to `developer` moving only by `/caw-merge`, refused unless the root is clean, equal to
+  `origin/developer`, and the commit is only that rename and that cell. `/caw-request` resolves `doing/` and asks
+  resume or start over (`open --resume`, `close --discard --start-over`); `open --request <name>` records the
+  request of a work, and `close --discard` makes the reverse commit; `bash tests/caw-work.sh status` prints the
+  request of each work (`request=`) and a request of `doing/` no work records (`stale:`); `/caw-merge` moves the
+  request from `doing/` to `qa/`; no closing board offers a request in progress.
+- `/caw-pilot assisted` at the root, the default: the root `CLAUDE.md` "Pilot mode" imports the git-ignored
+  `.claude/pilot-mode.local.md` that `/caw-pilot auto` and `/caw-pilot assisted` write (a missing import is skipped
+  silently, so no hook was added for it); in `assisted` the session reads `.claude/assisted.md`, a layer over the
+  product's `rules/assisted.md` with the maintenance's situations (the first reply, a change with no request, a commit
+  or push on `developer` or `main`, something private to commit, a new task after a closing board, a translation
+  between releases), which `tests/check.sh` checks with the other layers (`caw-layers`). A session started in a work
+  clone, where Claude Code skips that import, gets the mode from `tests/caw-session-index.py`, which reads the root's
+  file. The request `assisted-mode`, proven in real sessions of a test installation and at the root.
+- The plan and request `session-names`: session names that follow the life of a request (`ai-workspace-NN` for a new
+  session and after `/clear`, `rq-<words>` on `/request`, `rq-done-` with the closing board, `rq-closed-` at the
+  merge, `fix-` in their place for a hotfix, `ai-workspace-release-<project>` for a release), `/rename-workspace`,
+  and `/rename` left to Claude Code; checked against the Claude Code hooks documentation.
 
 ### Changed
 
+- The request `merge-queue`: one merge at a time per git repository instead of a queue. A second merge on the same
+  repository becomes a hard rule, a BLOCKER shown in red with no override; a queue file of the merges running, a log
+  per merge, the recovery of an unfinished merge (start again in its clone, go on from its log, or finalize one past
+  `main`, judged by what entered `developer` since), a check at every merge, and `--sweep`, in the product and the
+  `caw-` skills.
 - `CLAUDE.md` "Language": the session replies in the `language` setting, even when a request file is in English; with
   none set, in the language the person writes in. `.claude/rules/product.md`: the invariant "no language setting"
   becomes the preferred language as the `language` setting, asked at install.
@@ -154,6 +186,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   non-branch ref and a force push stay refused there, `main` and `developer` to `origin` too, and the company-terms
   scan still runs, counting what `origin` already has as scanned. `/caw-test-install` runs there, never from a copy
   of the branch without hooks.
+- `docs/getting-started.md`: installing the unreleased product with `install.sh --developer`, the installer taken
+  from `developer`.
 
 ### Removed
 

@@ -3,6 +3,7 @@
 # tag, links the aiwp command into ~/.local/bin and creates a workspace (aiwp new). Needs no administrator rights;
 # installs no package. Under curl | bash its input is the script itself, so the questions read the terminal (/dev/tty).
 # Run: curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/main/install.sh | bash
+# With --developer it checks out the branch developer instead: the unreleased product, for testers.
 set -euo pipefail
 
 # Prints folder $1 as an absolute path: ~ expanded, a relative path taken from the current folder.
@@ -113,19 +114,21 @@ except OSError as error:
 install_main() {
   local default_url="https://github.com/expertos-tech/claude-cli-agents-workspace.git"
   local url="${AIWP_REPO_URL:-$default_url}"
-  local os data ref bin link target missing="" tool tty=0 problem installed=0
+  local os data ref version bin link target missing="" tool tty=0 problem installed=0 developer=0 folder="" folders=0 arg
   WORKSPACE_DIR=""
 
-  case "${1:-}" in
-    --help | -h)
-      cat <<'HELP'
-Usage: bash install.sh [<workspace folder>] [--help]
-       curl -fsSL <installer URL> | bash [-s -- <workspace folder>]
+  # The arguments in order: --developer and one folder, before or after each other; --help as soon as it comes.
+  for arg in "$@"; do
+    case "$arg" in
+      --help | -h)
+        cat <<'HELP'
+Usage: bash install.sh [--developer] [<workspace folder>] [--help]
+       curl -fsSL <installer URL> | bash [-s -- [--developer] [<workspace folder>]]
 
 Installs or updates Claude CLI Agents Workspace for the current user, then creates a workspace:
   1. checks the prerequisites: git and python3 are required; docker and claude are recommended. It installs nothing.
   2. clones the full repository into the local data folder, or fetches it when it is already there, and checks out
-     the newest release tag vX.Y.Z:
+     the newest release tag vX.Y.Z (with --developer, the newest commit of the branch developer):
        Linux and WSL  ${XDG_DATA_HOME:-~/.local/share}/claude-cli-agents-workspace
        macOS          ~/Library/Application Support/claude-cli-agents-workspace
   3. links ~/.local/bin/aiwp to the aiwp command of that folder, and says how to put ~/.local/bin on PATH.
@@ -139,9 +142,17 @@ Installs or updates Claude CLI Agents Workspace for the current user, then creat
 Running it again updates the data folder; it never updates a workspace (aiwp update does, in a terminal). Native
 Windows shells (Git Bash, MSYS, Cygwin) are refused: use WSL2. Nothing needs sudo.
 
+Options:
+  --developer     check out the branch developer of the repository instead of the newest release tag: the unreleased
+                  product, for testers (it wins over AIWP_REF). It is not a release: aiwp update moves it only to a
+                  release newer than its workspace/VERSION, never to a newer commit of developer; run the installer
+                  with --developer again to follow developer, or without it to go back to the newest release.
+  --help, -h      this help
+
 Environment:
   AIWP_WORKSPACE  the folder of the new workspace, with no question (the argument wins over it)
-  AIWP_REF        check out this ref (a tag, a branch or a commit) instead of the newest release tag
+  AIWP_REF        check out this ref (a tag, a branch or a commit) instead of the newest release tag (--developer
+                  wins over it)
   AIWP_REPO_URL   clone from this URL instead of the public repository
   AIWP_OS         linux, macos or windows: the platform to assume (tests)
 
@@ -152,11 +163,16 @@ Examples:
   curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/main/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/main/install.sh | bash -s -- ~/my-workspace
   AIWP_WORKSPACE=~/my-workspace bash install.sh </dev/null
+  The unreleased product, with the installer of the branch developer (an installer older than 0.2.0 lacks --developer):
+  curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/developer/install.sh | bash -s -- --developer ~/my-workspace
 HELP
-      return 0 ;;
-    -*) echo "error: unknown option: $1; see --help" >&2; return 2 ;;
-  esac
-  [ $# -le 1 ] || { echo "error: one workspace folder only; see --help" >&2; return 2; }
+        return 0 ;;
+      --developer) developer=1 ;;
+      -*) echo "error: unknown option: $arg; see --help" >&2; return 2 ;;
+      *) folder="$arg"; folders=$((folders + 1)) ;;
+    esac
+  done
+  [ "$folders" -le 1 ] || { echo "error: one workspace folder only; see --help" >&2; return 2; }
 
   os="${AIWP_OS:-}"
   if [ -z "$os" ]; then
@@ -191,8 +207,8 @@ HELP
 
   # The workspace folder, asked before anything is installed: a run cancelled at the question changes nothing.
   if (exec </dev/tty) 2>/dev/null; then tty=1; fi
-  if [ -n "${1:-}" ] || [ -n "${AIWP_WORKSPACE:-}" ]; then
-    WORKSPACE_DIR="$(abs_path "${1:-$AIWP_WORKSPACE}")"
+  if [ -n "$folder" ] || [ -n "${AIWP_WORKSPACE:-}" ]; then
+    WORKSPACE_DIR="$(abs_path "${folder:-$AIWP_WORKSPACE}")"
     problem="$(folder_problem "$WORKSPACE_DIR")"
     if [ -n "$problem" ]; then
       echo "error: $problem: the workspace goes into a new or an empty folder; nothing was installed" >&2
@@ -228,7 +244,11 @@ HELP
   fi
 
   ref="${AIWP_REF:-}"
-  if [ -z "$ref" ]; then
+  if [ "$developer" -eq 1 ]; then
+    ref=developer
+    git 9>&- -C "$data" rev-parse -q --verify "refs/remotes/origin/developer^{commit}" >/dev/null ||
+      { echo "error: $url has no branch developer" >&2; return 1; }
+  elif [ -z "$ref" ]; then
     ref="$(git 9>&- -C "$data" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
       sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)" || true
     [ -n "$ref" ] || { echo "error: no release tag vX.Y.Z in $url; set AIWP_REF to install a branch" >&2; return 1; }
@@ -241,7 +261,11 @@ HELP
   git 9>&- -C "$data" rev-parse -q --verify "$target^{commit}" >/dev/null ||
     { echo "error: $ref is not a tag, branch or commit of $url" >&2; return 1; }
   git 9>&- -C "$data" checkout --quiet --detach "$target"
-  echo "checked out: $ref ($(cat "$data/workspace/VERSION" 2>/dev/null || echo 'no VERSION'))"
+  version="$(cat "$data/workspace/VERSION" 2>/dev/null || echo 'no VERSION')"
+  echo "checked out: $ref ($version)"
+  if [ "$developer" -eq 1 ]; then
+    echo "note: developer is not a release: aiwp update moves this installation only to a release newer than $version, never to a newer commit of developer; run the installer with --developer again to follow developer, or without it to go back to the newest release"
+  fi
 
   [ -f "$data/workspace/scripts/aiwp.sh" ] ||
     { echo "error: $ref has no workspace/scripts/aiwp.sh; it predates the installer" >&2; return 1; }

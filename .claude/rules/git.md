@@ -27,6 +27,9 @@ The sections below win where they differ; its `paths:` do not limit it here.
 | the human | the owner |
 | `bash scripts/aiwp-cmds.sh open <work> <repo> [--branch <type>/<slug>]` | `bash tests/caw-work.sh open <type>/<slug>` |
 | `bash scripts/aiwp-cmds.sh run`, `status`, `close` | `bash tests/caw-work.sh run`, `status`, `close` |
+| `bash scripts/aiwp-cmds.sh open ... --request <file>`, the move to `custom/requests/doing/` after the clones open, committed by path in `custom/` | `bash tests/caw-work.sh start <name>` at the root before the clone opens (the start commit, "Remote"), then `bash tests/caw-work.sh open <type>/<slug> --request <name>` |
+| `open --resume`, `close <work> --discard`, `close <work> --discard --start-over` | the same options of `bash tests/caw-work.sh`; `--discard` puts the request back by the reverse commit ("Remote") |
+| `custom/requests/doing/` | `maintainers/requests/doing/`, with the Status `doing` of its row in `maintainers/requests/README.md` |
 | the secret scan of the commits that leave | the company-terms scan of what leaves (`security.md`) |
 | `/merge`, `/merge --main`, `/merge --hotfix` | `/caw-merge`, `/caw-merge --main`, `/caw-merge --hotfix` |
 | `custom/requests/`, `qa/<project>/`, `done/<project>/` | `maintainers/requests/`, `qa/`, `done/` (`process.md` step 6) |
@@ -51,5 +54,17 @@ The sections below win where they differ; its `paths:` do not limit it here.
 - `/caw-merge` pushes `developer`: running it is the owner's order, and that push is the one prompt of a task
   (`ask: Bash(git push *)`). Any other push only when the owner asks; each request covers that push only, never a
   later one.
+- The one exception to `developer` moving only by `/caw-merge`: the start commit of a request,
+  `chore(requests): start <name>` (`bash tests/caw-work.sh start <name>`), and its reverse,
+  `chore(requests): put back <name>` (`bash tests/caw-work.sh close <work> --discard`). The script makes and pushes
+  them with no suite, review or terms scan and no prompt, because they add nothing new, and only within its checks:
+  the root on `developer`, with nothing uncommitted, equal to `origin/developer` after a fetch; the request file
+  already on `origin/developer`; one commit that is a pure rename of it between `maintainers/requests/` and
+  `maintainers/requests/doing/` plus the Status cell of its README row; a plain fast-forward push (the remote moved
+  meanwhile: fetched and made again once). Anything else is refused with the reason and nothing is pushed. Never by
+  hand.
 - Never rewrite published history: no force push, no rebase or amend of a pushed commit, no moved or deleted tag.
+  Starting a request over is not a force push: `bash tests/caw-work.sh close <work> --discard --start-over` deletes
+  only that request's own work branch on the remote, with a lease on the sha the clone last pushed (someone pushed
+  there since: refused, nothing deleted), never `developer`, `main` or a tag.
 - Tags only through `/caw-merge --main`.

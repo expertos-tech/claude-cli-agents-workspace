@@ -14,6 +14,8 @@ trap 'real_cleanup; rm -rf "$BASE"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+# The commits open and close make in custom/ carry [#automatic-agent-commit] only inside Claude Code.
+unset CLAUDECODE
 FAILED=0
 COUNT=0
 OUT=""
@@ -69,6 +71,29 @@ STUB
   chmod +x "$BASE/scan.sh"
   export AIWP_SECRETS_CMD="$BASE/scan.sh"
   unset SCAN_EXIT
+  # The file scan open --request runs on a request it commits: docker info answers DOCKER_INFO_EXIT (default 0); the
+  # validate.sh stub logs each call and finds a GitHub token shape in a listed file, printing what gitleaks prints.
+  cat >"$BASE/docker-info.sh" <<'STUB'
+#!/usr/bin/env bash
+exit "${DOCKER_INFO_EXIT:-0}"
+STUB
+  cat >"$BASE/validate.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "validate $*" >>"$VALIDATE_LOG"
+list=""
+while [ $# -gt 0 ]; do [ "$1" = --files ] && list="$2"; shift; done
+while IFS= read -r p; do
+  if grep -Eq 'ghp_[0-9A-Za-z]{36}' "$p"; then
+    printf 'Finding:     REDACTED\nRuleID:      github-pat\nFile:        /work/%s\nleaks found: 1\n' "$p"
+    exit 1
+  fi
+done <"$list"
+echo "PASS secrets"
+STUB
+  chmod +x "$BASE/docker-info.sh" "$BASE/validate.sh"
+  export AIWP_DOCKER="$BASE/docker-info.sh" AIWP_VALIDATE="$BASE/validate.sh" VALIDATE_LOG="$BASE/validate.$CURRENT.log"
+  rm -f "$VALIDATE_LOG"
+  unset DOCKER_INFO_EXIT
 }
 
 run() {
@@ -1098,12 +1123,363 @@ test_open_from_main_refuses_a_repo_without_main_or_developer() {
   eq "no remote: from the local main" "$(git -C "$R/projects/good" rev-parse main)" "$(git -C "$R/tmp/work/$hw/good" rev-parse HEAD)"
 }
 
+# A request committed in custom/requests/ (or the path given, relative to custom/).
+request_in_custom() { # file relative to custom/, content
+  mkdir -p "$(dirname "$R/custom/$1")"
+  printf '%s\n' "$2" >"$R/custom/$1"
+  git -C "$R/custom" add -- "$1"
+  git -C "$R/custom" commit -q -m "add $1" -- "$1"
+}
+custom_commits() { git -C "$R/custom" rev-list --count HEAD; }
+custom_title() { git -C "$R/custom" log -1 --format=%s; }
+
+test_open_request_moves_it_to_doing_once() {
+  fixture
+  git init -q --bare -b main "$BASE/custom.$CURRENT.git"
+  git -C "$R/custom" remote add origin "$BASE/custom.$CURRENT.git"
+  request_in_custom requests/r.md "# R"
+  local before
+  before="$(custom_commits)"
+  export CLAUDECODE=1
+  run open "$W" app --request r.md
+  unset CLAUDECODE
+  rc_is 0
+  has "path: tmp/work/$W/app"
+  has "committed in custom/"
+  has "chore(requests): start r.md"
+  has "pushed: custom/ main"
+  has "request: custom/requests/doing/r.md (in progress in tmp/work/$W)"
+  [ -f "$R/custom/requests/doing/r.md" ] && [ ! -e "$R/custom/requests/r.md" ]; check "moved to doing/" $?
+  eq "one commit in custom/" "$((before + 1))" "$(custom_commits)"
+  eq "start commit title" "chore(requests): start r.md" "$(custom_title)"
+  git -C "$R/custom" log -1 --format=%B | grep -q "in progress: tmp/work/$W, branch feat/sample-change, repos app"; check "body names the work" $?
+  git -C "$R/custom" log -1 --format=%B | grep -qx '\[#automatic-agent-commit\]'; check "agent trailer inside Claude Code" $?
+  eq "a pure rename" "R100	requests/r.md	requests/doing/r.md" "$(git -C "$R/custom" show -M --format= --name-status HEAD)"
+  eq "custom/ clean" "" "$(git -C "$R/custom" status --porcelain)"
+  eq "pushed to the remote of custom/" "$(git -C "$R/custom" rev-parse HEAD)" "$(git -C "$BASE/custom.$CURRENT.git" rev-parse main)"
+  eq "the work records it" "custom/requests/doing/r.md" "$(cat "$R/tmp/work/$W/.request")"
+  run status
+  has "tmp/work/$W  request=custom/requests/doing/r.md"
+  has "tmp/work/$W/app  branch=feat/sample-change"
+  hasnt "stale:"
+  # Resume in the same work: the bare name is found in doing/, the clone reused, no new commit.
+  run open "$W" app --request r.md
+  rc_is 0
+  has "(already open)"
+  eq "no second start commit" "$((before + 1))" "$(custom_commits)"
+}
+
+# The state of custom/ the tests compare: every commit and the porcelain status with untracked files.
+custom_state() { git -C "$R/custom" rev-parse HEAD; git -C "$R/custom" status --porcelain --untracked-files=all; }
+
+test_open_request_commits_an_untracked_request_then_moves_it() {
+  fixture
+  mkdir -p "$R/custom/requests"
+  printf '# U, written by hand\n' >"$R/custom/requests/u.md"
+  # Unrelated work in custom/: an untracked note, a staged file and a changed tracked one stay as they are.
+  printf 'draft\n' >"$R/custom/notes.md"
+  printf 'staged\n' >"$R/custom/staged.md"
+  git -C "$R/custom" add -- staged.md
+  printf 'changed\n' >>"$R/custom/README.md"
+  local before
+  before="$(custom_commits)"
+  run open "$W" app --request u.md
+  rc_is 0
+  has "committed in custom/: "
+  has "chore(requests): add u.md"
+  has "chore(requests): start u.md"
+  has "request: custom/requests/doing/u.md (in progress in tmp/work/$W)"
+  [ -f "$R/custom/requests/doing/u.md" ] && [ ! -e "$R/custom/requests/u.md" ]; check "moved to doing/" $?
+  eq "two commits in custom/" "$((before + 2))" "$(custom_commits)"
+  eq "the add commit holds only the request" "A	requests/u.md" "$(git -C "$R/custom" show --format= --name-status HEAD~1)"
+  eq "the file as written" "# U, written by hand" "$(git -C "$R/custom" show HEAD~1:requests/u.md)"
+  eq "then a pure rename" "R100	requests/u.md	requests/doing/u.md" "$(git -C "$R/custom" show -M --format= --name-status HEAD)"
+  grep -q "^validate --only secrets --path custom --files " "$VALIDATE_LOG"; check "the file was scanned" $?
+  eq "the rest of custom/ untouched" "A  staged.md
+ M README.md
+?? notes.md" "$(git -C "$R/custom" status --porcelain --untracked-files=all | sort)"
+  eq "staged.md still staged, not committed" "staged" "$(git -C "$R/custom" show :staged.md)"
+  eq "the work records it" "custom/requests/doing/u.md" "$(cat "$R/tmp/work/$W/.request")"
+}
+
+test_open_request_commits_a_changed_request_then_moves_it() {
+  fixture
+  request_in_custom requests/c.md "# C"
+  printf 'more, not committed\n' >>"$R/custom/requests/c.md"
+  printf 'draft\n' >"$R/custom/notes.md"
+  local before
+  before="$(custom_commits)"
+  run open "$W" app --request c.md
+  rc_is 0
+  has "chore(requests): add c.md"
+  has "chore(requests): start c.md"
+  eq "two commits in custom/" "$((before + 2))" "$(custom_commits)"
+  eq "the change committed first" "M	requests/c.md" "$(git -C "$R/custom" show --format= --name-status HEAD~1)"
+  eq "with the text on disk" "# C
+more, not committed" "$(git -C "$R/custom" show HEAD:requests/doing/c.md)"
+  eq "then a pure rename" "R100	requests/c.md	requests/doing/c.md" "$(git -C "$R/custom" show -M --format= --name-status HEAD)"
+  eq "only notes.md left out" "?? notes.md" "$(git -C "$R/custom" status --porcelain --untracked-files=all)"
+  # A committed request needs no scan: the next one goes straight to the rename.
+  rm -f "$VALIDATE_LOG"
+  request_in_custom requests/d.md "# D"
+  run open 2026-11-17-other app --branch feat/other --request d.md
+  rc_is 0
+  hasnt "chore(requests): add d.md"
+  [ ! -e "$VALIDATE_LOG" ]; check "no scan of a committed request" $?
+}
+
+test_open_request_with_a_secret_is_refused_with_nothing_changed() {
+  fixture
+  mkdir -p "$R/custom/requests"
+  # An invented token in the shape gitleaks' github-pat rule finds, built at run time so no file holds it.
+  printf '# S\ntoken: %s%s\n' "ghp_" "0123456789abcdefghijABCDEFGHIJabcdef" >"$R/custom/requests/s.md"
+  printf 'draft\n' >"$R/custom/notes.md"
+  local before
+  before="$(custom_state)"
+  run open "$W" app --request s.md
+  rc_is 1
+  has "leaks found"
+  has "custom/requests/s.md holds a secret"
+  hasnt "ghp_0123"
+  [ ! -e "$R/tmp/work/$W" ]; check "nothing cloned" $?
+  eq "no branch on the remote" none "$(remote_sha feat/sample-change)"
+  eq "custom/ unchanged" "$before" "$(custom_state)"
+  [ ! -e "$R/custom/requests/doing" ]; check "nothing moved" $?
+  # The same file tracked, with the secret as a change not committed: refused the same way.
+  printf '# S\n' >"$R/custom/requests/t.md"
+  git -C "$R/custom" add -- requests/t.md
+  git -C "$R/custom" commit -q -m "add t" -- requests/t.md
+  cp "$R/custom/requests/s.md" "$R/custom/requests/t.md"
+  before="$(custom_state)"
+  run open "$W" app --request t.md
+  rc_is 1
+  has "custom/requests/t.md holds a secret"
+  eq "custom/ unchanged again" "$before" "$(custom_state)"
+  [ ! -e "$R/tmp/work/$W" ]; check "still nothing cloned" $?
+}
+
+test_open_request_refuses_when_the_scan_cannot_run() {
+  fixture
+  mkdir -p "$R/custom/requests"
+  printf '# U\n' >"$R/custom/requests/u.md"
+  local before
+  before="$(custom_state)"
+  export DOCKER_INFO_EXIT=1
+  run open "$W" app --request u.md
+  unset DOCKER_INFO_EXIT
+  rc_is 1
+  has "the secret scan of custom/requests/u.md did not run (Docker did not respond)"
+  has "commit it by path in custom/"
+  [ ! -e "$VALIDATE_LOG" ]; check "validate not called without Docker" $?
+  [ ! -e "$R/tmp/work/$W" ]; check "nothing cloned" $?
+  eq "custom/ unchanged" "$before" "$(custom_state)"
+  # validate.sh failing with no finding (a tool error) is no pass either.
+  printf '#!/usr/bin/env bash\necho "FAIL secrets: image pull failed"\nexit 1\n' >"$BASE/validate.sh"
+  run open "$W" app --request u.md
+  rc_is 1
+  has "the secret scan of custom/requests/u.md did not run"
+  eq "custom/ still unchanged" "$before" "$(custom_state)"
+  # A request named like a local secret file, which the scan skips, is never committed by open.
+  printf '{}\n' >"$R/custom/requests/local.settings.json"
+  run open "$W" app --request local.settings.json
+  rc_is 1
+  has "local secret file"
+  # Ignored by custom/.gitignore: refused before any scan.
+  printf 'requests/ignored.md\n' >"$R/custom/.gitignore"
+  printf '# I\n' >"$R/custom/requests/ignored.md"
+  run open "$W" app --request ignored.md
+  rc_is 1
+  has "custom/requests/ignored.md is ignored by git in custom/"
+  [ ! -e "$R/tmp/work/$W" ]; check "still nothing cloned" $?
+}
+
+test_open_request_refuses_before_anything_is_created() {
+  fixture
+  mkdir -p "$R/custom/requests"
+  request_in_custom requests/c.md "# C"
+  run open "$W" app --request nope.md
+  rc_is 1
+  has "request not found: custom/requests/nope.md nor custom/requests/doing/nope.md"
+  run open "$W" app --request tmp/request.md
+  rc_is 2
+  run open "$W" app --request custom/requests/qa/app/c.md
+  rc_is 2
+  run open "$W" app --request
+  rc_is 2
+  request_in_custom requests/doing/c.md "# C in progress"
+  run open "$W" app --request c.md
+  rc_is 1
+  has "custom/requests/doing/c.md exists: that request is in progress"
+  [ ! -e "$R/tmp/work/$W" ]; check "nothing created" $?
+  eq "no branch on the remote" none "$(remote_sha feat/sample-change)"
+  [ -f "$R/custom/requests/c.md" ]; check "the request did not move" $?
+  # Another work records the request in doing/; a work that records another request.
+  run open "$W" app --request custom/requests/doing/c.md
+  rc_is 0
+  run open 2026-11-17-other app --branch feat/other --request custom/requests/doing/c.md
+  rc_is 1
+  has "is in progress in tmp/work/$W: resume it there, or start over"
+  [ ! -e "$R/tmp/work/2026-11-17-other" ]; check "no other work created" $?
+  request_in_custom requests/d.md "# D"
+  run open "$W" app --request d.md
+  rc_is 1
+  has "tmp/work/$W records another request (custom/requests/doing/c.md)"
+  [ -f "$R/custom/requests/d.md" ]; check "d did not move" $?
+}
+
+test_close_discard_puts_the_request_back_in_pending() {
+  fixture
+  request_in_custom requests/r.md "# R"
+  run open "$W" app --request r.md
+  local c before
+  c="$(clone)"
+  commit_in "$c" a.txt half-done
+  # A pending file of the same name, or a change not committed in doing/: refused, nothing deleted.
+  request_in_custom requests/r.md "# another R"
+  run close "$W" --discard
+  rc_is 1
+  has "custom/requests/r.md exists"
+  [ -d "$c" ]; check "folder kept" $?
+  git -C "$R/custom" rm -q -- requests/r.md
+  git -C "$R/custom" commit -q -m "drop the other r" -- requests/r.md
+  printf 'not committed\n' >>"$R/custom/requests/doing/r.md"
+  run close "$W" --discard
+  rc_is 1
+  has "has changes not committed"
+  [ -d "$c" ]; check "folder kept again" $?
+  git -C "$R/custom" checkout -q -- requests/doing/r.md
+  before="$(custom_commits)"
+  run close "$W" --discard
+  rc_is 0
+  has "closed: tmp/work/$W"
+  has "attention: custom/ has no remote: the commit stays in custom/"
+  has "request: custom/requests/r.md (pending again)"
+  [ -f "$R/custom/requests/r.md" ] && [ ! -e "$R/custom/requests/doing/r.md" ]; check "back in pending" $?
+  eq "one commit in custom/" "$((before + 1))" "$(custom_commits)"
+  eq "put back title" "chore(requests): put back r.md" "$(custom_title)"
+  ! git -C "$R/custom" log -1 --format=%B | grep -q '\[#automatic-agent-commit\]'; check "no agent trailer outside Claude Code" $?
+  eq "custom/ clean" "" "$(git -C "$R/custom" status --porcelain)"
+  [ "$(remote_sha feat/sample-change)" != none ]; check "discard keeps the remote branch" $?
+  run close 2026-11-17-none --start-over
+  rc_is 2
+  run close "$W" --bogus
+  rc_is 2
+}
+
+test_status_names_the_request_and_flags_stale_doing_files() {
+  fixture
+  request_in_custom requests/doing/old.md "# old"
+  request_in_custom requests/r.md "# R"
+  run status
+  has "no clone under tmp/work/"
+  has "stale: custom/requests/doing/old.md (no open work records it: /request old.md resumes it or starts over)"
+  run open "$W" app --request r.md
+  run status
+  has "tmp/work/$W  request=custom/requests/doing/r.md"
+  has "stale: custom/requests/doing/old.md"
+  hasnt "stale: custom/requests/doing/r.md"
+  run status "$W"
+  has "tmp/work/$W  request=custom/requests/doing/r.md"
+  hasnt "stale:"
+  # The file left doing/ while the work stays open: named missing.
+  git -C "$R/custom" mv requests/doing/r.md requests/r2.md
+  run status
+  has "tmp/work/$W  request=custom/requests/doing/r.md (missing)"
+  # A plain close after the work merged: the work goes; a file still in doing/ becomes stale.
+  git -C "$R/custom" mv requests/r2.md requests/doing/r.md
+  git -C "$R/projects/app" fetch -q origin feat/sample-change
+  git -C "$R/projects/app" merge -q --ff-only FETCH_HEAD
+  run close "$W"
+  rc_is 0
+  has "attention: custom/requests/doing/r.md is still in doing/"
+  run status
+  has "stale: custom/requests/doing/r.md"
+}
+
+test_start_over_deletes_the_work_and_its_remote_branch() {
+  fixture
+  request_in_custom requests/r.md "# R"
+  run open "$W" app --request r.md
+  local c dev before w2="2026-11-17-sample-change"
+  c="$(clone)"
+  dev="$(remote_sha developer)"
+  commit_in "$c" a.txt half-done
+  printf -- '---\n\n## Stopped — 2026-11-16\n\nwave 1 done\n' >>"$R/custom/requests/doing/r.md"
+  git -C "$R/custom" commit -q -m stopped -- requests/doing/r.md
+  # Someone else pushed to the branch: the lease keeps it, nothing deleted.
+  git clone -q -b feat/sample-change "$BASE/remote.$CURRENT.git" "$BASE/other.$CURRENT"
+  git -C "$BASE/other.$CURRENT" commit -q --allow-empty -m "from elsewhere"
+  git -C "$BASE/other.$CURRENT" push -q origin feat/sample-change
+  run close "$W" --discard --start-over
+  rc_is 1
+  has "could not be deleted on the remote"
+  [ -d "$c" ]; check "folder kept" $?
+  eq "branch kept" "$(git -C "$BASE/other.$CURRENT" rev-parse HEAD)" "$(remote_sha feat/sample-change)"
+  git -C "$c" pull -q --no-rebase --no-edit origin feat/sample-change
+  before="$(custom_commits)"
+  run close "$W" --discard --start-over
+  rc_is 0
+  has "deleted on the remote: feat/sample-change (app)"
+  has "closed: tmp/work/$W"
+  has "request: custom/requests/doing/r.md stays in doing/"
+  [ ! -e "$R/tmp/work/$W" ]; check "no old work folder" $?
+  eq "no remote branch" none "$(remote_sha feat/sample-change)"
+  eq "developer untouched" "$dev" "$(remote_sha developer)"
+  eq "still in doing/" "Discarded on $(date +%Y-%m-%d): started over." "$(tail -n 1 "$R/custom/requests/doing/r.md")"
+  eq "one commit in custom/" "$((before + 1))" "$(custom_commits)"
+  eq "start over title" "chore(requests): start over r.md" "$(custom_title)"
+  eq "custom/ clean" "" "$(git -C "$R/custom" status --porcelain)"
+  # The new clone: same branch name, from the base, no start commit.
+  run open "$w2" app --branch feat/sample-change --request r.md
+  rc_is 0
+  has "pushed: feat/sample-change"
+  eq "new clone from the base" "$(git -C "$R/projects/app" rev-parse developer)" "$(git -C "$R/tmp/work/$w2/app" rev-parse HEAD)"
+  eq "no new commit in custom/" "$((before + 1))" "$(custom_commits)"
+  eq "the new work records it" "custom/requests/doing/r.md" "$(cat "$R/tmp/work/$w2/.request")"
+  # A ## Stopped section already marked: no second line, no commit.
+  run close "$w2" --discard --start-over
+  rc_is 0
+  eq "no second Discarded line" 1 "$(grep -c '^Discarded on' "$R/custom/requests/doing/r.md")"
+  eq "no commit for an unchanged file" "$((before + 1))" "$(custom_commits)"
+}
+
+test_resume_opens_the_remote_branch_when_the_folder_is_gone() {
+  fixture
+  request_in_custom requests/r.md "# R"
+  run open "$W" app --request r.md
+  local c sha before
+  c="$(clone)"
+  commit_in "$c" a.txt wave-one
+  sha="$(git -C "$c" rev-parse HEAD)"
+  rm -rf "${R:?}/tmp/work/$W"
+  before="$(custom_commits)"
+  run status
+  has "stale: custom/requests/doing/r.md"
+  run open "$W" app --request r.md
+  rc_is 1
+  has "already exists on the remote of app: choose another --branch (or --resume to go on with it)"
+  run open "$W" app --request r.md --resume
+  rc_is 0
+  has "resumed: feat/sample-change from the remote"
+  eq "on the remote branch" "$sha" "$(git -C "$c" rev-parse HEAD)"
+  eq "no commit in custom/" "$before" "$(custom_commits)"
+  commit_in "$c" b.txt wave-two
+  has "aiwp: pushed feat/sample-change"
+  eq "the next commit is pushed" "$(git -C "$c" rev-parse HEAD)" "$(remote_sha feat/sample-change)"
+  run status "$W"
+  has "not-pushed=0"
+  run open 2026-11-17-fresh app --branch feat/fresh --resume
+  rc_is 0
+  has "attention: feat/fresh is not on the remote of app: it starts from developer"
+}
+
 test_usage() {
   fixture
   run --help
   rc_is 0
   has "Usage: scripts/aiwp-cmds.sh"
-  has "open <work> <repo>... [--branch <type>/<slug>] [--from-main]"
+  has "open <work> <repo>... [--branch <type>/<slug>] [--from-main] [--request <file>] [--resume]"
+  has "close <work> [--discard [--start-over]]"
   has "gate, release, hotfix, hotfix-tag, hotfix-down, apply"
   has "up <work>/<clone> [-- <docker compose options>...]"
   has "down <work>/<clone>"

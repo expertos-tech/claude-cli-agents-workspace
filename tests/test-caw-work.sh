@@ -3,8 +3,9 @@
 # with developer and main, a local bare remote, and a terms list holding an invented term. This repository is never
 # touched. Run: bash tests/test-caw-work.sh [--only <test_name>]
 # check takes the status of the test right before it on purpose: SC2319 does not apply. The tests run through a list
-# built at run time: SC2329 does not apply.
-# shellcheck disable=SC2319,SC2329
+# built at run time: SC2329 does not apply. The backticks in single quotes are Markdown of the requests README, not
+# command substitutions: SC2016 does not apply.
+# shellcheck disable=SC2016,SC2319,SC2329
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -1590,6 +1591,516 @@ services:
   real_cleanup
 }
 
+# Requests in progress: a fixture with maintainers/requests/ (sample.md and other.md ready, idea.md an idea; a row of
+# sample.md in QA too, outside the pending tables) on developer, pushed.
+requests_fixture() {
+  fixture
+  mkdir -p "$R/maintainers/requests"
+  cat >"$R/maintainers/requests/README.md" <<'MD'
+# Requests
+
+## Lifecycle
+
+| Folder | State |
+| --- | --- |
+| `requests/` | Pending |
+
+## Pending
+
+### Ready
+
+| Round | Request | Status | Notes |
+| --- | --- | --- | --- |
+| 0 | `sample.md` | pending | A sample |
+| 0 | `other.md` | pending | Another |
+
+### Ideas
+
+| Request | Status | What is missing |
+| --- | --- | --- |
+| `idea.md` | pending | Two decisions |
+
+## QA
+
+| Request | Merged into `developer` |
+| --- | --- |
+| `sample.md` | abc1234 |
+MD
+  printf '# Sample request\n\nBody.\n' >"$R/maintainers/requests/sample.md"
+  printf '# Other request\n' >"$R/maintainers/requests/other.md"
+  printf '# Idea\n' >"$R/maintainers/requests/idea.md"
+  git -C "$R" add -A
+  git -C "$R" commit -q -m requests
+  git -C "$R" push -q origin developer
+}
+
+dev_title() { git -C "$REMOTE" log -1 --format=%s developer; }
+# The Status cell of the row of a request in the README of a tree-ish of the remote (default developer).
+status_on_remote() {
+  git -C "$REMOTE" show "${2:-developer}:maintainers/requests/README.md" |
+    awk -v n="\`$1\`" -F'|' '/^## /{p=($0=="## Pending")} p && NF>3 { for (i=2;i<NF;i++) if ($i ~ "^ *" n " *$") { gsub(/ /,"",$(i+1)); print $(i+1) } }'
+}
+on_remote() { git -C "$REMOTE" cat-file -e "developer:$1" 2>/dev/null; }
+
+# AC-1: start makes one commit on origin/developer, only the rename and the Status cell, and the clone opened after it
+# holds the move.
+test_start_moves_the_request_and_pushes() {
+  requests_fixture
+  local before
+  before="$(remote_sha developer)"
+  run start sample.md --branch "$B"
+  rc_is 0
+  has "pushed: developer"
+  has "chore(requests): start sample.md"
+  has "next: bash tests/caw-work.sh open $B --request sample.md"
+  eq "one commit on origin/developer" "$before" "$(git -C "$REMOTE" rev-parse developer^)"
+  eq "title" "chore(requests): start sample.md" "$(dev_title)"
+  git -C "$REMOTE" log -1 --format=%B developer | grep -qF "in progress on the branch $B"; check "body names the branch" $?
+  eq "only the rename and the README" "$(printf 'M\tmaintainers/requests/README.md\nR100\tmaintainers/requests/sample.md\tmaintainers/requests/doing/sample.md')" \
+    "$(git -C "$REMOTE" diff --name-status -M100% developer^ developer | LC_ALL=C sort)"
+  eq "one line of the README" "1	1	maintainers/requests/README.md" "$(git -C "$REMOTE" diff --numstat developer^ developer -- maintainers/requests/README.md)"
+  eq "status doing" doing "$(status_on_remote sample.md)"
+  eq "other row unchanged" pending "$(status_on_remote other.md)"
+  git -C "$REMOTE" show developer:maintainers/requests/README.md | grep -qxF '| `sample.md` | abc1234 |'; check "the QA row is not touched" $?
+  eq "root equal to origin" "$(remote_sha developer)" "$(git -C "$R" rev-parse developer)"
+  eq "root clean" "" "$(git -C "$R" status --porcelain)"
+  run open "$B" --request sample.md
+  rc_is 0
+  has "request: maintainers/requests/doing/sample.md (in progress in tmp/work/$W)"
+  [ -f "$C/maintainers/requests/doing/sample.md" ]; check "the branch holds the move" $?
+  [ ! -e "$C/maintainers/requests/sample.md" ]; check "not in pending on the branch" $?
+  eq "recorded" "maintainers/requests/doing/sample.md" "$(cat "$R/tmp/work/$W/.request")"
+  eq "open moved no base" "chore(requests): start sample.md" "$(dev_title)"
+  run start sample.md
+  rc_is 1
+  has "maintainers/requests/sample.md is not on origin/developer"
+  has "maintainers/requests/doing/sample.md is on origin/developer already: the request is in progress"
+  has "nothing was committed or pushed"
+}
+
+# Asserts that start refused and changed nothing: rc 1, the reason, origin/developer and the root where they were, the
+# request still pending.
+refused_unchanged() { # reason, remote developer before, root HEAD before
+  rc_is 1
+  has "$1"
+  has "nothing was committed or pushed"
+  eq "origin/developer unchanged" "$2" "$(remote_sha developer)"
+  eq "root HEAD unchanged" "$3" "$(git -C "$R" rev-parse HEAD)"
+  on_remote maintainers/requests/sample.md; check "still pending on origin" $?
+}
+
+# AC-2: a commit at the root not on the remote.
+test_start_refuses_a_local_commit() {
+  requests_fixture
+  printf 'x\n' >"$R/local.txt"
+  git -C "$R" add local.txt
+  git -C "$R" commit -q -m local
+  local dev head
+  dev="$(remote_sha developer)"
+  head="$(git -C "$R" rev-parse HEAD)"
+  run start sample.md
+  refused_unchanged "developer has 1 commit(s) not on origin/developer" "$dev" "$head"
+}
+
+# AC-2: a file not committed at the root, untracked or changed.
+test_start_refuses_an_uncommitted_file() {
+  requests_fixture
+  local dev head
+  dev="$(remote_sha developer)"
+  head="$(git -C "$R" rev-parse HEAD)"
+  printf 'x\n' >"$R/loose.txt"
+  run start sample.md
+  refused_unchanged "1 file(s) not committed at the root" "$dev" "$head"
+  [ -f "$R/loose.txt" ]; check "the loose file is kept" $?
+  rm "$R/loose.txt"
+  printf 'more\n' >>"$R/README.md"
+  run start sample.md
+  refused_unchanged "1 file(s) not committed at the root" "$dev" "$head"
+  eq "the change is kept" " M README.md" "$(git -C "$R" status --porcelain)"
+}
+
+# AC-2: the request not on origin/developer: missing, or committed only at the root.
+test_start_refuses_a_request_not_on_origin() {
+  requests_fixture
+  local dev head
+  dev="$(remote_sha developer)"
+  head="$(git -C "$R" rev-parse HEAD)"
+  run start missing.md
+  refused_unchanged "maintainers/requests/missing.md is not on origin/developer" "$dev" "$head"
+  has "take that branch into developer with /caw-merge, then run start again"
+  has 'no row of `missing.md`'
+  printf '# Loose\n' >"$R/maintainers/requests/loose.md"
+  run start loose.md
+  refused_unchanged "maintainers/requests/loose.md is not on origin/developer, and not committed" "$dev" "$head"
+  has "Commit it (/caw-commit) on the branch that wrote it"
+  rm "$R/maintainers/requests/loose.md"
+  printf '# New\n' >"$R/maintainers/requests/new.md"
+  git -C "$R" add maintainers/requests/new.md
+  git -C "$R" commit -q -m "new request"
+  head="$(git -C "$R" rev-parse HEAD)"
+  run start new.md
+  refused_unchanged "maintainers/requests/new.md is not on origin/developer: committed here only" "$dev" "$head"
+  has "Take its commit there with /caw-merge, then run start again"
+}
+
+# AC-2: anything in the commit besides the rename and the Status cell is rolled back, and nothing is pushed.
+test_start_refuses_a_change_besides_the_move() {
+  requests_fixture
+  local dev head
+  dev="$(remote_sha developer)"
+  head="$(git -C "$R" rev-parse HEAD)"
+  # A pre-commit hook that slips another file into the commit.
+  printf '#!/usr/bin/env bash\nprintf "extra\\n" >extra.txt\ngit add extra.txt\n' >"$R/.git/hooks/pre-commit"
+  chmod +x "$R/.git/hooks/pre-commit"
+  run start sample.md
+  rc_is 1
+  has "the commit is not only the move of maintainers/requests/sample.md: rolled back, nothing was pushed"
+  has "extra.txt"
+  eq "origin/developer unchanged" "$dev" "$(remote_sha developer)"
+  eq "root rolled back" "$head" "$(git -C "$R" rev-parse HEAD)"
+  [ -f "$R/maintainers/requests/sample.md" ] && [ ! -e "$R/maintainers/requests/doing" ]
+  check "the tree is as before" $?
+  # The file the hook wrote stays, untracked, and is named; nothing deletes it.
+  has "attention: the root holds files that were not there before"
+  eq "only the hook's file is left" "?? extra.txt" "$(git -C "$R" status --porcelain)"
+  rm "$R/extra.txt"
+  # A hook that changes a line of the request: no longer a pure rename.
+  printf '#!/usr/bin/env bash\nprintf "changed\\n" >>maintainers/requests/doing/sample.md\ngit add maintainers/requests/doing/sample.md\n' >"$R/.git/hooks/pre-commit"
+  run start sample.md
+  rc_is 1
+  has "100% similar"
+  eq "origin/developer unchanged" "$dev" "$(remote_sha developer)"
+  eq "root rolled back" "$head" "$(git -C "$R" rev-parse HEAD)"
+  # A hook that changes another line of the README.
+  printf '#!/usr/bin/env bash\nprintf "more\\n" >>maintainers/requests/README.md\ngit add maintainers/requests/README.md\n' >"$R/.git/hooks/pre-commit"
+  run start sample.md
+  rc_is 1
+  has "changes more than the Status cell of \`sample.md\`"
+  eq "origin/developer unchanged" "$dev" "$(remote_sha developer)"
+  eq "root rolled back" "$head" "$(git -C "$R" rev-parse HEAD)"
+}
+
+# AC-2: the root not on developer.
+test_start_refuses_off_developer() {
+  requests_fixture
+  local dev head
+  git -C "$R" switch -q -c feat/elsewhere
+  dev="$(remote_sha developer)"
+  head="$(git -C "$R" rev-parse HEAD)"
+  run start sample.md
+  refused_unchanged "the root is on feat/elsewhere, not developer" "$dev" "$head"
+}
+
+# The README row: missing, twice, or not pending.
+test_start_refuses_a_bad_readme_row() {
+  requests_fixture
+  local readme="$R/maintainers/requests/README.md" dev head
+  python3 -I - "$readme" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+text = text.replace("| 0 | `other.md` | pending | Another |\n", "")
+text = text.replace("| `idea.md` | pending | Two decisions |\n", "| `idea.md` | pending | Two decisions |\n| `idea.md` | pending | Again |\n")
+text = text.replace("| 0 | `sample.md` | pending |", "| 0 | `sample.md` | doing |")
+open(path, "w", encoding="utf-8").write(text)
+PY
+  git -C "$R" commit -q -am "rows"
+  git -C "$R" push -q origin developer
+  dev="$(remote_sha developer)"
+  head="$(git -C "$R" rev-parse HEAD)"
+  run start other.md
+  refused_unchanged 'no row of `other.md` in the pending tables' "$dev" "$head"
+  run start idea.md
+  rc_is 1
+  has '2 rows of `idea.md`'
+  run start sample.md
+  refused_unchanged 'the Status of `sample.md` in maintainers/requests/README.md is doing, not pending' "$dev" "$head"
+}
+
+# BR-2: origin/developer moved between the fetch and the push: fetched, made again once; moved again: rolled back.
+test_start_redoes_once_when_the_remote_moved() {
+  requests_fixture
+  local other="$BASE/other.$CURRENT" moved
+  rm -rf "$other"
+  git clone -q "$REMOTE" "$other"
+  git -C "$other" switch -q developer
+  # A pre-push hook of the root that pushes another commit to developer first: once, or every time with ALWAYS.
+  cat >"$R/.git/hooks/pre-push" <<HOOK
+#!/usr/bin/env bash
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+if [ -e "$BASE/moved.$CURRENT" ] && [ ! -e "$BASE/always.$CURRENT" ]; then exit 0; fi
+touch "$BASE/moved.$CURRENT"
+git -C "$other" fetch -q origin
+git -C "$other" reset -q --hard origin/developer
+git -C "$other" commit -q --allow-empty -m "moved elsewhere"
+git -C "$other" push -q origin HEAD:refs/heads/developer
+HOOK
+  chmod +x "$R/.git/hooks/pre-push"
+  rm -f "$BASE/moved.$CURRENT" "$BASE/always.$CURRENT"
+  run start sample.md
+  rc_is 0
+  has "origin/developer moved during the push: developer fast-forwarded to it"
+  has "pushed: developer"
+  eq "title" "chore(requests): start sample.md" "$(dev_title)"
+  eq "on top of the other commit" "moved elsewhere" "$(git -C "$REMOTE" log -1 --format=%s developer^)"
+  eq "root equal to origin" "$(remote_sha developer)" "$(git -C "$R" rev-parse developer)"
+  # Moved again on the second push too: stop, nothing pushed.
+  touch "$BASE/always.$CURRENT"
+  run start other.md
+  rc_is 1
+  has "origin/developer moved again during the push: rolled back; nothing was pushed"
+  moved="$(remote_sha developer)"
+  eq "origin/developer holds only the other commits" "moved elsewhere" "$(dev_title)"
+  on_remote maintainers/requests/other.md; check "other.md still pending on origin" $?
+  [ -f "$R/maintainers/requests/other.md" ]; check "other.md still pending at the root" $?
+  eq "root holds no start commit" "" "$(git -C "$R" rev-list "$moved..HEAD")"
+  eq "root clean" "" "$(git -C "$R" status --porcelain)"
+  rm -f "$R/.git/hooks/pre-push"
+}
+
+test_start_usage() {
+  requests_fixture
+  run start
+  rc_is 2
+  run start a/b.md
+  rc_is 2
+  run start README.md
+  rc_is 2
+  run start sample.md --branch bad
+  rc_is 2
+  run start sample.md --bogus
+  rc_is 2
+  run start sample.md other.md
+  rc_is 2
+  on_remote maintainers/requests/sample.md; check "nothing moved" $?
+}
+
+# open --request: only a request start moved, only once per work and per request.
+test_open_request_refusals() {
+  requests_fixture
+  run open "$B" --request sample.md
+  rc_is 1
+  has "maintainers/requests/doing/sample.md is not on origin/developer: run bash tests/caw-work.sh start sample.md first"
+  [ ! -e "$R/tmp/work/$W" ]; check "nothing created" $?
+  eq "branch not pushed" none "$(remote_sha "heads/$B")"
+  run open "$B" --request ../x
+  rc_is 2
+  run start sample.md
+  run open "$B" --request sample.md
+  rc_is 0
+  run open fix/another-thing --request sample.md
+  rc_is 1
+  has "maintainers/requests/doing/sample.md is in progress in tmp/work/$W"
+  [ ! -e "$R/tmp/work/$TODAY-another-thing" ]; check "nothing created" $?
+  run start other.md
+  run open "$B" --request other.md
+  rc_is 1
+  has "tmp/work/$W records another request (maintainers/requests/doing/sample.md)"
+  run open "$B" --request sample.md
+  rc_is 0
+  has "(already open)"
+  eq "still recorded" "maintainers/requests/doing/sample.md" "$(cat "$R/tmp/work/$W/.request")"
+}
+
+# BR-7: status names the request of each work and the stale ones.
+test_status_names_the_request_and_the_stale_ones() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  run start other.md
+  rc_is 0
+  run status
+  rc_is 0
+  has "tmp/work/$W  request=maintainers/requests/doing/sample.md"
+  has "branch=$B"
+  has "stale: maintainers/requests/doing/other.md"
+  hasnt "stale: maintainers/requests/doing/sample.md"
+  run status "$W"
+  has "request=maintainers/requests/doing/sample.md"
+  hasnt "stale:"
+}
+
+# AC-7, BR-5: close --discard puts the request back to pending by the reverse commit, before the folder goes.
+test_close_discard_puts_the_request_back() {
+  requests_fixture
+  run start sample.md --branch "$B"
+  run open "$B" --request sample.md
+  commit_in a.txt one
+  local pushed start_sha
+  pushed="$(remote_sha "heads/$B")"
+  start_sha="$(remote_sha developer)"
+  run close "$W" --discard
+  rc_is 0
+  has "pushed: developer"
+  has "chore(requests): put back sample.md"
+  has "request: maintainers/requests/sample.md (pending again)"
+  has "discarded: tmp/work/$W"
+  eq "one commit on the start" "$start_sha" "$(git -C "$REMOTE" rev-parse developer^)"
+  eq "title" "chore(requests): put back sample.md" "$(dev_title)"
+  eq "only the rename and the README" "$(printf 'M\tmaintainers/requests/README.md\nR100\tmaintainers/requests/doing/sample.md\tmaintainers/requests/sample.md')" \
+    "$(git -C "$REMOTE" diff --name-status -M100% developer^ developer | LC_ALL=C sort)"
+  eq "status pending" pending "$(status_on_remote sample.md)"
+  [ -f "$R/maintainers/requests/sample.md" ] && [ ! -e "$R/maintainers/requests/doing/sample.md" ]
+  check "pending again at the root" $?
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
+  eq "remote branch stays" "$pushed" "$(remote_sha "heads/$B")"
+  run start sample.md
+  rc_is 0
+}
+
+# BR-5: the reverse commit is under the checks of start: refused, nothing is deleted; a request no longer in doing/ on
+# origin/developer is not moved.
+test_close_discard_refused_keeps_the_work() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  local dev
+  dev="$(remote_sha developer)"
+  printf 'x\n' >"$R/loose.txt"
+  run close "$W" --discard
+  rc_is 1
+  has "1 file(s) not committed at the root"
+  has "tmp/work/$W was not deleted"
+  [ -d "$C" ]; check "clone kept" $?
+  eq "origin/developer unchanged" "$dev" "$(remote_sha developer)"
+  rm "$R/loose.txt"
+  # /caw-merge took it to qa/ meanwhile.
+  mkdir -p "$R/maintainers/requests/qa"
+  git -C "$R" mv maintainers/requests/doing/sample.md maintainers/requests/qa/sample.md
+  git -C "$R" commit -q -m "to qa"
+  git -C "$R" push -q origin developer
+  dev="$(remote_sha developer)"
+  run close "$W" --discard
+  rc_is 0
+  has "attention: maintainers/requests/doing/sample.md is not on origin/developer"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
+  eq "origin/developer unchanged" "$dev" "$(remote_sha developer)"
+}
+
+# A plain close after the merge: the record of the request is no obstacle, nothing moves, and a request /caw-merge
+# left in doing/ is named.
+test_close_after_the_merge_with_a_request() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  commit_in a.txt one
+  merge_into_developer
+  local dev
+  dev="$(remote_sha developer)"
+  run close "$W"
+  rc_is 0
+  has "closed: tmp/work/$W"
+  has "deleted on origin: $B"
+  has "attention: maintainers/requests/doing/sample.md is still in doing/ at the root"
+  eq "no commit on developer" "$dev" "$(remote_sha developer)"
+}
+
+# AC-4, start over: the remote work branch and the folder go, the request stays in doing/ with no commit, and a new
+# clone of the same branch starts from the base.
+test_close_start_over() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  commit_in a.txt one
+  local dev
+  dev="$(remote_sha developer)"
+  run close "$W" --start-over
+  rc_is 2
+  run close "$W" --discard --start-over
+  rc_is 0
+  has "deleted on origin: $B (start over)"
+  has "discarded: tmp/work/$W (started over"
+  has "next: bash tests/caw-work.sh open $B --request sample.md"
+  eq "remote branch deleted" none "$(remote_sha "heads/$B")"
+  [ ! -e "$R/tmp/work/$W" ]; check "folder removed" $?
+  eq "no commit on developer" "$dev" "$(remote_sha developer)"
+  on_remote maintainers/requests/doing/sample.md; check "still in doing/" $?
+  run open "$B" --request sample.md
+  rc_is 0
+  has "pushed: $B"
+  eq "new clone from the base" "$dev" "$(git -C "$C" rev-parse HEAD)"
+  [ ! -e "$C/a.txt" ]; check "the old work is gone" $?
+}
+
+# Start over never deletes a commit pushed to the work branch from elsewhere (the lease).
+test_close_start_over_keeps_a_branch_pushed_from_elsewhere() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  commit_in a.txt one
+  local other="$BASE/other.$CURRENT" pushed
+  rm -rf "$other"
+  git clone -q "$REMOTE" "$other"
+  git -C "$other" switch -q "$B"
+  git -C "$other" commit -q --allow-empty -m "from elsewhere"
+  git -C "$other" push -q origin "$B"
+  pushed="$(remote_sha "heads/$B")"
+  run close "$W" --discard --start-over
+  rc_is 1
+  has "could not be deleted on origin"
+  has "nothing else was deleted"
+  [ -d "$C" ]; check "clone kept" $?
+  eq "remote branch kept" "$pushed" "$(remote_sha "heads/$B")"
+}
+
+# Start over with no caw.pushed (a clone from before it existed) is refused, never leasing on the tracking ref: here a
+# fetch brought a commit pushed from elsewhere into it, which that lease would have deleted.
+test_close_start_over_refuses_without_caw_pushed() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  commit_in a.txt one
+  local other="$BASE/other.$CURRENT" pushed
+  rm -rf "$other"
+  git clone -q "$REMOTE" "$other"
+  git -C "$other" switch -q "$B"
+  git -C "$other" commit -q --allow-empty -m "from elsewhere"
+  git -C "$other" push -q origin "$B"
+  pushed="$(remote_sha "heads/$B")"
+  git -C "$C" config --unset caw.pushed
+  git -C "$C" fetch -q origin
+  eq "the tracking ref holds the commit from elsewhere" "$pushed" "$(git -C "$C" rev-parse "refs/remotes/origin/$B")"
+  run close "$W" --discard --start-over
+  rc_is 1
+  has "records no sha it pushed (caw.pushed)"
+  has "git push origin --delete $B"
+  has "nothing else was deleted"
+  [ -d "$C" ]; check "clone kept" $?
+  eq "remote branch kept" "$pushed" "$(remote_sha "heads/$B")"
+  on_remote maintainers/requests/doing/sample.md; check "still in doing/" $?
+}
+
+# AC-4, resume: the folder gone, the branch on the remote: --resume checks it out, with no commit on the base.
+test_open_resume() {
+  requests_fixture
+  run start sample.md
+  run open "$B" --request sample.md
+  commit_in a.txt one
+  local pushed dev
+  pushed="$(remote_sha "heads/$B")"
+  dev="$(remote_sha developer)"
+  rm -rf "${R:?}/tmp/work/$W"
+  run open "$B" --request sample.md
+  rc_is 1
+  has "--resume to go on with it"
+  run open "$B" --request sample.md --resume
+  rc_is 0
+  has "resumed: $B from origin"
+  hasnt "pushed: $B"
+  eq "at the remote branch" "$pushed" "$(git -C "$C" rev-parse HEAD)"
+  eq "upstream" "origin/$B" "$(git -C "$C" rev-parse --abbrev-ref '@{upstream}')"
+  [ -f "$C/a.txt" ]; check "the work is there" $?
+  eq "no commit on developer" "$dev" "$(remote_sha developer)"
+  eq "recorded" "maintainers/requests/doing/sample.md" "$(cat "$R/tmp/work/$W/.request")"
+  commit_in b.txt two
+  eq "the next commit is pushed" "$(git -C "$C" rev-parse HEAD)" "$(remote_sha "heads/$B")"
+  # --resume of a branch that is not on the remote starts from developer.
+  run open fix/fresh-start --resume
+  rc_is 0
+  has "attention: fix/fresh-start is not on origin: it starts from origin/developer"
+  has "pushed: fix/fresh-start"
+}
+
 test_usage() {
   fixture
   run --help
@@ -1598,6 +2109,9 @@ test_usage() {
   has "open <type>/<slug>"
   has "run <work>[/<clone>] -- <command>..."
   has "push <work>[/<clone>] [--accept-terms]"
+  has "start <name> [--branch <type>/<slug>]"
+  has "open <type>/<slug> [--request <name>] [--resume]"
+  has "close <work> [--discard [--start-over]]"
   run
   rc_is 2
   run nope

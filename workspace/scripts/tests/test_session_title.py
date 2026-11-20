@@ -72,6 +72,12 @@ class SessionTitleTests(unittest.TestCase):
         self.assertEqual(self.name('/request b.md', session_id='s6'), 'shop-web-8')
         self.assertEqual(self.name('  /request a.md  ', session_id='s7'), 'billing-api-4')
 
+    def test_a_bare_name_in_progress_is_read_from_doing(self):
+        self.write('custom/requests/doing/r.md', '**Project:** billing-api\n')
+        self.assertEqual(self.name('/request r.md', session_id='s1'), 'billing-api-1')
+        self.write('custom/requests/r.md', '**Project:** shop-web\n')
+        self.assertEqual(self.name('/request r.md', session_id='s2'), 'shop-web-1')
+
     def test_a_claim_counts_until_its_session_ends(self):
         self.write('custom/requests/a.md', '**Project:** app\n')
         self.session('s1', 'derived-name')
