@@ -220,4 +220,6 @@ The subagents of each step run with the step's effort, passed in the call.
   `bash tests/test-install.sh` every check PASS, in stages 1 and 3.
 - **Warnings:** W-1 (AC-9 not reached) fix: no change needed; the failure came from the test setup, and the rule of
   stage 1 passes AC-9.
+  The merge review: W-1 (`/draft-prompt` counted only a pending plan for `high`, where BR-7 says any pending item)
+  fix in 051f93d.
 - **Left:** nothing.
