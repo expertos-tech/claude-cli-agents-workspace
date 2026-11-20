@@ -12,6 +12,9 @@ How the project is maintained. Every change goes through these steps; a typo fix
 
 ## 2. Plan
 
+- A loose text of the owner (dictated, hurried) starts as a draft plan of `/caw-draft-prompt`: organized, with the
+  gaps as questions, `Status: draft`, a criticality and its row in "Pending, by priority" of
+  `maintainers/plans/README.md`.
 - A plan lives in `maintainers/plans/<kebab-name>.md`: the problem, the options with their trade-offs, a
   recommendation, and numbered decisions (D-1, D-2...) for the owner to answer.
 - Ask only what has no best alternative; list the rest as assumed decisions the owner can overturn.

@@ -5,6 +5,16 @@ English · [Português (Brasil)](../../i18n/pt-BR/maintainers/plans/README.md) �
 The approved designs behind the requests in `maintainers/requests/`. A plan says what to build and why; its request
 says what must be true when it is done. Read the plan before running its request.
 
+## Pending, by priority
+
+The drafts of `/caw-draft-prompt` not yet requested, in the order to take them: by criticality (`high`, `medium`,
+`low`), then by what each depends on. A plan leaves this table when `/caw-new-request` turns it into a request.
+
+| # | Plan | Criticality | Summary |
+| --- | --- | --- | --- |
+
+## Other plans
+
 | Plan | Covers | Request |
 | --- | --- | --- |
 | `distribution.md` | The three folders, the installer and `aiwp`, the manifest sync, the read-only install, the maintenance at the repository root, platforms and languages | Built in the 0.1.0 publication |
