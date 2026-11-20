@@ -69,7 +69,7 @@ Small adjustments, effort low unless noted. Round 0: the first four, in one sess
 
 | Request | Status | What it fixes |
 | --- | --- | --- |
-| `release-developer-moved.md` | pending | `/caw-merge --main` when `developer` moves during the release |
+| `release-developer-moved.md` | doing | `/caw-merge --main` when `developer` moves during the release |
 | `release-main-sha-check.md` | pending | The push of `main` and the tag tied to the sha the suite judged |
 | `execution-block-after-fixes.md` | pending | The Execution block written before the results it records |
 | `clone-path-findings-loop.md` | pending | Requests made of findings loop the clone path of `/caw-merge` |
