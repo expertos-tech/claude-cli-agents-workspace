@@ -24,16 +24,20 @@ low
 
 ## Execution — 2026-11-20, merged into developer
 
-- **Done:** `.claude/skills/caw-merge/SKILL.md` "Release" step 8 (1cbb560): `origin/developer` moved since the release
-  clone was made (`merge-base --is-ancestor origin/developer <sha>` false) is no longer sent to the mapping's "back
-  to step 1": the release clone merges it, puts its entries into the dated `X.Y.Z` sections of both changelogs and
-  goes back to step 4 (its requests of `qa/` move to `done/` there), then steps 5 to 7 again, with the final review
-  on what the merge brought and the review fixtures not rerun (step 5 says so too). The root changelog entry of
-  `/caw-merge` adjusted (71f277f): it entered in the same unreleased version, so no `Fixed` entry.
+- **Done:** `.claude/skills/caw-merge/SKILL.md` "Release" step 8 (1cbb560, bb1fc7e): before phase 2 it checks
+  whether `origin/developer` moved since the release clone was made (`merge-base --is-ancestor origin/developer <sha>`
+  false); moved, the release clone merges it, puts its entries into the dated `X.Y.Z` sections of both changelogs and
+  goes back to step 3 for the translations it left pending (step 3 says so too), then step 4 (its requests of `qa/`
+  move to `done/` there) and steps 5 to 7 again, with the final review from the sha step 5 recorded before that merge
+  to HEAD, and the review fixtures not rerun (step 5 says so too). The root changelog entry of `/caw-merge` adjusted
+  (71f277f): it entered in the same unreleased version, so no `Fixed` entry.
 - **Deviations:** the request names "Release" step 6; the steps were renumbered since it was written, and the merge
-  into `developer`, where the move shows, is step 8 today.
+  into `developer`, where the move shows, is step 8 today. It goes back to step 3, not 4 as the request says: the
+  strict suite of step 5 checks the translations a merge of `developer` can leave pending (W-1).
 - **Done when:** met by the text of step 8; its first real run is a release during which `developer` moves.
 - **Checks:** `bash tests/check.sh --base origin/developer --i18n-pending` passed (repo-terms skipped: no terms list);
   no hook, installer or `setup-claude.sh` changed, so no test installation.
-- **Warnings:** none in the stage.
+- **Warnings:** none in the stage; the merge review: W-1 fix in bb1fc7e (back to step 3, not 4, for the
+  translations the merge leaves pending), W-2 fix in bb1fc7e (the range of the final review named from the sha before
+  the merge), W-3 fix in bb1fc7e (the check before phase 2, without the mapping's "back to step 1").
 - **Left:** nothing.
