@@ -60,8 +60,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - This changelog of the repository, next to the product's.
 - `/caw-merge`: the work of a session into `developer` through the suite and a clean-context review, writing both
-  changelogs; `/caw-merge --main` releases the product version. Every push it makes comes right after a passing suite
-  on that same commit, so nothing reaches this public repository without the company-terms scan.
+  changelogs; `/caw-merge --main` releases the product version, and a merge into `developer` during the release
+  enters its release clone and goes through the strict suite and the final review before `main`. Every push it makes
+  comes right after a passing suite on that same commit, so nothing reaches this public repository without the
+  company-terms scan.
 - Requests in `maintainers/requests/` for the features discussed and not built yet (among them a hotfix flow from
   `main`, and the findings of the reviews), in the order they run, and the
   `/rules` lessons and the local delivery of `/fork-my-rules` in the `rules` and `fork-my-rules` requests.
