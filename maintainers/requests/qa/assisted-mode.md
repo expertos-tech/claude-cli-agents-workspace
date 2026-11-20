@@ -236,8 +236,11 @@ The subagents of each stage run with the stage's effort, passed in the call. Sta
 
 ### Deviations
 
-- None from the request. BR-6 and BR-7 hold: the box keeps its format, comes before the action, and the selection
-  still waits with the same options; only where the box is drawn changed.
+- BR-6 and BR-7: the box keeps its format, comes before the action, and the selection still waits with the same
+  options; "right below every box" in BR-7 now means inside the selection, where the box is drawn.
+- A run with no question tool (no person, such as a headless one) shows the box as text and goes on as Continue,
+  where BR-7 says the agent waits: a consequence of drawing the box inside the question, which such a run cannot open;
+  the earlier headless proofs already behaved this way, and nothing is allowed or refused differently.
 
 ### Acceptance criteria
 
@@ -252,7 +255,7 @@ The subagents of each stage run with the stage's effort, passed in the call. Sta
 
 ### Warnings
 
-- None in the work.
+- Merge board: W-1 fix (the headless fallback named in Deviations).
 
 ### Left
 
