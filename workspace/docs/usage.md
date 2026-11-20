@@ -86,8 +86,8 @@ fix the broken link in the README of my-project
 
 | Way | How |
 | --- | --- |
-| From a loose text, organized first | `/draft-prompt <text or file>` turns a dictated or hurried text into a plan in your language (context, instructions, final guidance with the gaps as questions), saved in `custom/plans/` in a priority order; `/new-request custom/plans/<file>` then writes the request |
-| From loose ideas | `/new-request I want a monthly report of...`; Claude asks only what blocks, marks the rest as "assumed decision" and saves it in `custom/requests/` |
+| From a loose text, organized first | `/draft-prompt <text or file>` turns a dictated or hurried text into a plan in your language (context, instructions, final guidance with the gaps as questions), saved in `custom/plans/` in a priority order; `/new-request custom/plans/<file>` then writes the request, after evaluating the plan, researching it and proposing numbered improvements, each one in the request only if you accept it |
+| From loose ideas | `/new-request I want a monthly report of...`; Claude organizes the text first (no plan saved), asks only what blocks, marks the rest as "assumed decision" and saves it in `custom/requests/` |
 | Yourself | copy `templates/request.md` to `tmp/request.md` and fill it in |
 
 Then `/request <file>` reads `custom/requests/<file>` (else `custom/requests/doing/<file>`, a request in progress); `/request` alone reads `tmp/request.md`.
@@ -95,7 +95,7 @@ Then `/request <file>` reads `custom/requests/<file>` (else `custom/requests/doi
 - The requests of `/new-request` live in `custom/requests/`, inside the custom layer, a git repository of its own: the history of the requests is versioned there.
 - A request goes through four folders: pending at the root of `custom/requests/` (state `idea` or `ready`); `custom/requests/doing/` from the moment `/request` opens its clone until `/merge` (no list or closing board offers it again, and running it again asks whether to resume it or start over; `bash scripts/aiwp-cmds.sh close <work> --discard` puts it back in pending, and `status` flags as `stale` one no open work records); `custom/requests/qa/<project>/` once `/merge` took it into `developer`, with an "Execution" block of what was done; `custom/requests/done/<project>/` once `/merge --main` released it, after validating it against the code. An idea is a request in state `idea`; there is no backlog.
 - The plans of `/draft-prompt` live in `custom/plans/`, each with a status line (`Status: draft (<date>). Criticality: <high | medium | low>.`), and `custom/plans/README.md` lists the pending ones in the order to take them: by criticality (`high`: a security or data hole, a broken flow that blocks daily use, or something another pending item waits on; `medium`: a real improvement of a flow used often; `low`: hygiene, convenience, naming), then by what each depends on. The summary on screen says where the new plan went and why, so you can move it. `/draft-prompt screen <text>` saves nothing: it prints the whole plan, ready to copy. A clear request of a line or two needs no plan: it says so and gives the `/new-request` command.
-- `/draft-prompt` commits and pushes the plan and the README it changed, `/new-request` the request it created, at every version; `/request` commits and pushes the move to doing (through `bash scripts/aiwp-cmds.sh open --request`), `/merge` the moves to qa and done, and a wave its resume point ([Waves](#waves-checkpoint-merge-and-resume)).
+- `/draft-prompt` commits and pushes the plan and the README it changed, `/new-request` the request it created, at every version (from a plan, with the plan's status line `request: <file>` and its README row moved out of "Pending, by priority"); `/request` commits and pushes the move to doing (through `bash scripts/aiwp-cmds.sh open --request`), `/merge` the moves to qa and done, and a wave its resume point ([Waves](#waves-checkpoint-merge-and-resume)).
 - `aiwp new` sets up `custom/`: it clones the repository whose URL you give (an empty one gets a skeleton), or starts a local one. If the folder is missing later, the session says so at the start, and `bash scripts/setup-claude.sh --custom-repo <url>` in a terminal clones it.
 
 The written request is as large as what you asked for. `/new-request` picks one of three sizes before writing, and says which one:
@@ -109,6 +109,7 @@ The written request is as large as what you asked for. `/new-request` picks one 
 - A rule you did not state is not written, unless without it two different things could be built.
 - Too large or too small? Answer "smaller" or "bigger".
 - A request of the adjustment size can go straight into the session, with no file.
+- On screen it shows a summary, not the request: the file, the size, the objective, one line per business rule, what the acceptance criteria cover, every assumed decision, the improvements accepted and declined, the open questions, the authorizations and the steps with their effort. Ask for the whole request to see it.
 
 **Effort per step.** Every written request carries the effort each step asks for: one line in the adjustment size, and the "Steps and effort" table in the others. You set the session with `/effort <level>` before each step; Claude says at the start of each one which level it asks for and passes that level to the step's subagents.
 
@@ -177,7 +178,7 @@ The rest follows Claude Code's permission mode: auto mode judges what is destruc
 | `/docker-deploy [developer\|main] [<repo>]` | Updates the final local Docker stack of a repo from `developer` or `main`, tagging the replaced images for rollback and deleting no volume; only at your request |
 | `/validate [folder] [--only <checks>] [--sonar]` | Runs the validations in Docker |
 | `/draft-prompt [screen] [text \| file]` | Organizes a loose text into a plan in a priority order, or prints it with `screen` |
-| `/new-request [ideas \| file]` | Builds a functional request from ideas |
+| `/new-request [ideas \| plan \| file]` | Builds a functional request from ideas or a plan of `/draft-prompt`, and shows a summary |
 | `/request [name \| path]` | Runs the request written in a file |
 | `/rules [exclude <name> \| include <name> \| add <subject> \| replace <rule> \| lessons]` | Shows and changes the rules, skills and agents a session loads (below, "Changing the workspace itself") |
 | `/pilot [assisted\|auto\|manual]` | Shows or changes the mode: who runs the manual tests, and whether Claude explains the flow in boxes (below, "Tests a human would run by hand") |
