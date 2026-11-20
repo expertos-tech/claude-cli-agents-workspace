@@ -65,7 +65,7 @@ The ideas with no round wait for their design. `rules`, `run-tools`, `import-wor
 
 ### Ready: findings of the reviews
 
-Small adjustments, effort low unless noted. Round 0: the first three, in one session; round 1: the other four.
+Small adjustments, effort low unless noted. Round 0: the first three, in one session; round 1: the other three.
 
 | Request | Status | What it fixes |
 | --- | --- | --- |
@@ -74,7 +74,6 @@ Small adjustments, effort low unless noted. Round 0: the first three, in one ses
 | `clone-path-findings-loop.md` | pending | Requests made of findings loop the clone path of `/caw-merge` |
 | `merge-project-name.md` | pending | `<project>` for a plain folder of repos with no root repo |
 | `release-per-project-proof.md` | pending | Prove AC-1 to AC-4 of `request-lifecycle` in a real run (effort medium) |
-| `custom-skeleton-requests-folder.md` | doing | A new custom layer starts with its `requests/` folder; the README names `doing/` (effort high: `aiwp new`) |
 | `merge-queue.md` | pending | One merge at a time per git repository (developer and main): a new hard rule, a BLOCKER with no override, the queue file, a log per merge, the unfinished merge, the check at each merge and `--sweep`, product and `caw-` (effort high) |
 
 ### Ideas
@@ -97,6 +96,7 @@ Small adjustments, effort low unless noted. Round 0: the first three, in one ses
 
 | Request | Merged into `developer` | Acceptance criteria |
 | --- | --- | --- |
+| `qa/custom-skeleton-requests-folder.md` | this merge | Met: by the scenarios of the `aiwp` suite and the test installation |
 | `qa/release-developer-moved.md` | this merge | Met: by the text of "Release" step 8; its first real run is a release where `developer` moves |
 | `qa/2026-11-19-requests-priorities.md` | this merge | Met |
 | `qa/2026-11-20-install-developer.md` | this merge | Met: by the scenarios of the `aiwp` suite and a run on the test installation's repository |
