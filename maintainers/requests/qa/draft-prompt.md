@@ -185,3 +185,39 @@ The subagents of each step run with the step's effort, passed in the call.
   accepted improvements, the plan's README row and status line, the summary instead of the full text (BR-8, BR-9),
   `/caw-new-request` with a plan (A-4, `process.md` step 3) and A-3, effort medium. Then AC-5, AC-6, AC-7 and AC-9 by
   headless runs (AC-7 at the root, in a throwaway copy, nothing committed).
+
+## Execution — 2026-11-20, merged into developer
+
+- **Done:** stage 1 (BR-1, BR-2, BR-10): `/draft-request` renamed `/new-request` and `/caw-draft-request`
+  `/caw-new-request`, every current reference with them (4698af1); the rule of the files (a plan in the person's
+  language, a request in English) and the rule of the screen (7b2771b). Stage 2 (BR-3 to BR-7, BR-9): the section
+  "Organize" of `request-writing.md` and `/draft-prompt` (da6d784); `/caw-draft-prompt` and "Pending, by priority" of
+  `maintainers/plans/README.md` (0ab13fe). Stage 3 (BR-8, BR-9, A-3, A-4): `/new-request` with a text organized first
+  or a plan with its final guidance, improvements `I-n` accepted by number, the plan's status line and README row at
+  delivery, the summary instead of the whole request, "prompt" no longer naming the request in
+  `request-writing.md` (98ad4a8); `/caw-new-request` from a draft plan, `process.md` step 3 (3c4b409). Resume points
+  7987c10 and a960c94; the changelog entries with each stage and 3e12091.
+- **Decisions:** the plans of requests already built and the rows that record the rename keep `/draft-request` as
+  history; `i18n/` follows at the release; `➜ Next` of `/draft-prompt` gives the plan's path, never a bare name.
+  Stage 3: "ok" alone accepts the suggested answers of the questions and no improvement; the plan's status line
+  becomes `Status: request: custom/requests/<file> (<date>). Criticality: <level>.`; a plan whose status line already
+  names a request is asked about before a second one; at the root a draft plan given to `/caw-new-request` defaults
+  to `request`, and `plan` writes only the design into it, its row still pending.
+- **Deviations:** `/caw-new-request` in `plan` mode shows a summary too (title, file, recommendation, every open
+  decision), beyond BR-9, which names only `/draft-prompt` and `/new-request`.
+- **Done when:** AC-1 by the suite (`caw-layers` included) and a search of the names; AC-2 by
+  `test_session_title.py` (37 tests OK); AC-3, AC-4 and AC-8 by headless runs of stage 2 in a test installation;
+  AC-5 and AC-6 by headless runs in a test installation with `language` portuguese (the request in English with only
+  the corrected version and no plan, the summary in Portuguese with every assumed decision; only the accepted
+  improvement in the request, the plan's status line and README row in the same commit); AC-7 by a headless run in a
+  throwaway copy of the root (the plan in Portuguese, its row in English, nothing committed) and a search of the
+  files of BR-2; AC-9 by a headless run with the installation's `.claude/AGENTS.md` given to the session (the code
+  lines as in the file, the comments and docstring in Portuguese; the diff verbatim). A headless session in an
+  installation under this repository's `tmp/` loads the root `CLAUDE.md` instead of the installation's (the pattern
+  `**/claude-cli-agents-workspace/tmp/**` of `claudeMdExcludes`), and one outside it, in a folder not trusted, loads
+  no project memory: a criterion that depends on `AGENTS.md` is proven with it given to the session.
+- **Checks:** `bash tests/check.sh --base origin/developer --i18n-pending` passed (repo-terms skipped: no terms list);
+  `bash tests/test-install.sh` every check PASS, in stages 1 and 3.
+- **Warnings:** W-1 (AC-9 not reached) fix: no change needed; the failure came from the test setup, and the rule of
+  stage 1 passes AC-9.
+- **Left:** nothing.
