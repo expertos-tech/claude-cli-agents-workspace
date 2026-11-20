@@ -48,9 +48,11 @@ repository.
 - BR-7: "go on": the step reached comes from the merge's log; no log, from the transcript of the old session; neither:
   the session says it cannot go on and that a new review must start, and does BR-8.
 - BR-8: "start again", always and only inside the merge's clone in `tmp/work/` (the work clone of a merge into
-  `developer`, the release or hotfix clones): list the changes not committed, reset them, merge `origin/developer`
-  into the branch, and run the merge again from its first step, as a new analysis. A committed change is never
-  dropped, and no clone is deleted or opened again.
+  `developer`, the release or hotfix clones): list the changes not committed, reset them, merge the clone's own base
+  into the branch, and run the merge again from its first step, as a new analysis. The base is `origin/developer`
+  for a merge into `developer` and a release; a hotfix keeps its flow unchanged (from `main`, fixed, back to `main`,
+  then down into `developer`), so its clone merges `origin/main` and nothing of `developer` reaches the fix. A
+  committed change is never dropped, and no clone is deleted or opened again.
 - BR-9: once the old merge did something that cannot be done twice (phase 2 merged, `main` pushed, a tag created; seen
   in the log or in git), the two options are not offered: the merge happened, and only its end was not recorded. The
   session reads when it stopped (the last step of the log, else the date of the merge commit or of the tag) and,
@@ -119,7 +121,7 @@ repository.
   merges that run).
 - Any way to run two merges on one repository at once.
 - Solving conflicts on its own: a merge still brings its base into the branch and stops on a conflict, as today.
-- Session names, the release session's included: `requests/session-names.md`.
+- Session names, the release and hotfix sessions' included: `requests/session-names.md`.
 
 ## 11. Steps and effort
 
@@ -144,7 +146,8 @@ Decided by the owner on 2026-11-19:
 - The log of each merge, and the recovery from it, else from the session's transcript, else a new review (BR-5,
   BR-7).
 - "Start again" resets what is not committed, merges `developer` into the branch and starts as a new analysis, always
-  in the clone (BR-8).
+  in the clone (BR-8). A hotfix keeps its own flow (from `main`, fixed, back to `main`, down into `developer`): its
+  clone merges `main` instead (the review's W-1, fixed by the owner's decision).
 - An unfinished merge past a step that cannot be done twice only lacks its end. How much entered `developer` since,
   not the time, says whether it is near or far, and the session judges it: near, it asks "only finalize" or "finalize
   and start a new one"; far, it concludes that one and starts a new one, announcing each step (BR-9).
@@ -161,7 +164,8 @@ while running"): `/request` may refine them, never reverse them.
   plan leaves out (BR-3): no other merge slips in while the person answers.
 - A session whose state Claude Code's running sessions cannot tell (that list is not a documented interface): the
   session asks the person (BR-6), so it never starts again over a merge still running.
-- "Start again" holds for every merge, in its clone, listing the changes not committed before the reset (BR-8).
+- "Start again" holds for every merge, in its clone, listing the changes not committed before the reset, each clone
+  merging its own base (BR-8).
 - The log sits in a folder per repository, `tmp/work/merges/<repo>/<type>_<branch>.log` (the repo's path under
   `projects/`, each `/` written `--`; this repository's name at the root): `feat/login` may exist in two repositories.
 - In BR-9, the far case is announced and runs, with no question: the merge already happened, and the new one cannot

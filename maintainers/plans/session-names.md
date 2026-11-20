@@ -1,6 +1,6 @@
 # session-names.md
 
-**Status:** decided by the owner (2026-11-19): D-1 to D-18.
+**Status:** decided by the owner (2026-11-19): D-1 to D-19.
 D-17 (the concurrency of merges) moved to `maintainers/requests/merge-queue.md`.
 Request: `maintainers/requests/session-names.md` (state `ready`).
 
@@ -56,6 +56,7 @@ owner wants a much smaller design: only the life of a request, and the release, 
 | The end of `/merge` into `developer` | `rq-closed-<two-words>` | The skill, mandatory, through the rename |
 | `/merge --main <project>` starts | `ai-workspace-release-<project>` | `UserPromptSubmit` |
 | `/merge --main` ends | `ai-workspace-closed-release-<project>` | The skill, mandatory, through the rename |
+| `/merge --hotfix` starts, its closing board, its end | `fix-<two-words>`, `fix-done-<two-words>`, `fix-closed-<two-words>` | As a request (D-19) |
 | `/rename-workspace <text>` | `rq-<text normalized>` | The person |
 | `/rename` of Claude Code | whatever the person types | Claude Code alone |
 
@@ -153,13 +154,16 @@ All decided by the owner on 2026-11-19.
 - **D-18.** An end name held by a finished session still open: ask first to close it, (1) "I closed the session"
   (recommended) or (2) the suffix `02` in this session (the box under "The names"). Decided for the release session;
   extended to `rq-done-` and `rq-closed-`, as proposed and accepted by the owner.
+- **D-19.** `/merge --hotfix` follows the naming of a request with `fix-` in place of `rq-`: `fix-<two-words>` when
+  it starts, `fix-done-<two-words>` with its closing board, `fix-closed-<two-words>` at its end, everything else the
+  same (two suggestions, never a duplicate, the questions of D-11 and D-18). The words: from the request the person
+  names, else from the description. Decided by the owner at the merge review of this plan (its W-2).
 
 ## Out of scope
 
 - A name by activity, `-done-` checks of open work, a session board, reviewer and architect sessions, the record of the
   prompt a session runs.
 - The parent session name in subagent labels: `requests/workflow-agent-session-name.md`.
-- `/merge --hotfix`: it keeps the session's name.
 - The maintenance sessions at this root: no product hook runs here.
 
 ## Constraints

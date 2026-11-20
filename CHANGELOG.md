@@ -127,8 +127,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   file. The request `assisted-mode`, proven in real sessions of a test installation and at the root.
 - The plan and request `session-names`: session names that follow the life of a request (`ai-workspace-NN` for a new
   session and after `/clear`, `rq-<words>` on `/request`, `rq-done-` with the closing board, `rq-closed-` at the
-  merge, `ai-workspace-release-<project>` for a release), `/rename-workspace`, and `/rename` left to Claude Code;
-  checked against the Claude Code hooks documentation.
+  merge, `fix-` in their place for a hotfix, `ai-workspace-release-<project>` for a release), `/rename-workspace`,
+  and `/rename` left to Claude Code; checked against the Claude Code hooks documentation.
 
 ### Changed
 
@@ -137,7 +137,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   per merge, the recovery of an unfinished merge (start again in its clone, go on from its log, or finalize one past
   `main`, judged by what entered `developer` since), a check at every merge, and `--sweep`, in the product and the
   `caw-` skills.
-
 - `CLAUDE.md` "Language": the session replies in the `language` setting, even when a request file is in English; with
   none set, in the language the person writes in. `.claude/rules/product.md`: the invariant "no language setting"
   becomes the preferred language as the `language` setting, asked at install.

@@ -32,6 +32,9 @@ release rename a session; Claude Code's `/rename` stays Claude Code's.
 - BR-4a: an end name (`rq-done-`, `rq-closed-`, `ai-workspace-closed-release-`) held by a finished session still
   open: before the rename, the session asks (1) "I closed the session" (recommended) or (2) the suffix `02`; (1) with
   that session still open is asked once more, then `-02`.
+- BR-4b: `/merge --hotfix` names the session as a request does, with `fix-` in place of `rq-`: `fix-<two-words>`
+  when it starts, `fix-done-<two-words>` with its closing board, `fix-closed-<two-words>` at its end; the words come
+  from the request the person names, else from the description.
 - BR-5: a name the workspace gives is never the name of another running session.
 - BR-6: `/rename` of Claude Code has no rule of the workspace; the next rename of the workspace applies over it.
 - BR-7: `/rename-workspace <text>` names the session `rq-<text normalized>`, with `-02`, `-03`... when a running
@@ -65,7 +68,6 @@ release rename a session; Claude Code's `/rename` stays Claude Code's.
 
 - A name by activity, `-done-` checks of open work, a session board, reviewer and architect sessions.
 - The parent session name in subagent labels (`workflow-agent-session-name.md`).
-- `/merge --hotfix`: it keeps the session's name.
 - The maintenance sessions at this root.
 
 ## 11. Steps and effort
