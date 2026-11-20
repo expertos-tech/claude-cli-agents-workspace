@@ -54,6 +54,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   newcomer gets it wrong, each waiting for Continue, Don't show this again or the better way; `/pilot auto` makes
   `auto` the default, kept per workspace in `.claude/pilot-mode`; an existing workspace with history updates to
   `auto`. The `aiwp` suite is split in three to stay under the time budget.
+- `install.sh --developer`: the unreleased product, from the newest commit of `developer`, for testers.
 
 ### Added
 
@@ -182,6 +183,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   non-branch ref and a force push stay refused there, `main` and `developer` to `origin` too, and the company-terms
   scan still runs, counting what `origin` already has as scanned. `/caw-test-install` runs there, never from a copy
   of the branch without hooks.
+- `docs/getting-started.md`: installing the unreleased product with `install.sh --developer`, the installer taken
+  from `developer`.
 
 ### Removed
 
