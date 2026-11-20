@@ -62,8 +62,8 @@ and prints how to create a workspace later (`aiwp new <folder>`). Running the in
 and never a workspace: `aiwp update` does that. When the data folder is installed already, the question also offers
 to only update it (`3)`, or an empty path).
 
-To test the unreleased product, `--developer` checks out the branch `developer` instead of the newest release tag. The
-installer on `main` predates the option, so take the installer from `developer` too:
+To test the unreleased product, `--developer` checks out the branch `developer` instead of the newest release tag. An
+installer older than 0.2.0 does not know the option, so take the installer from `developer` too:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/developer/install.sh | bash -s -- --developer ~/my-workspace

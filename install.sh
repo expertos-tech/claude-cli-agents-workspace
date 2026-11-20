@@ -163,7 +163,7 @@ Examples:
   curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/main/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/main/install.sh | bash -s -- ~/my-workspace
   AIWP_WORKSPACE=~/my-workspace bash install.sh </dev/null
-  The unreleased product, with the installer of the branch developer (the one on main predates --developer):
+  The unreleased product, with the installer of the branch developer (an installer older than 0.2.0 lacks --developer):
   curl -fsSL https://raw.githubusercontent.com/expertos-tech/claude-cli-agents-workspace/developer/install.sh | bash -s -- --developer ~/my-workspace
 HELP
         return 0 ;;

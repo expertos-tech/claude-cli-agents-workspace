@@ -30,5 +30,6 @@ The owner asked to adjust the installer so that it downloads from the branch `de
 - **Checks:** the `aiwp` suite (46 run, 0 failed, 44 s under its 60 s budget); `bash -n install.sh`; shellcheck of
   `install.sh` and the test file through `validate.sh`; `bash tests/test-install.sh` from the clone: every check PASS;
   `bash tests/check.sh --base origin/developer --i18n-pending` passed (repo-terms skipped: no terms list).
-- **Warnings:** none.
+- **Warnings:** the merge review: W-1 fix (the help and the docs said the installer on `main` predates
+  `--developer`, false once this is released; now "an installer older than 0.2.0").
 - **Left:** the `pt-BR` and `es` translations of `docs/getting-started.md`, pending until the release.
