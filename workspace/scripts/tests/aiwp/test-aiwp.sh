@@ -384,7 +384,7 @@ PY
   present "$WS/custom/README.md"
   git -C "$WS/custom" ls-files --error-unmatch requests/.gitkeep >/dev/null 2>&1
   check "custom/requests/ is in the first commit" $?
-  grep -q '`doing/` while in progress' "$WS/custom/README.md"; check "the custom README names requests/doing/" $?
+  grep -q 'doing/. while in progress' "$WS/custom/README.md"; check "the custom README names requests/doing/" $?
   # The core cannot be changed in place.
   ! (echo x >>"$WS/AGENTS.md") 2>/dev/null; check "a core file cannot be written" $?
   ! touch "$WS/docs/new-file" 2>/dev/null; check "no file can be created in a core folder" $?
