@@ -153,21 +153,35 @@ The subagents of each step run with the step's effort, passed in the call.
 
 ## Stopped — 2026-11-20
 
-- Where: `tmp/work/2026-11-20-draft-prompt/claude-cli-agents-workspace`, branch `feat/draft-prompt`, stage 1 done at
-  `7b2771b` (`4698af1` the rename, `7b2771b` the language rules), pushed.
+- Where: `tmp/work/2026-11-20-draft-prompt/claude-cli-agents-workspace`, branch `feat/draft-prompt`, stages 1 and 2
+  done and pushed: `4698af1` the rename, `7b2771b` the language rules, `da6d784` `/draft-prompt`, `0ab13fe`
+  `/caw-draft-prompt`.
 - Stage 1 (BR-1, BR-2, BR-10): `/draft-request` is `/new-request` and `/caw-draft-request` is `/caw-new-request`, every
   current reference with them, the session-title docstring and test included; the language of files and of the screen
   written in `workspace/AGENTS.md` "Role", `workspace/docs/usage.md` "Language", the root `CLAUDE.md` "Language",
   `.claude/rules/process.md` step 2, `.claude/rules/product.md`, `docs/maintenance.md`, `/caw-new-request` and the
   0.2.0 changelog entries that said a plan is saved in English.
-- Decisions taken: the plans of requests already built (`plans/assisted-mode.md`, `plans/request-in-progress.md`) keep
-  `/draft-request` as history, like `requests/qa/`; the rows that record this rename (`plans/README.md`,
-  `requests/README.md`, the root changelog entry of `draft-prompt`) keep it too; `i18n/` follows at the release
-  (`.claude/rules/docs.md`). The line of the product changelog on what `/draft-prompt` does now comes with stage 2,
-  where the command is built. A-3 ("prompt" to "request" in `request-writing.md`) goes with stage 3.
+- Stage 2 (BR-3 to BR-7, BR-9 for `/draft-prompt`): the section "Organize" of `workspace/rules/request-writing.md`;
+  `workspace/rules/skills/draft-prompt/` (`claude-opus-5-5`, effort `medium`) and its layer
+  `.claude/skills/caw-draft-prompt/`; "Pending, by priority" at the top of `maintainers/plans/README.md` (empty: the
+  plans there get no criticality, out of scope), the other plans under "Other plans"; the custom-layer commit scope
+  `plans` in `workspace/rules/git.md`; `workspace/README.md`, `workspace/docs/usage.md`, `workspace/rules/rules.md`,
+  box 5 of `workspace/rules/assisted.md`, `docs/features.md`, `docs/maintenance.md`, `process.md` step 2 and the
+  product changelog line of `/draft-prompt`.
+- Decisions taken: those of stage 1 (the plans of requests already built and the rows that record the rename keep
+  `/draft-request` as history; `i18n/` follows at the release); `➜ Next` of `/draft-prompt` gives the plan's path
+  (`/new-request custom/plans/<file>`, `/caw-new-request maintainers/plans/<name>.md`), not a bare name, so it is never
+  read as a request name. A-3 ("prompt" to "request" in `request-writing.md`) goes with stage 3.
 - Proven: `bash tests/check.sh --base origin/developer --i18n-pending` green; `test_session_title.py` 37 tests OK
-  (AC-2); `bash tests/test-install.sh` all PASS, and the installed `session-title.py` names `billing-api-1` on
-  `/request <file>` and leaves `/new-request ideas`, `/draft-prompt ideas` and `/draft-prompt screen ideas` alone.
-- Next steps: stage 2, "Organize" and `/draft-prompt` with `/caw-draft-prompt` (BR-3 to BR-7, BR-9), effort medium;
-  then stage 3, `/new-request` with a text or a plan and the summary (BR-8, BR-9), effort medium. AC-3 to AC-9 by
-  headless runs, in a test installation for the product, once stages 2 and 3 are built.
+  (AC-2); `bash tests/test-install.sh` all PASS. Headless runs of `/draft-prompt` in a test installation with
+  `language` portuguese: AC-3 (a dictated English text: the plan in Portuguese with the status line, the three headings,
+  PDF kept over the corrected CSV, the finance team once, the five items of Final guidance in order, committed in
+  `custom/` with its README row in "Pending, by priority"; the screen showed the summary, not the plan), AC-4 (a
+  one-line request: no file, the `/new-request` command; a text with no goal: one message of questions with
+  suggestions, nothing written), AC-8 (`screen`: the whole plan in one `markdown` block, no file, no commit). The first
+  AC-8 run said a plan would be saved in English: step 4 of the skill now says the "saved in English" of
+  `request-writing.md` speaks of requests, and the rerun no longer says it.
+- Next steps: stage 3, `/new-request` with a text organized by "Organize" or a plan with its Final guidance, the
+  accepted improvements, the plan's README row and status line, the summary instead of the full text (BR-8, BR-9),
+  `/caw-new-request` with a plan (A-4, `process.md` step 3) and A-3, effort medium. Then AC-5, AC-6, AC-7 and AC-9 by
+  headless runs (AC-7 at the root, in a throwaway copy, nothing committed).
