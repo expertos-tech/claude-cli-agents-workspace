@@ -218,7 +218,7 @@ The default is kept in `.claude/pilot-mode`, in your workspace only: the custom 
 
 ### The boxes of `assisted`
 
-At the moments a newcomer usually gets the flow wrong, Claude shows a box before acting, then a choice, and waits:
+At the moments a newcomer usually gets the flow wrong, Claude stops before acting with a choice that shows a box next to its options, and waits:
 
 ```text
 ╭─ ASSISTED · Branches · Push to main ─────────────

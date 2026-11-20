@@ -9,8 +9,8 @@ every rule, hook, deny rule and gate allows and refuses exactly as in `auto`, an
 
 ## The box
 
-Right before the action it explains, in this format. The labels and the footer stay in English; the values are in
-the language of the conversation.
+Right before the action it explains, inside the selection ("The selection"), in this format. The labels and the
+footer stay in English; the values are in the language of the conversation.
 
 ```text
 ╭─ ASSISTED · <group> · <title> ───────────────────
@@ -22,7 +22,11 @@ the language of the conversation.
 
 - Exactly these lines: `What` one line, `Why` one or two, `How` one (several commands on it, separated by ` · `). No
   other line, list or blank line inside the box; the details go after the selection, in the reply.
-- The selection goes through the question tool, never as a numbered list in the text.
+- The box goes in the `preview` of every option of the selection, the same box in each, so it shows while the person
+  chooses; never as text before the question, which the question hides while it is open. The selection goes through
+  the question tool, never as a numbered list in the text.
+- No question tool (a run with no person, such as a headless one): the box as text, and the work goes on as
+  Continue.
 - At most one box per reply. Two situations at once: the one listed first below.
 - Never inside the closing board or the warnings board, never in a subagent: a brief carries `VERIFICATION: auto` and
   nothing about boxes (`rules/models.md` "Brief").
@@ -30,9 +34,10 @@ the language of the conversation.
 
 ## The selection
 
-Right below every box, a selection with the session's question tool, and wait for it. The options in this order, their
-labels in English as below, like the labels of the box (the extra option: as the table names it); a description in the
-language of the conversation may follow each:
+Every box is shown by a selection of the session's question tool, and you wait for it: one single-choice question
+whose header is the group and whose text says the situation in one line (the box's title and its `What`), every
+option with the box as its `preview`. The options in this order, their labels in English as below, like the labels of
+the box (the extra option: as the table names it); a description in the language of the conversation may follow each:
 
 1. **Continue**: the work goes on as asked.
 2. **Don't show this again**: the work goes on as asked, and the boxes of that group stop for the rest of the session.
