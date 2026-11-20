@@ -218,3 +218,42 @@ The subagents of each stage run with the stage's effort, passed in the call. Sta
 
 - The gate's suites total about 212 s, over the 3-minute budget; `developer` was already over it before this work.
 - After this merge, sessions at the root start in `assisted` until `/caw-pilot auto`.
+
+---
+
+## Execution — 2026-11-19, merged into developer at this merge (the box inside the selection)
+
+### Done
+
+- 9f9b501: the box goes in the `preview` of every option of the selection, the same box in each, never as text
+  before the question; with no question tool, the box as text and the work goes on as Continue (`rules/assisted.md`,
+  `docs/usage.md`). 65b30b3: the product changelog entry adjusted (no `Fixed` entry: same unreleased version).
+
+### Decisions taken while running
+
+- The owner, after a real session at the root showed only a one-line summary above the open question and no box:
+  fix it now, on a fix branch from `developer`.
+
+### Deviations
+
+- None from the request. BR-6 and BR-7 hold: the box keeps its format, comes before the action, and the selection
+  still waits with the same options; only where the box is drawn changed.
+
+### Acceptance criteria
+
+- AC-1, AC-5, AC-6: proven again for the box itself: an interactive session on a pty of a test installation from
+  this branch shows the box (`ASSISTED · Start`, What, Why, How, the footer) in the preview panel next to Continue and
+  Don't show this again, with the question open. The rest as recorded above.
+
+### Checks
+
+- `bash tests/check.sh --base origin/developer --i18n-pending`: PASS (no script changed; repo-terms SKIP, no terms
+  list). `/caw-test-install`: PASS.
+
+### Warnings
+
+- None in the work.
+
+### Left
+
+- Nothing.
