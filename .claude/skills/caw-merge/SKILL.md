@@ -134,7 +134,7 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    (`chore(release): X.Y.Z`); no push.
 5. **Full suite, strict:** `bash <clone>/tests/check.sh --all --base <last tag>` (translations included) and
    `bash <clone>/tests/test-install.sh`. Passed: record `git -C <clone> rev-parse HEAD` and push the release branch
-   with upstream. Then, once per release (not again when step 7 reruns this step), **the review fixtures**
+   with upstream. Then, once per release (not again when step 7 or 8 reruns this step), **the review fixtures**
    (`tests/review-fixtures/README.md`): for each path `bash <clone>/tests/review-fixtures.sh list` prints, one
    `reviewer` (claude-opus-5-5, effort `medium`, at most 4 at once) with the brief "Review the change described in
    `<clone>/<path>` as the merge review into `developer` (`.claude/rules/review.md`): its Request is what the owner
@@ -155,7 +155,15 @@ maintenance changes stay on `developer`). Its tag `vX.Y.Z` must be free (`git ta
    records and pushes again) and the return review of the fixes (`.claude/rules/review.md`). The sha is the one step 5 recorded last, equal to the pushed
    `fix/release-vX-Y-Z` and to HEAD.
 8. **Into `developer`:** phase 2 of the mapping with that sha (phase 1 and the review are steps 5 and 6). The clone
-   moved after the sha was recorded: back to step 5.
+   moved after the sha was recorded: back to step 5. `origin/developer` moved since step 2, another merge having
+   landed during the release (`git -C <clone> fetch -q origin`, then `git -C <clone> merge-base --is-ancestor
+   origin/developer <sha>` false): never the mapping's "back to step 1", which would take those commits to `main`
+   with neither the strict suite nor the final review. Merge it in the clone (`git -C <clone> merge --no-ff
+   origin/developer -m "Merge branch 'developer' into fix/release-vX-Y-Z"`), put the entries it brought into the
+   dated `X.Y.Z` sections of both changelogs (never an `Unreleased` section left above them), commit, and go back to
+   step 4 (the requests it brought to `qa/` move to `done/` there): steps 5 to 7 again, the review fixtures not
+   rerun, the final review of step 6 on what the merge brought (`<sha>..HEAD` of the clone, its resolution
+   included) against the requests it added.
 9. Then, **asking the owner before each one** (each answer covers that step only): `main` (`git push origin
    developer:main`; refused: a pull request `developer` → `main`, and stop until it is merged); the tag
    (`git tag -a vX.Y.Z -m "vX.Y.Z" <sha of main>`, `git push origin vX.Y.Z`; never moved or deleted); the GitHub
