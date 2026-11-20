@@ -142,6 +142,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   session and after `/clear`, `rq-<words>` on `/request`, `rq-done-` with the closing board, `rq-closed-` at the
   merge, `fix-` in their place for a hotfix, `ai-workspace-release-<project>` for a release), `/rename-workspace`,
   and `/rename` left to Claude Code; checked against the Claude Code hooks documentation.
+- The request `custom-skeleton-requests-folder`, from a test installation: a new custom layer (`aiwp new`, an empty
+  remote too) starts with its `requests/` folder, kept by a `.gitkeep`, and its README names `doing/`.
 
 ### Changed
 
