@@ -18,6 +18,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   ([product changelog](workspace/CHANGELOG.md)).
 - Requests are saved in English and plans in the person's language; whatever is shown is in the person's language,
   but code and configuration, shown exactly as they are.
+- `/draft-prompt` organizes a loose text into a plan placed in a priority order with a criticality; `/draft-request` is
+  renamed `/new-request`, which takes a text or a plan, accepts the improvements it proposes one by one, and shows a
+  summary instead of the whole request.
 - The i18n check of the product gate also requires the translations of every README and of the root `docs/`, and can
   report them as pending (`--i18n-pending`).
 - `/merge --main` ends with a final review of everything since the last tag, by the three questions of every merge
@@ -111,6 +114,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a criticality, or prints it with `screen`; `/draft-request` renamed `/new-request`, taking a text or a plan and
   showing a summary instead of the whole request; plans saved in the person's language, requests in English, and
   the screen always in the person's language, but code and configuration.
+- `/caw-draft-prompt`: a loose text of the owner becomes a draft plan in `maintainers/plans/`, in the owner's language,
+  placed with a criticality in the new section "Pending, by priority" of `maintainers/plans/README.md`; nothing is
+  committed. `/caw-draft-request` is renamed `/caw-new-request`, which from a draft plan writes into it the options,
+  the recommendation and the decisions, with the improvements the owner accepts, then the request (`process.md`
+  steps 2 and 3).
 - Review fixtures (`tests/review-fixtures/`): one made-up change per hard rule, expected BLOCKER, and three expected
   WARNING only; `/caw-merge --main` reviews each once per release (`reviewer`, effort `medium`) and judges the reports
   with `tests/review-fixtures.sh`; a failing fixture is a warning of the release, read to tell a fixture's own defect
