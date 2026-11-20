@@ -64,6 +64,86 @@ test_install_ref_override() {
   [ "$(git -C "$DATA" describe --tags --exact-match HEAD)" = v0.1.0 ]; check "AIWP_REF wins over the newest tag" $?
 }
 
+# Pushes a commit to the branch developer of the test's remote, which the fixture lacks: the first on top of v0.1.0
+# (VERSION 0.1.0), each next one on top of the last; workspace/docs/dev.md holds $1. Sets DEV_SHA to the commit.
+publish_developer() {
+  local src="$T/dev-src"
+  if [ ! -d "$src" ]; then
+    git clone -q "$T/remote.git" "$src"
+    git -C "$src" checkout -q -b developer v0.1.0
+  fi
+  fx_write "$src" workspace/docs/dev.md "$1"
+  fx_commit "$src" "developer: $1"
+  git -C "$src" push -q origin HEAD:refs/heads/developer
+  DEV_SHA="$(git -C "$src" rev-parse HEAD)"
+}
+
+test_install_developer_checks_out_the_branch() {
+  fixture
+  publish_v2
+  publish_developer "dev one"
+  run_install --developer
+  rc_is 0
+  [ "$(git -C "$DATA" rev-parse HEAD)" = "$DEV_SHA" ]; check "--developer: the developer commit, not v0.2.0" $?
+  has "checked out: developer (0.1.0)"
+  has "note: developer is not a release: aiwp update moves this installation only to a release newer than 0.1.0, never to a newer commit of developer"
+  # After the folder, repeated, over AIWP_REF: the newest developer commit, and the workspace made from it.
+  publish_developer "dev two"
+  AIWP_REF=v0.1.0 run_install "$WS" --developer --developer
+  rc_is 0
+  [ "$(git -C "$DATA" rev-parse HEAD)" = "$DEV_SHA" ]; check "--developer wins over AIWP_REF and follows developer" $?
+  content_is "$WS/docs/dev.md" "dev two"
+  # Without it, the installer goes back to the newest release.
+  run_install
+  rc_is 0
+  [ "$(data_tag)" = v0.2.0 ]; check "no --developer: back to the newest release" $?
+  hasnt "not a release"
+}
+
+test_install_developer_and_aiwp_update() {
+  fixture
+  publish_developer "dev one"
+  local first="$DEV_SHA"
+  # The pipe form, the option before the folder.
+  OUT="$(notty bash -s -- --developer "$WS" <"$INSTALLER" 2>&1)"
+  RC=$?
+  rc_is 0
+  content_is "$WS/docs/dev.md" "dev one"
+  # aiwp update leaves the developer commit while no release is newer than its VERSION, even when developer moved.
+  publish_developer "dev two"
+  run_aiwp_in "$T" update --all
+  rc_is 0
+  [ "$(git -C "$DATA" rev-parse HEAD)" = "$first" ]; check "aiwp update never follows developer" $?
+  # A newer release: aiwp update moves the data folder and the workspace to it.
+  publish_v2
+  run_aiwp_in "$T" update --all
+  rc_is 0
+  [ "$(data_tag)" = v0.2.0 ]; check "aiwp update moves to a newer release" $?
+  content_is "$WS/docs/change.md" "change v2"
+}
+
+test_install_developer_usage_errors() {
+  fixture
+  run_install --developer a b
+  rc_is 2
+  has "one workspace folder only"
+  run_install a --developer b
+  rc_is 2
+  run_install --developer --bogus
+  rc_is 2
+  has "unknown option: --bogus"
+  absent "$DATA"
+  run_install --help
+  rc_is 0
+  has "Usage: bash install.sh [--developer] [<workspace folder>] [--help]"
+  has "developer/install.sh | bash -s -- --developer ~/my-workspace"
+  # A remote with no branch developer: refused, and nothing is linked.
+  run_install --developer
+  rc_is 1
+  has "has no branch developer"
+  absent "$HOME/.local/bin/aiwp"
+}
+
 test_install_macos_data_folder() {
   fixture
   AIWP_OS=macos run_install
