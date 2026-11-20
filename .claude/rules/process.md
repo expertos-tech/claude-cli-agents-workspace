@@ -31,6 +31,9 @@ How the project is maintained. Every change goes through these steps; a typo fix
   effort of each.
 - Add the request to the table of `maintainers/requests/README.md`, in the order it runs, with the Status `pending`.
 - `/caw-new-request` writes plans and requests; `requirements-analyst` finds the gaps of a long or ambiguous one.
+- From a draft plan of `/caw-draft-prompt`, `/caw-new-request` first writes into the plan the options, the
+  recommendation and the decisions (step 2), with the improvements the owner accepts one by one, then the request;
+  the plan's row leaves "Pending, by priority" of `maintainers/plans/README.md` and its status line names the request.
 
 ## 4. Execute
 

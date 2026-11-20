@@ -88,7 +88,7 @@ counterpart and are complete skills.
 | `/caw-check` | `[--base <ref>] [--floor] [extra check.sh options]` | Runs `tests/check.sh` on what changed (`--base origin/developer --i18n-pending`) and explains each failure |
 | `/caw-commit` | `[--all]` | One Conventional Commit per logical change of the session, by path; no push, no branch, no tag |
 | `/caw-draft-prompt` | `[screen] [text \| path]` | Organizes a loose text into a draft plan in `maintainers/plans/`, in the owner's language, placed in "Pending, by priority" of its README with a criticality; `screen` only prints it; commits nothing |
-| `/caw-new-request` | `[plan \| request] [ideas \| path]` | Turns ideas into a plan or a request, asking only what has no best alternative |
+| `/caw-new-request` | `[plan \| request] [ideas \| path]` | Turns ideas, or a draft plan of `/caw-draft-prompt`, into a plan or a request, asking only what has no best alternative; a summary on screen |
 | `/caw-request` | `[file name \| path]` | Runs a request written in a file: a bare name is looked up in `maintainers/requests/`, `maintainers/requests/doing/` (in progress: resume or start over), `tmp/requests/`, then `tmp/`; no argument reads `tmp/request.md` |
 | `/caw-test-install` | `[--keep]` | Installs a disposable workspace from the current tree under `tmp/test-install/` and exercises hooks and scripts |
 | `/caw-merge` | `[<work>/<clone> \| --main [instructions]]` | Takes the work into `developer` through the gates and both changelogs, and moves the request to `qa/`; `--main` validates `qa/` and releases the product ([releases](releases.md)) |
