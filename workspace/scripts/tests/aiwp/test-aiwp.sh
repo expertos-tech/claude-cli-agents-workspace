@@ -382,6 +382,9 @@ PY
   grep -qx 'env/' "$WS/custom/.gitignore"; check "custom ignores env/" $?
   ! grep -qv '^#' "$WS/custom/core-terms.txt"; check "core-terms.txt has comment lines only" $?
   present "$WS/custom/README.md"
+  git -C "$WS/custom" ls-files --error-unmatch requests/.gitkeep >/dev/null 2>&1
+  check "custom/requests/ is in the first commit" $?
+  grep -q '`doing/` while in progress' "$WS/custom/README.md"; check "the custom README names requests/doing/" $?
   # The core cannot be changed in place.
   ! (echo x >>"$WS/AGENTS.md") 2>/dev/null; check "a core file cannot be written" $?
   ! touch "$WS/docs/new-file" 2>/dev/null; check "no file can be created in a core folder" $?
@@ -420,6 +423,9 @@ test_new_custom_from_url() {
   has "the repository was empty; a skeleton was committed"
   [ "$(git -C "$WS/custom" remote get-url origin)" = "$T/custom-empty.git" ]; check "custom cloned from the URL" $?
   present "$WS/custom/core-terms.txt"
+  [ "$(git -C "$WS/custom" rev-list --count HEAD)" = 1 ]; check "an empty remote gets one skeleton commit" $?
+  git -C "$WS/custom" ls-files --error-unmatch requests/.gitkeep >/dev/null 2>&1
+  check "an empty remote's skeleton holds custom/requests/" $?
   # A repository with content is cloned as it is.
   git clone -q "$T/custom-empty.git" "$T/c2" 2>/dev/null
   echo "my rules" >"$T/c2/notes.md"
