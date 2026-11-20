@@ -148,3 +148,26 @@ The subagents of each step run with the step's effort, passed in the call.
   Reason: both change `rules/git.md`, `.claude/rules/process.md` and `.claude/rules/security.md`.
 - Open: acceptance criteria. Decided: AC-1 to AC-9, derived from the rules; AC-3 to AC-9 by headless runs, in a test
   installation for the product. Reason: they prove the behavior of skills.
+
+---
+
+## Stopped — 2026-11-20
+
+- Where: `tmp/work/2026-11-20-draft-prompt/claude-cli-agents-workspace`, branch `feat/draft-prompt`, stage 1 done at
+  `7b2771b` (`4698af1` the rename, `7b2771b` the language rules), pushed.
+- Stage 1 (BR-1, BR-2, BR-10): `/draft-request` is `/new-request` and `/caw-draft-request` is `/caw-new-request`, every
+  current reference with them, the session-title docstring and test included; the language of files and of the screen
+  written in `workspace/AGENTS.md` "Role", `workspace/docs/usage.md` "Language", the root `CLAUDE.md` "Language",
+  `.claude/rules/process.md` step 2, `.claude/rules/product.md`, `docs/maintenance.md`, `/caw-new-request` and the
+  0.2.0 changelog entries that said a plan is saved in English.
+- Decisions taken: the plans of requests already built (`plans/assisted-mode.md`, `plans/request-in-progress.md`) keep
+  `/draft-request` as history, like `requests/qa/`; the rows that record this rename (`plans/README.md`,
+  `requests/README.md`, the root changelog entry of `draft-prompt`) keep it too; `i18n/` follows at the release
+  (`.claude/rules/docs.md`). The line of the product changelog on what `/draft-prompt` does now comes with stage 2,
+  where the command is built. A-3 ("prompt" to "request" in `request-writing.md`) goes with stage 3.
+- Proven: `bash tests/check.sh --base origin/developer --i18n-pending` green; `test_session_title.py` 37 tests OK
+  (AC-2); `bash tests/test-install.sh` all PASS, and the installed `session-title.py` names `billing-api-1` on
+  `/request <file>` and leaves `/new-request ideas`, `/draft-prompt ideas` and `/draft-prompt screen ideas` alone.
+- Next steps: stage 2, "Organize" and `/draft-prompt` with `/caw-draft-prompt` (BR-3 to BR-7, BR-9), effort medium;
+  then stage 3, `/new-request` with a text or a plan and the summary (BR-8, BR-9), effort medium. AC-3 to AC-9 by
+  headless runs, in a test installation for the product, once stages 2 and 3 are built.
